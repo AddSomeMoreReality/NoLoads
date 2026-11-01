@@ -7,7 +7,10 @@
 
 # folders
 build/
+dist/
+logs/
 vs*/
+*__pycache__/
 
 # files
 *.zip
