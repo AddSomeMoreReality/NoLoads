@@ -32,12 +32,11 @@ namespace
 		// (hkpWorld::stepDeltaTime counts). Asked only for cells with 3D (attached or unattached).
 		if (state == kAttached || state == kUnattached) {
 			if (auto* world = a_cell->GetbhkWorld()) {
-				// bhkWorld::vfunc[0x32] (AE#77851) does not step a world whose byte at +0xC5F9 is 0
-				// (NG names it toggleCollision); traced to see whether unattached interiors are switched off.
-				const auto active = *reinterpret_cast<const std::uint8_t*>(reinterpret_cast<std::uintptr_t>(world) + 0xC5F9);
+				// bhkWorld::vfunc[0x32] (AE#77851) does not step a world with toggleCollision false;
+				// traced to see whether unattached interiors are switched off.
 				args.Hex("bhkWorld", reinterpret_cast<std::uintptr_t>(world))
 					.Hex("hkpWorld", reinterpret_cast<std::uintptr_t>(world->GetWorld1()))
-					.Int("worldActive", active);
+					.Int("worldActive", world->toggleCollision ? 1 : 0);
 			}
 		}
 		return args.Json();

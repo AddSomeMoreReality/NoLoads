@@ -1,6 +1,7 @@
 #include "InteriorSim.h"
 
 #include "Detectors.h"
+#include "Hooks.h"
 #include "Hud.h"
 #include "MainThread.h"
 #include "Physics.h"
@@ -16,7 +17,6 @@ namespace
 	constexpr std::uint32_t  kAttached = 7;
 	constexpr std::uint32_t  kStages = 2;
 	constexpr std::uint32_t  kStagePortal = 1;  // the interior simulated and drawn by a second camera into a quad in its doorway (Portal)
-	constexpr std::uintptr_t kWorldActiveOffset = 0xC5F9;  // bhkWorld::vfunc[0x32] returns at once when this byte is 0
 	constexpr std::int64_t   kPromoteIntervalUs = 1'000'000;
 	constexpr std::int64_t   kAttachRetryUs = 1'000'000;
 	constexpr float          kUnitsPerMeter = 70.0f;
@@ -110,6 +110,12 @@ namespace
 	// Why the stages cannot run right now, or empty when they can.
 	std::string Blocker(RE::TESObjectCELL* a_cell, RE::TESObjectCELL* a_playerCell)
 	{
+		if (!Hooks::Ready()) {
+			return "the portal's hooks are not installed";
+		}
+		if (!Portal::Fault().empty()) {
+			return "portal fault: " + Portal::Fault();
+		}
 		if (!a_cell) {
 			return "no [Preload] sInteriorCell";
 		}
@@ -195,12 +201,10 @@ namespace
 	bool AttachCell(RE::TESObjectCELL* a_cell)
 	{
 		using Attach3D = void (*)(RE::TESObjectCELL*, RE::NiNode*);
-		using CellWorld = RE::bhkWorld* (*)(RE::TESObjectCELL*);
 		using BeginBatch = void (*)(RE::bhkWorld*);
 		using EndBatch = void (*)(RE::bhkWorld*, bool);
 		using FinishAttach = void (*)(RE::TESObjectCELL*, bool);
 		static REL::Relocation<Attach3D>     attach3D{ REL::ID(18976) };
-		static REL::Relocation<CellWorld>    cellWorld{ REL::ID(18995) };
 		static REL::Relocation<BeginBatch>   beginBatch{ REL::ID(77905) };
 		static REL::Relocation<EndBatch>     endBatch{ REL::ID(77906) };
 		static REL::Relocation<FinishAttach> finishAttach{ REL::ID(19063) };
@@ -223,7 +227,7 @@ namespace
 			g_attaching = a_cell;
 			t_attaching = true;
 			attach3D(a_cell, g_attachRoot.get());
-			auto* world = cellWorld(a_cell);
+			auto* world = a_cell->GetbhkWorld();
 			if (world) {
 				beginBatch(world);
 			}
@@ -667,11 +671,15 @@ namespace
 		portal.width = rect.width;
 		portal.height = rect.height;
 		portal.parent = outsideNode->parent;
-		if (Settings::Get().interiorSimAttachInterior && !g_attachFailed && REL::Module::IsAE()) {
+		std::string why;
+		if (!Portal::Prepare(why)) {  // before the attach: a failure repeats every second, and each attach runs the game's scripts
+			Fail(why);
+			return false;
+		}
+		if (Settings::Get().interiorSimAttachInterior && !g_attachFailed) {
 			AttachCell(a_cell);
 		}
 		portal.attached = g_attached.load() == a_cell;
-		std::string why;
 		if (!Portal::Start(portal, why)) {
 			Fail(why);
 			DetachCell("the portal did not start");
@@ -917,14 +925,14 @@ namespace InteriorSim
 			g_seenGameInteriorSteps = gameSteps;  // the game steps the attached interior's world itself
 			return;
 		}
-		auto&      active = *reinterpret_cast<std::uint8_t*>(reinterpret_cast<std::uintptr_t>(world) + kWorldActiveOffset);
-		const auto wasActive = active;
-		g_worldActive = wasActive;
+		auto&      active = world->toggleCollision;  // bhkWorld::vfunc[0x32] returns at once when it is false
+		const bool wasActive = active;
+		g_worldActive = wasActive ? 1 : 0;
 		if (!wasActive) {
 			if (!Settings::Get().interiorSimForceWorldActive) {
 				return;
 			}
-			active = 1;
+			active = true;
 		}
 		a_step(world, a_flag);
 		active = wasActive;

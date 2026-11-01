@@ -8,6 +8,7 @@
 #include "Physics.h"
 #include "Settings.h"
 #include "Trace.h"
+#include "Watchdog.h"
 
 namespace
 {
@@ -198,6 +199,11 @@ namespace
 			// knows it, in its buffer. The portal attaches it again a second later.
 			InteriorSim::Detach("save");
 			break;
+		case SKSE::MessagingInterface::kPreLoadGame:
+			// The world is torn down next; the Loading Menu's close ends the transition.
+			InteriorSim::SetTransition(true);
+			InteriorSim::Detach("kPreLoadGame");
+			break;
 		default:
 			break;
 		}
@@ -220,6 +226,7 @@ SKSE_PLUGIN_LOAD(const SKSE::LoadInterface* a_skse)
 		if (settings.traceEnabled) {
 			Trace::Init(directory);
 		}
+		Watchdog::Start(directory);
 	}
 
 	TracePluginInfo();

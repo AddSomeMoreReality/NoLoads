@@ -11,12 +11,17 @@
 #>
 [CmdletBinding()]
 param(
-    [string]$LogDirectory = (Join-Path $PSScriptRoot '..\logs'),
+    [string]$LogDirectory,
     [ValidateSet('releasedbg', 'debug')]
     [string]$Mode = 'releasedbg'
 )
 
 $ErrorActionPreference = 'Stop'
+
+# Here, not as the parameter's default: $PSScriptRoot can be empty inside param().
+if (-not $PSBoundParameters.ContainsKey('LogDirectory')) {
+    $LogDirectory = Join-Path $PSScriptRoot '..\logs'
+}
 
 $name = 'CellLoadResearch'
 $root = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path

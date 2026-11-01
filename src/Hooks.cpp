@@ -827,16 +827,28 @@ namespace
 	{
 		static void thunk(RE::NiPSysModifier* a_this, float a_time, std::uint16_t a_count, const float* a_ages)
 		{
-			float      saved = 0.0f;
-			const bool unscaled = Portal::BeforeEmission(a_this, saved);
+			Portal::BeforeEmission(a_this, a_count);
 			func(a_this, a_time, a_count, a_ages);
-			if (unscaled) {
-				Portal::AfterEmission(saved);
-			}
 		}
 
 		static inline decltype(&thunk) func;
 	};
+
+	// AE#36559 (RenderPlayerView) + 0x17E calls AE#69353 (JobList::Finish) for its scene list jobs, between
+	// RenderWaterEffects and ProcessAllQueuedLights: no job runs then and the world's accumulation has not begun.
+	struct SceneListFence
+	{
+		static void thunk(void* a_jobList)
+		{
+			func(a_jobList);
+			Portal::OnSceneListFence();
+		}
+
+		static inline REL::Relocation<decltype(thunk)> func;
+	};
+
+	std::atomic<bool> g_detoursReady{ false };
+	std::atomic<bool> g_callsReady{ false };
 
 	// A call instruction in the game's code redirected to a_thunk, after checking that it is one and
 	// calls a_target. AE only (offsets from 1.6.1170's machine code).
@@ -862,7 +874,11 @@ namespace
 		}
 		const bool lod = WriteCall<CharControllerLodDistance>("Actor::Update -> CharController LOD distance", REL::ID(37348), 0x1F3, REL::ID(78274));
 		const bool fade = WriteCall<FadeNodeDistance>("animated reference fade -> fade node distance", REL::ID(19384), 0xE4, REL::ID(105486));
-		logs::info("call hooks installed: controller LOD {}, fade {}", lod, fade);
+		g_callsReady = lod && fade;
+		if (Settings::Get().portalPassAtSceneListFence) {
+			Portal::SetPassAtSceneListFence(WriteCall<SceneListFence>("RenderPlayerView -> scene list fence", REL::ID(36559), 0x17E, REL::ID(69353)));
+		}
+		logs::info("call hooks installed: controller LOD {}, fade {}, pass at the scene list fence {}", lod, fade, Settings::Get().portalPassAtSceneListFence);
 	}
 
 	template <class Hook>
@@ -932,6 +948,7 @@ namespace
 			logs::error("detour commit failed: {}", error);
 			return;
 		}
+		g_detoursReady = true;
 		logs::info("detours installed");
 	}
 }
@@ -989,5 +1006,10 @@ namespace Hooks
 
 		InstallDetours();
 		InstallCalls();
+	}
+
+	bool Ready()
+	{
+		return g_detoursReady.load() && g_callsReady.load();
 	}
 }

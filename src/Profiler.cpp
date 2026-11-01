@@ -7,8 +7,8 @@ namespace
 	using Phase = Profiler::Phase;
 
 	constexpr std::size_t kMaxSamples = 20'000;  // 20 s at 1 kHz
-	constexpr std::size_t kMaxFrames = 64;
-	constexpr std::size_t kStackCopy = 64 * 1024;
+	constexpr std::size_t kMaxFrames = Profiler::kMaxStackFrames;
+	constexpr std::size_t kStackCopy = Profiler::kStackBufferSize;
 	constexpr auto        kInterval = std::chrono::microseconds(1000);
 	constexpr std::size_t kTop = 10;
 	constexpr double      kTreeThreshold = 0.02;  // call tree nodes under 2% of the phase are dropped
@@ -78,34 +78,6 @@ namespace
 		} __except (1 /* EXCEPTION_EXECUTE_HANDLER */) {
 		}
 		return count;
-	}
-
-	// While the main thread is suspended only syscalls and memcpy run here:
-	// no heap, no locks, nothing the suspended thread could be holding.
-	void TakeSample(HANDLE a_thread, std::uint8_t* a_stack, Sample& a_sample)
-	{
-		CONTEXT context{};
-		context.ContextFlags = CONTEXT_CONTROL | CONTEXT_INTEGER;
-		std::size_t    copied = 0;
-		std::uintptr_t rsp = 0;
-
-		if (::SuspendThread(a_thread) == static_cast<DWORD>(-1)) {
-			return;
-		}
-		if (::GetThreadContext(a_thread, &context)) {
-			rsp = context.Rsp;
-			MEMORY_BASIC_INFORMATION memory{};
-			if (::VirtualQuery(reinterpret_cast<void*>(rsp), &memory, sizeof(memory)) && memory.State == MEM_COMMIT) {
-				const auto end = reinterpret_cast<std::uintptr_t>(memory.BaseAddress) + memory.RegionSize;
-				copied = (std::min)(kStackCopy, static_cast<std::size_t>(end - rsp));
-				std::memcpy(a_stack, reinterpret_cast<void*>(rsp), copied);
-			}
-		}
-		::ResumeThread(a_thread);
-
-		if (context.Rip != 0 && copied != 0) {
-			a_sample.frameCount = Unwind(context, rsp, a_stack, copied, a_sample.frames);
-		}
 	}
 
 	class Labels
@@ -299,8 +271,7 @@ namespace
 		while (!g_stop.load() && samples.size() < kMaxSamples) {
 			auto& sample = samples.emplace_back();
 			sample.phase = g_phase.load();
-			sample.frameCount = 0;
-			TakeSample(thread, stack.get(), sample);
+			sample.frameCount = Profiler::CaptureStack(thread, stack.get(), sample.frames);
 
 			next += kInterval;
 			const auto now = std::chrono::steady_clock::now();
@@ -320,6 +291,32 @@ namespace
 
 namespace Profiler
 {
+	// While the thread is suspended only syscalls and memcpy run here:
+	// no heap, no locks, nothing the suspended thread could be holding.
+	std::uint8_t CaptureStack(void* a_thread, std::uint8_t* a_stack, std::uintptr_t* a_frames)
+	{
+		CONTEXT context{};
+		context.ContextFlags = CONTEXT_CONTROL | CONTEXT_INTEGER;
+		std::size_t    copied = 0;
+		std::uintptr_t rsp = 0;
+
+		if (::SuspendThread(a_thread) == static_cast<DWORD>(-1)) {
+			return 0;
+		}
+		if (::GetThreadContext(a_thread, &context)) {
+			rsp = context.Rsp;
+			MEMORY_BASIC_INFORMATION memory{};
+			if (::VirtualQuery(reinterpret_cast<void*>(rsp), &memory, sizeof(memory)) && memory.State == MEM_COMMIT) {
+				const auto end = reinterpret_cast<std::uintptr_t>(memory.BaseAddress) + memory.RegionSize;
+				copied = (std::min)(kStackCopy, static_cast<std::size_t>(end - rsp));
+				std::memcpy(a_stack, reinterpret_cast<void*>(rsp), copied);
+			}
+		}
+		::ResumeThread(a_thread);
+
+		return context.Rip != 0 && copied != 0 ? Unwind(context, rsp, a_stack, copied, a_frames) : std::uint8_t{ 0 };
+	}
+
 	void Start()
 	{
 		if (g_busy.exchange(true)) {

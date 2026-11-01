@@ -42,6 +42,30 @@ namespace
 	constexpr const char*   kQuadModel = "CellLoadResearch\\portalquad.nif";
 	constexpr std::size_t   kAmbientOffset = 0xC8;  // BSShaderManager::State: directional ambient matrix and ambient specular ...
 	constexpr std::size_t   kAmbientBytes = 0x44;   // ... the bytes AE#105643 writes (0x142033128..0x14203316C)
+	constexpr std::int32_t  kRefractionNormalsGroup = 5;  // BSBatchRenderer::geometryGroups: only the frame renderer draws it
+	constexpr std::uint32_t kGeometryGroups = 16;         // BSBatchRenderer::geometryGroups entries
+	constexpr std::uint32_t kAlphaGroupBit = 1u << kGeometryGroups;
+	constexpr std::uint32_t kMaxInspectedTechniques = 4096;
+
+	// Where the pass is: a frozen pass names its step to the watchdog.
+	enum class PassPhase : std::uint8_t
+	{
+		kIdle,
+		kLendSlots,
+		kAnimateActors,
+		kUpdateControllers,
+		kCullInterior,
+		kCullMasterParticles,
+		kSetTargets,
+		kSubmit,
+		kDrain,
+		kRestore,
+		kTotal
+	};
+
+	constexpr std::array<std::string_view, std::to_underlying(PassPhase::kTotal)> kPassPhaseNames{
+		"idle", "lend slots", "animate actors", "update controllers", "cull interior", "cull master particles", "set targets", "submit", "drain", "restore"
+	};
 
 	// Our render target and depth buffer (D3D11 objects of the game's device, never released).
 	struct Target
@@ -112,7 +136,12 @@ namespace
 	RE::BSEffectShaderMaterial*                 g_quadMaterial{ nullptr };
 	std::vector<ID3D11ShaderResourceView*>      g_replacedViews;  // the placeholder texture's views we swapped out (kept)
 	Portal::Door                                g_door;
-	bool                                        g_active{ false };
+	std::atomic<bool>                           g_active{ false };  // read by the watchdog
+	std::atomic<PassPhase>                      g_passPhase{ PassPhase::kIdle };
+	std::atomic<bool>                           g_passAtFence{ false };  // [Portal] bPassAtSceneListFence, once its hook is in
+	std::string                                 g_fault;           // the pass broke a rule of the game's renderer: no more passes
+	std::uint32_t                               g_tracedLeftovers{ 0 };   // geometry groups already reported
+	std::uint32_t                               g_leftoverGroups{ 0 };    // ... and since the last status
 	bool                                        g_dumpRequested{ false };
 	std::uint32_t                               g_dumps{ 0 };
 	std::vector<AddedLight>                     g_lights;
@@ -126,7 +155,7 @@ namespace
 	bool                                        g_inPass{ false };         // SubmitAccumulator of our pass is running
 	bool                                        g_depthCopied{ false };    // this pass's copy of the depth buffer is taken
 	bool                                        g_foreground{ true };      // the game window was in the foreground at the last frame
-	bool                                        g_culling{ false };        // our culling runs: shapes are registered and their lights picked
+	thread_local bool                           t_culling{ false };        // our culling runs on this thread; the game's own culls on its jobs at the same time
 	bool                                        g_effectsLit{ false };     // effects get our lights (0.8.10-0.8.11: no fire at all)
 	bool                                        g_effectsLitRead{ false };
 	bool                                        g_rebuildEffects{ false };  // the interior's effect passes are built again on the next pass
@@ -241,12 +270,12 @@ namespace
 
 	bool CreateTarget(std::string& a_why)
 	{
-		if (g_target.color) {
-			return true;
-		}
-		if (!g_targetFailure.empty()) {
+		if (!g_targetFailure.empty()) {  // first: a failure can leave the color texture behind
 			a_why = g_targetFailure;
 			return false;
+		}
+		if (g_target.color) {
+			return true;
 		}
 		auto* device = Device();
 		if (!device) {
@@ -350,6 +379,11 @@ namespace
 			g_quadMaterial = property ? static_cast<RE::BSEffectShaderMaterial*>(property->material) : nullptr;
 			return g_quadMaterial ? RE::BSVisit::BSVisitControl::kStop : RE::BSVisit::BSVisitControl::kContinue;
 		});
+		if (!g_quadMaterial) {
+			g_quad.reset();
+			a_why = "the quad model has no effect shader material";
+			return false;
+		}
 		return true;
 	}
 
@@ -1834,11 +1868,92 @@ namespace
 
 	void WriteDump();
 
-	// One pass, main thread, right before Main::RenderWorld.
+	void Mark(PassPhase a_phase)
+	{
+		g_passPhase.store(a_phase, std::memory_order_relaxed);
+	}
+
+	void NoteFault(std::string a_why)
+	{
+		if (g_fault.empty()) {
+			g_fault = std::move(a_why);
+			Trace::Write("portal.fault", Trace::Args{}.Str("why", g_fault), nullptr, true);
+			logs::error("portal: {}", g_fault);
+		}
+	}
+
+	// What an accumulator holds. Render passes come from a pool shared with the game's accumulators, so
+	// a pass left behind in ours can be reused there and the lists join up: the renderer then walks in
+	// circles (0.8.21 froze this way). The game keeps its own off-screen pass clean the same way (AE#52727).
+	struct PassInventory
+	{
+		std::uint32_t techniqueGroups{ 0 };  // technique buckets with passes
+		std::uint32_t geometryGroups{ 0 };   // a bit per geometry group, kAlphaGroupBit for the alpha group
+
+		[[nodiscard]] bool Empty() const { return techniqueGroups == 0 && geometryGroups == 0; }
+	};
+
+	// SEH only, no objects with destructors. NG declares renderPass as an array of PassGroup*, but the
+	// game's RegisterPass indexes inline records of that type.
+	bool ReadPassInventory(const RE::BSBatchRenderer* a_batches, PassInventory& a_out)
+	{
+		__try {
+			const auto* techniques = reinterpret_cast<const RE::BSBatchRenderer::PassGroup*>(a_batches->renderPass.data());
+			const auto  count = (std::min)(a_batches->renderPass.size(), kMaxInspectedTechniques);
+			for (std::uint32_t i = 0; i < count; ++i) {
+				a_out.techniqueGroups += techniques[i].validPassBits != 0 ? 1 : 0;
+			}
+			for (std::uint32_t i = 0; i <= kGeometryGroups; ++i) {
+				const auto* group = i < kGeometryGroups ? a_batches->geometryGroups[i] : a_batches->alphaGroup;
+				if (group && (group->passList.head || group->count != 0)) {
+					a_out.geometryGroups |= 1u << i;
+				}
+			}
+			return true;
+		} __except (1 /* EXCEPTION_EXECUTE_HANDLER */) {
+			return false;
+		}
+	}
+
+	// SubmitAccumulator (AE#106436) drains the technique buckets but never draws the refraction normals
+	// group: only the frame renderer does, so the game clears it after its own off-screen pass (AE#52727).
+	void DrainPasses(RE::BSShaderAccumulator* a_accumulator)
+	{
+		using ClearGroup = void (*)(RE::BSShaderAccumulator*, std::int32_t);
+		static REL::Relocation<ClearGroup> clearGroup{ RELOCATION_ID(99955, 106600) };
+		clearGroup(a_accumulator, kRefractionNormalsGroup);
+
+		PassInventory left;
+		if (!ReadPassInventory(a_accumulator->GetRuntimeData().batchRenderer, left)) {
+			NoteFault("the accumulator's batches cannot be read");
+			return;
+		}
+		g_leftoverGroups |= left.geometryGroups;
+		if (left.Empty()) {
+			return;
+		}
+		if ((left.geometryGroups & ~g_tracedLeftovers) != 0 || left.techniqueGroups != 0) {
+			g_tracedLeftovers |= left.geometryGroups;
+			Trace::Write("portal.leftovers", Trace::Args{}
+												 .Int("techniqueGroups", left.techniqueGroups)
+												 .Str("geometryGroups", std::format("0x{:05X}", left.geometryGroups)),
+				nullptr, true);
+		}
+		for (std::uint32_t i = 0; i < kGeometryGroups; ++i) {
+			if ((left.geometryGroups & (1u << i)) != 0) {
+				clearGroup(a_accumulator, static_cast<std::int32_t>(i));
+			}
+		}
+		if (left.techniqueGroups != 0 || (left.geometryGroups & kAlphaGroupBit) != 0) {
+			NoteFault(std::format("passes stayed in the accumulator: {} technique groups, geometry groups 0x{:05X}", left.techniqueGroups, left.geometryGroups));
+		}
+	}
+
+	// One pass, main thread: right before Main::RenderWorld, or at the scene list fence.
 	void Render()
 	{
 		auto* main = RE::Main::WorldRootCamera();
-		if (!main || !g_door.scene) {
+		if (!main || !g_door.scene || !g_fault.empty()) {
 			return;
 		}
 		const auto t0 = std::chrono::steady_clock::now();
@@ -1865,6 +1980,14 @@ namespace
 		g_viewportWidth = width;
 		g_viewportHeight = height;
 
+		auto* accumulator = g_accumulator.get();
+		PassInventory before;
+		if (ReadPassInventory(accumulator->GetRuntimeData().batchRenderer, before) && !before.Empty()) {
+			NoteFault(std::format("the accumulator is not empty before a pass: {} technique groups, geometry groups 0x{:05X}", before.techniqueGroups, before.geometryGroups));
+			return;
+		}
+
+		Mark(PassPhase::kLendSlots);
 		auto*      shadow = RE::BSGraphics::RendererShadowState::GetSingleton();
 		auto&      state = shadow->GetRuntimeData();
 		const auto savedState = state;
@@ -1880,7 +2003,9 @@ namespace
 			g_rebuildEffects = false;
 			ForceNewEffectPasses();
 		}
+		Mark(PassPhase::kAnimateActors);
 		AnimateActors();
+		Mark(PassPhase::kUpdateControllers);
 		UpdateControllers();
 
 		// The game hides the actors of a cell without the player (0.8.5 showed them only after
@@ -1890,7 +2015,7 @@ namespace
 		g_actorsShown = shown.unculled.size() + shown.fadeAmounts.size() + shown.currentFades.size();
 		const auto lentLights = LendActorLights();
 
-		auto* accumulator = g_accumulator.get();
+		Mark(PassPhase::kCullInterior);
 		accumulator->StartAccumulating(g_camera.get());
 		auto& accumulatorData = accumulator->GetRuntimeData();
 		accumulatorData.activeShadowSceneNode = WorldScene();
@@ -1909,17 +2034,21 @@ namespace
 			// + 0x11C): without it the flames and glows faced the last camera that saw them, edge-on through
 			// the portal (0.8.13-0.8.17: a "small" fire).
 			context.cameraRelatedUpdates = true;
-			g_culling = true;
+			t_culling = true;
 			RE::BSCullingProcess::Process(context);
 			// Candle flames: the addon node (BSValueNode) in the candle's model is only the emitter, the
 			// particles live in a master system under the particle manager, in world coordinates. The
 			// interior's flames were never in the tree culled above (0.8.8-0.8.20: no candle burned).
-			if (auto* manager = settings.portalMasterParticles ? ParticleManager() : nullptr) {
+			// Right before RenderWorld this froze the game (0.8.21): those shapes are the street's too, and
+			// the game's jobs are registering the same render passes at that moment. It takes the fence.
+			if (auto* manager = settings.portalMasterParticles && g_passAtFence.load(std::memory_order_relaxed) ? ParticleManager() : nullptr) {
+				Mark(PassPhase::kCullMasterParticles);
 				context.scene.reset(manager);
 				RE::BSCullingProcess::Process(context);
 			}
-			g_culling = false;
+			t_culling = false;
 		}
+		Mark(PassPhase::kSetTargets);
 		auto* renderer = RE::BSGraphics::Renderer::GetSingleton();
 		auto* manager = RenderTargets();
 		renderer->SetRenderTarget(0, static_cast<RenderTarget>(settings.portalColorSlot), RE::BSGraphics::SetRenderTargetMode::SRTM_CLEAR, true);
@@ -1937,8 +2066,12 @@ namespace
 		}
 		g_inPass = true;
 		g_depthCopied = false;
+		Mark(PassPhase::kSubmit);
 		RE::BSGraphics::Renderer::SubmitAccumulator(g_camera.get(), accumulator, 0);
 		g_inPass = false;
+		Mark(PassPhase::kDrain);
+		DrainPasses(accumulator);
+		Mark(PassPhase::kRestore);
 		ReturnActorLights(lentLights);
 		SleepLights(woken);
 		HideActors(shown);
@@ -1964,6 +2097,7 @@ namespace
 		state.CSSamplerModifiedBits = kAllModified;
 		state.CSUAVModifiedBits = 0xFF;
 		RE::BSShaderAccumulator::SetCurrentAccumulator(savedAccumulator);
+		Mark(PassPhase::kIdle);
 
 		const auto ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
 		g_cpuMsSum += ms;
@@ -2028,28 +2162,34 @@ namespace
 		Trace::Write("portal.dump", Trace::Args{}.Str("path", path.string()).Int("width", width).Int("height", height), nullptr, true);
 	}
 
-	// Main::RenderWorld(bool) (AE#107142): the world's accumulators are culled and drawn inside it.
+	void RunPass()
+	{
+		// 0.8.9-0.8.10: after Alt+Tab the fullscreen window came back and went away again. No pass
+		// while the window is not in front; every change of that goes to the trace.
+		const auto* mainLoop = RE::Main::GetSingleton();
+		const auto  window = mainLoop ? reinterpret_cast<HWND>(mainLoop->wnd) : nullptr;
+		const bool  foreground = window && ::GetForegroundWindow() == window && !::IsIconic(window);
+		if (foreground != g_foreground) {
+			g_foreground = foreground;
+			Trace::Write("window.focus", Trace::Args{}.Bool("foreground", foreground).Bool("iconic", window && ::IsIconic(window)).Bool("portal", g_active),
+				nullptr, true);
+		}
+		if (g_active && foreground) {
+			Render();
+		} else if (g_active) {
+			++g_skipped;
+			g_skipWhy = "game window not in the foreground";
+		}
+	}
+
+	// Main::RenderWorld(bool) (AE#107142): draws the world. RenderPlayerView (AE#36559) submitted the
+	// world's culling jobs before it and finishes them after it (AE#69353), so they are running here.
 	struct RenderWorld
 	{
 		static void thunk(bool a_arg)
 		{
-			if (Trace::IsMainThread()) {
-				// 0.8.9-0.8.10: after Alt+Tab the fullscreen window came back and went away again. No pass
-				// while the window is not in front; every change of that goes to the trace.
-				const auto* mainLoop = RE::Main::GetSingleton();
-				const auto  window = mainLoop ? reinterpret_cast<HWND>(mainLoop->wnd) : nullptr;
-				const bool  foreground = window && ::GetForegroundWindow() == window && !::IsIconic(window);
-				if (foreground != g_foreground) {
-					g_foreground = foreground;
-					Trace::Write("window.focus", Trace::Args{}.Bool("foreground", foreground).Bool("iconic", window && ::IsIconic(window)).Bool("portal", g_active),
-						nullptr, true);
-				}
-				if (g_active && foreground) {
-					Render();
-				} else if (g_active) {
-					++g_skipped;
-					g_skipWhy = "game window not in the foreground";
-				}
+			if (Trace::IsMainThread() && !g_passAtFence.load(std::memory_order_relaxed)) {
+				RunPass();
 			}
 			func(a_arg);
 		}
@@ -2064,6 +2204,28 @@ namespace Portal
 	{
 		RenderWorld::func = reinterpret_cast<decltype(RenderWorld::func)>(REL::Relocation<std::uintptr_t>{ REL::ID(107142) }.address());
 		return DetourAttach(reinterpret_cast<PVOID*>(&RenderWorld::func), reinterpret_cast<PVOID>(&RenderWorld::thunk));
+	}
+
+	void SetPassAtSceneListFence(bool a_atFence)
+	{
+		g_passAtFence.store(a_atFence, std::memory_order_relaxed);
+	}
+
+	void OnSceneListFence()
+	{
+		if (g_passAtFence.load(std::memory_order_relaxed) && Trace::IsMainThread()) {
+			RunPass();
+		}
+	}
+
+	std::string_view PassPhaseName()
+	{
+		return kPassPhaseNames[std::to_underlying(g_passPhase.load(std::memory_order_relaxed))];
+	}
+
+	const std::string& Fault()
+	{
+		return g_fault;
 	}
 
 	void ToggleTemporalAA()
@@ -2162,23 +2324,20 @@ namespace Portal
 		return false;
 	}
 
-	bool BeforeEmission(const RE::NiPSysModifier* a_emitter, float& a_saved)
+	void BeforeEmission(RE::NiPSysModifier* a_emitter, std::uint16_t a_count)
 	{
 		if (!Settings::Get().portalIgnoreParticleBudget || !InInterior(a_emitter->target)) {
-			return false;
+			return;
 		}
-		// Global, but a neighbour reading 1 for a moment emits one particle more at most, and AE#71099
-		// writes it again every frame.
-		auto& scale = EmissionScale();
-		a_saved = scale;
-		scale = 1.0f;
-		g_emissionsWithoutBudget.fetch_add(1, std::memory_order_relaxed);
-		return true;
-	}
-
-	void AfterEmission(float a_saved)
-	{
-		EmissionScale() = a_saved;
+		const float scale = EmissionScale();
+		if (scale < 1.0f) {
+			// AE#74651 emits count * scale + this remainder of its last call, the first field after
+			// NiPSysModifier. The difference added here makes that the whole count. Not the scale itself:
+			// emitters of other cells read that global at the same moment.
+			auto& remainder = *reinterpret_cast<float*>(reinterpret_cast<std::uintptr_t>(a_emitter) + sizeof(RE::NiPSysModifier));
+			remainder += static_cast<float>(a_count) * (1.0f - scale);
+			g_emissionsWithoutBudget.fetch_add(1, std::memory_order_relaxed);
+		}
 	}
 
 	std::string MasterParticlesJson(const RE::NiAVObject* a_scene)
@@ -2369,7 +2528,7 @@ namespace Portal
 
 	void NoteVisible(const RE::NiAVObject* a_object)
 	{
-		if (!g_culling || g_watchedEffects.empty() || !Trace::IsMainThread()) {
+		if (!t_culling || g_watchedEffects.empty()) {
 			return;
 		}
 		if (const auto it = g_watchedShapes.find(a_object); it != g_watchedShapes.end()) {
@@ -2392,7 +2551,7 @@ namespace Portal
 
 	bool BeforeEffectPasses(const RE::BSGeometry* a_geometry)
 	{
-		if (!g_culling) {
+		if (!t_culling) {
 			return false;
 		}
 		if (const auto it = g_watchedShapes.find(a_geometry); it != g_watchedShapes.end()) {
@@ -2412,7 +2571,7 @@ namespace Portal
 
 	void AfterEffectPasses(bool a_held, const RE::BSGeometry* a_geometry, bool a_gotPasses)
 	{
-		if (g_culling && !a_gotPasses) {
+		if (t_culling && !a_gotPasses) {
 			if (const auto it = g_watchedShapes.find(a_geometry); it != g_watchedShapes.end()) {
 				++g_watchedEffects[it->second].noPasses;
 			}
@@ -2450,22 +2609,17 @@ namespace Portal
 		return a_technique;
 	}
 
-	bool Start(const Door& a_door, std::string& a_why)
+	bool Prepare(std::string& a_why)
 	{
-		Stop();
-		if (!Settings::Get().portalEnabled) {
+		const auto& settings = Settings::Get();
+		if (!settings.portalEnabled) {
 			a_why = "[Portal] bEnabled=0";
 			return false;
 		}
-		if (!REL::Module::IsAE()) {
-			a_why = "the portal needs the AE runtime";
+		if (REL::Module::get().version() != SKSE::RUNTIME_SSE_1_6_1170) {
+			a_why = "the portal is verified on 1.6.1170 only (docs/PORTABILITY.md)";
 			return false;
 		}
-		if (!a_door.scene || !a_door.parent || a_door.width <= 0.0f || a_door.height <= 0.0f) {
-			a_why = "no interior 3D, door node or door size";
-			return false;
-		}
-		const auto& settings = Settings::Get();
 		if (settings.portalColorSlot == 0 || settings.portalColorSlot >= RenderTarget::kTOTAL ||
 			settings.portalDepthSlot == 0 || settings.portalDepthSlot >= RE::RENDER_TARGET_DEPTHSTENCIL::kTOTAL) {
 			a_why = "[Portal] iColorSlot / iDepthSlot out of range (0 is the game's main target)";
@@ -2506,6 +2660,20 @@ namespace Portal
 				return false;
 			}
 		}
+		return true;
+	}
+
+	bool Start(const Door& a_door, std::string& a_why)
+	{
+		Stop();
+		if (!a_door.scene || !a_door.parent || a_door.width <= 0.0f || a_door.height <= 0.0f) {
+			a_why = "no interior 3D, door node or door size";
+			return false;
+		}
+		if (!Prepare(a_why)) {
+			return false;
+		}
+		const auto& settings = Settings::Get();
 		g_door = a_door;
 
 		// The unattached cell's own nodes keep stale bounds (radius 1 at the origin, 0.8.1 tree): the
@@ -2645,6 +2813,9 @@ namespace Portal
 							  .Int("pointsCarried", static_cast<std::int64_t>(g_pointsCarried[std::to_underlying(Carried::kControllerLod)].exchange(0, std::memory_order_relaxed)))
 							  .Int("fadesCarried", static_cast<std::int64_t>(g_pointsCarried[std::to_underlying(Carried::kFade)].exchange(0, std::memory_order_relaxed)))
 							  .Int("maxPassesPerFrame", static_cast<std::int64_t>(g_maxPassesPerFrame))
+							  .Bool("passAtFence", g_passAtFence.load(std::memory_order_relaxed))
+							  .Str("leftoverGroups", std::format("0x{:05X}", g_leftoverGroups))
+							  .Str("fault", g_fault)
 							  .Bool("quadMaterialOurs", QuadMaterialNow() == g_quadMaterial)
 							  .Num("quadPreviousOffset", QuadPreviousOffset())
 							  .Num("emissionScale", EmissionScale())
@@ -2663,6 +2834,7 @@ namespace Portal
 							  .Json();
 		g_rendered = 0;
 		g_maxPassesPerFrame = 0;
+		g_leftoverGroups = 0;
 		g_skipped = 0;
 		g_cpuMsSum = 0.0;
 		g_cpuMsMax = 0.0;

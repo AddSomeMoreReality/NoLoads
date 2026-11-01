@@ -77,7 +77,13 @@ struct Settings
 	bool          portalGameAnimatesActors{ true };  // ... and the game's own animation jobs (AE#41466)
 	bool          portalSoftEffects{ true };         // soft particles in the portal's pass
 	bool          portalIgnoreParticleBudget{ true };  // the interior's emitters ignore the game's particle budget
-	bool          portalMasterParticles{ true };       // the pass also culls the master particle systems (candle flames)
+	bool          portalMasterParticles{ false };      // the pass also culls the master particle systems (candle flames); froze 0.8.21 before RenderWorld
+	bool          portalPassAtSceneListFence{ false };  // the pass runs at the scene list fence, not right before RenderWorld
+
+	// [Watchdog] sees a frozen game from outside while the portal runs
+	bool  watchdogEnabled{ true };
+	float watchdogHangSeconds{ 6.0f };
+	bool  watchdogTerminate{ true };  // end the process after writing the stacks
 
 	// [Probe] simulation probe (H11, H12)
 	bool          probeEnabled{ true };

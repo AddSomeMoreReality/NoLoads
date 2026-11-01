@@ -178,6 +178,11 @@ void Settings::Load()
 	ini.Read(L"Portal", L"bSoftEffects", portalSoftEffects);
 	ini.Read(L"Portal", L"bIgnoreParticleBudget", portalIgnoreParticleBudget);
 	ini.Read(L"Portal", L"bMasterParticles", portalMasterParticles);
+	ini.Read(L"Portal", L"bPassAtSceneListFence", portalPassAtSceneListFence);
+
+	ini.Read(L"Watchdog", L"bEnabled", watchdogEnabled);
+	ini.Read(L"Watchdog", L"fHangSeconds", watchdogHangSeconds);
+	ini.Read(L"Watchdog", L"bTerminate", watchdogTerminate);
 
 	ini.Read(L"Probe", L"bEnabled", probeEnabled);
 	ini.Read(L"Probe", L"fIntervalSeconds", probeIntervalSeconds);

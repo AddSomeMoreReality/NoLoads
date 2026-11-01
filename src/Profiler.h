@@ -15,6 +15,14 @@ namespace Profiler
 		kTotal
 	};
 
+	inline constexpr std::size_t kStackBufferSize = 64 * 1024;
+	inline constexpr std::size_t kMaxStackFrames = 64;
+
+	// Any thread but a_thread itself: suspends it for a moment, copies its stack into a_stack
+	// (kStackBufferSize bytes) and walks the copy. a_frames has room for kMaxStackFrames addresses,
+	// innermost first. Returns how many were found.
+	[[nodiscard]] std::uint8_t CaptureStack(void* a_thread, std::uint8_t* a_stack, std::uintptr_t* a_frames);
+
 	// Main thread, on Loading Menu open. Ignored while a previous report is still being written.
 	void Start();
 	void SetPhase(Phase a_phase);

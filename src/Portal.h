@@ -39,11 +39,26 @@ namespace Portal
 	// AE only: the Main::RenderWorld detour. Called from Hooks::InstallDetours inside its transaction.
 	[[nodiscard]] long AttachRenderWorldDetour();
 
-	// Main thread.
+	// [Portal] bPassAtSceneListFence: the pass moves from right before Main::RenderWorld to the point
+	// right after RenderPlayerView finishes its scene list jobs (AE#36559 + 0x17E, AE#69353). No job
+	// culls or registers render passes there, and the world's accumulation has not begun.
+	void SetPassAtSceneListFence(bool a_atFence);
+	void OnSceneListFence();
+
+	// Main thread. Prepare checks everything a start needs and creates the shared resources, so the
+	// caller can find out before it attaches the cell. Start does it again itself.
+	[[nodiscard]] bool Prepare(std::string& a_why);
 	[[nodiscard]] bool Start(const Door& a_door, std::string& a_why);
 	void               Stop();
-	[[nodiscard]] bool Active();
 	[[nodiscard]] RE::NiAVObject* Quad();
+
+	// Any thread.
+	[[nodiscard]] bool Active();
+	[[nodiscard]] std::string_view PassPhaseName();  // the step of the pass running now
+
+	// Main thread: why passes stopped for this session, or empty. Set when the accumulator is not left
+	// empty; see PassInventory in Portal.cpp.
+	[[nodiscard]] const std::string& Fault();
 
 	// Main thread: a line for the HUD and a JSON object for the trace; counters restart after it.
 	[[nodiscard]] std::string StatusText();
@@ -96,12 +111,11 @@ namespace Portal
 	// Any thread: a_object hangs under the 3D of the portal's interior.
 	[[nodiscard]] bool InInterior(const RE::NiAVObject* a_object);
 
-	// Detour of AE#74651 (NiPSysEmitter vfunc 0x2A, all emitters), any thread, around the original: the
+	// Detour of AE#74651 (NiPSysEmitter vfunc 0x2A, all emitters), any thread, before the original: the
 	// game scales every emission by its particle budget (AE#388630). Outside in Whiterun it stood at 0.46,
-	// and the hearth behind the door burned with half its particles. True: the emitter is in the portal's
-	// interior and emits unscaled ([Portal] bIgnoreParticleBudget); AfterEmission puts a_saved back.
-	[[nodiscard]] bool BeforeEmission(const RE::NiPSysModifier* a_emitter, float& a_saved);
-	void               AfterEmission(float a_saved);
+	// and the hearth behind the door burned with half its particles. An emitter in the portal's interior
+	// gets the difference added ([Portal] bIgnoreParticleBudget).
+	void BeforeEmission(RE::NiPSysModifier* a_emitter, std::uint16_t a_count);
 
 	// Main thread: the master particle systems (candle flames) and how many of their emitters hang under
 	// a_scene. Written by the portal's status and by the probe while the player is inside.
