@@ -1,6 +1,7 @@
 #include "Preload.h"
 
 #include "Detectors.h"
+#include "Hooks.h"
 #include "Hud.h"
 #include "InteriorSim.h"
 #include "Settings.h"
@@ -267,6 +268,35 @@ namespace
 		}
 	}
 
+	bool InInteriorBuffer(const RE::TESObjectCELL* a_cell)
+	{
+		const auto* tes = RE::TES::GetSingleton();
+		auto*       ini = RE::INISettingCollection::GetSingleton();
+		const auto* setting = ini ? ini->GetSetting("uInterior Cell Buffer:General") : nullptr;
+		if (!tes || !tes->interiorBuffer || !setting) {
+			return true;  // nothing to compare with: leave it alone
+		}
+		for (std::uint32_t i = 0; i < setting->data.u; ++i) {
+			if (tes->interiorBuffer[i] == a_cell) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	// While it was kept, the buffer pushed it out and its unload was blocked (BlockCellUnload): it stays
+	// loaded outside the buffer, and nothing would ever unload it. Back into the buffer once it is let go.
+	void ReturnToBuffer()
+	{
+		auto* player = RE::PlayerCharacter::GetSingleton();
+		if (!g_interior.cell || g_keepActive.load() || Trace::CellState(g_interior.cell) != kUnattached || !player ||
+			player->GetParentCell() == g_interior.cell || InteriorSim::InTransition() || InInteriorBuffer(g_interior.cell)) {
+			return;
+		}
+		Hooks::BufferInterior(g_interior.cell);
+		Trace::Write("preload.keep", Trace::Args{}.Str("action", "returnToBuffer").Cell("cell", g_interior.cell), nullptr, true);
+	}
+
 	// Main thread, every tick: keep the interior while the player is outside it and near its door.
 	void UpdateKeepActive()
 	{
@@ -311,6 +341,7 @@ namespace Preload
 			g_nextRefreshUs = now + static_cast<std::int64_t>(Settings::Get().preloadRefreshSeconds * 1'000'000.0f);
 			RefreshExterior();
 			KeepInterior();
+			ReturnToBuffer();
 		}
 	}
 

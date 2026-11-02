@@ -109,6 +109,24 @@ namespace
 
 	constexpr std::array<const char*, 3> kControllerModeNames{ "off", "selective update", "whole tree" };
 
+	// What the CPU quads of NiParticles face in the pass ([Portal] iParticleFacing).
+	enum class ParticleFacing : std::uint32_t
+	{
+		kGame = 0,    // whatever RendererShadowState holds when the packer runs
+		kPortal = 1,  // the portal camera: across the door plane
+		kView = 2,    // the player's view carried through the door: what they would see standing inside
+		kTotal
+	};
+
+	// The camera the particle packer reads from RendererShadowState.
+	struct PackCamera
+	{
+		RE::NiPoint3 origin;
+		RE::NiPoint3 up;
+		RE::NiPoint3 right;
+		RE::NiPoint3 forward;
+	};
+
 	// The part of the door rectangle the main camera sees: door UVs (0..1, v down) and screen pixels.
 	struct VisiblePart
 	{
@@ -152,7 +170,7 @@ namespace
 	bool                                        g_rebuildPasses{ false };  // the interior's render passes are built again on the next pass
 	DepthMode                                   g_depthMode{ DepthMode::kCopiedView };
 	bool                                        g_depthModeRead{ false };  // taken from the INI once
-	bool                                        g_inPass{ false };         // SubmitAccumulator of our pass is running
+	thread_local bool                           t_inPass{ false };         // SubmitAccumulator of our pass runs on this thread
 	bool                                        g_depthCopied{ false };    // this pass's copy of the depth buffer is taken
 	bool                                        g_foreground{ true };      // the game window was in the foreground at the last frame
 	thread_local bool                           t_culling{ false };        // our culling runs on this thread; the game's own culls on its jobs at the same time
@@ -187,10 +205,26 @@ namespace
 		const RE::TESObjectCELL* cell{ nullptr };
 		const RE::NiAVObject*    scene{ nullptr };  // the interior's 3D
 		RE::NiTransform          toInterior;
+		RE::NiTransform          toExterior;
+		RE::NiPoint3             center;            // the interior's bound
+		float                    radius{ 0.0f };
 	};
 	std::atomic<const Space*>                                                           g_space{ nullptr };
 	std::array<std::atomic<std::uint64_t>, std::to_underlying(Portal::Carried::kTotal)> g_pointsCarried{};  // IntoInterior answers yes, per Carried
 	std::atomic<std::uint64_t>                                                          g_emissionsWithoutBudget{ 0 };
+
+	// The interior's actors as the game's own logic sees them (0.8.24).
+	std::atomic<bool>          g_actorsSeen{ false };
+	std::atomic<RE::NiCamera*> g_virtualCamera{ nullptr };  // the portal's camera while [Portal] bVirtualCamera; never freed in a session
+	std::atomic<bool>          g_soundThroughDoor{ false };
+	std::atomic<bool>          g_distanceThroughDoor{ false };
+	std::atomic<std::uint64_t> g_distancesCarried{ 0 };
+	thread_local std::uint32_t t_actorScope{ 0 };
+	std::atomic<std::uint64_t> g_worldCameraCarried{ 0 };
+	std::atomic<std::uint64_t> g_footFeedback{ 0 };
+	std::atomic<std::uint64_t> g_notVisibleCleared{ 0 };
+	std::atomic<std::uint64_t> g_soundsCarried{ 0 };
+	RE::NiPoint3               g_lastSound;  // written on the audio thread, read for the status: a torn value does no harm
 
 	// per interior actor, since the last status: the lowest and highest the actor stood (0.8.16: NPCs sank into the floor)
 	std::vector<float> g_actorZMin;
@@ -225,6 +259,17 @@ namespace
 	double        g_controllerMsSum{ 0.0 };
 	std::uint64_t g_softEffectsDropped{ 0 };  // soft effect techniques drawn without their soft part
 	std::uint64_t g_actorLightsLent{ 0 };     // our lights put into the light lists of the actors' shapes for a pass
+	std::uint64_t g_shapeRecollects{ 0 };     // times the lights' shapes were collected again: none had any
+
+	// The particle packer in this pass: the cameras it could face, and what RendererShadowState held for it.
+	PackCamera    g_packPortal;
+	PackCamera    g_packMain;
+	PackCamera    g_packView;
+	std::uint64_t g_packCalls{ 0 };
+	std::uint64_t g_packHeldPortal{ 0 };
+	std::uint64_t g_packHeldMain{ 0 };
+	std::uint64_t g_packHeldOther{ 0 };
+	float         g_packOriginDrift{ 0.0f };  // units between the held origin and the portal camera
 
 	template <class T>
 	T* AsRex(void* a_object)
@@ -1335,6 +1380,17 @@ namespace
 		}
 	}
 
+	// The portal's camera stands in the player's eye even while no pass aims it (the door off screen):
+	// the actors' updates measure their distances from it.
+	void CarryCamera()
+	{
+		const auto* space = g_space.load(std::memory_order_acquire);
+		auto*       main = RE::Main::WorldRootCamera();
+		if (space && main && g_camera) {
+			g_camera->world.translate = space->toInterior * main->world.translate;
+		}
+	}
+
 	// ------------------------------------------------------------------
 	// Actors
 	// ------------------------------------------------------------------
@@ -1386,9 +1442,21 @@ namespace
 		return kMaxAnimatedActors;
 	}
 
+	// The mark the game leaves on actors outside the main camera's frustum: no foot IK feedback, so their
+	// height stops following the character controller, kFarAway on the controller (AE#37992), and an
+	// animation update that moves no bone (AE#38054).
+	void ClearNotVisible(RE::NiAVObject* a_root)
+	{
+		if (a_root && a_root->GetFlags().all(RE::NiAVObject::Flag::kNotVisible)) {
+			a_root->GetFlags().reset(RE::NiAVObject::Flag::kNotVisible);
+			g_notVisibleCleared.fetch_add(1, std::memory_order_relaxed);
+		}
+	}
+
 	void ForgetActors()
 	{
 		g_forceAnimation.store(false, std::memory_order_relaxed);
+		g_actorsSeen.store(false, std::memory_order_relaxed);
 		g_fullProcessing.store(false, std::memory_order_relaxed);
 		g_gameAnimation.store(false, std::memory_order_relaxed);
 		for (auto& actor : g_animatedActors) {
@@ -1452,7 +1520,7 @@ namespace
 			if (gameUpdates != g_seenGameUpdates[i]) {
 				g_seenGameUpdates[i] = gameUpdates;
 				++g_animatedByGame;
-			} else {
+			} else if (!g_door.attached) {  // an attached cell's actors stand when the game stands: a pause, a fade
 				t_ownAnimation = true;
 				actor->UpdateAnimation(delta);
 				t_ownAnimation = false;
@@ -1949,6 +2017,48 @@ namespace
 		}
 	}
 
+	RE::NiPoint3 Column(const RE::NiMatrix3& a_matrix, int a_column)
+	{
+		return { a_matrix.entry[0][a_column], a_matrix.entry[1][a_column], a_matrix.entry[2][a_column] };
+	}
+
+	PackCamera CameraOf(const RE::NiTransform& a_world)
+	{
+		// Gamebryo cameras look along local +X, with +Y up and +Z right.
+		return { .origin = a_world.translate, .up = Column(a_world.rotate, 1), .right = Column(a_world.rotate, 2), .forward = Column(a_world.rotate, 0) };
+	}
+
+	// The cameras the particle packer could face in this pass. The portal camera always looks across the
+	// door plane, so through a door seen at an angle only the player's own view faces them to the eye.
+	void AimParticles(const RE::NiCamera* a_main)
+	{
+		const auto rotation = g_door.toExterior.Invert().rotate;
+		g_packPortal = CameraOf(g_camera->world);
+		g_packMain = CameraOf(a_main->world);
+		g_packView = { .origin = g_packPortal.origin, .up = rotation * g_packMain.up, .right = rotation * g_packMain.right, .forward = rotation * g_packMain.forward };
+	}
+
+	RE::NiPoint3 ReadVector(const void* a_vector)
+	{
+		const auto* floats = static_cast<const float*>(a_vector);
+		return { floats[0], floats[1], floats[2] };
+	}
+
+	void WriteVector(void* a_vector, const RE::NiPoint3& a_value)
+	{
+		auto* floats = static_cast<float*>(a_vector);
+		floats[0] = a_value.x;
+		floats[1] = a_value.y;
+		floats[2] = a_value.z;
+		floats[3] = 0.0f;
+	}
+
+	bool Faces(const RE::NiPoint3& a_up, const RE::NiPoint3& a_right, const PackCamera& a_camera)
+	{
+		constexpr float kSameDirection = 0.999f;
+		return a_up.Dot(a_camera.up) > kSameDirection && a_right.Dot(a_camera.right) > kSameDirection;
+	}
+
 	// One pass, main thread: right before Main::RenderWorld, or at the scene list fence.
 	void Render()
 	{
@@ -1971,7 +2081,6 @@ namespace
 			return;
 		}
 		SwapQuadTexture();
-		RefreshActors(Trace::NowUs());
 		const auto& settings = Settings::Get();
 		const auto  width = std::clamp(static_cast<std::uint32_t>(std::ceil(part.pixelsWide)), kMinViewport, g_target.width);
 		const auto  height = std::clamp(static_cast<std::uint32_t>(std::ceil(part.pixelsHigh)), kMinViewport, g_target.height);
@@ -2064,11 +2173,12 @@ namespace
 		if (interiorLook) {
 			UseInteriorLook(look);
 		}
-		g_inPass = true;
+		AimParticles(main);
+		t_inPass = true;
 		g_depthCopied = false;
 		Mark(PassPhase::kSubmit);
 		RE::BSGraphics::Renderer::SubmitAccumulator(g_camera.get(), accumulator, 0);
-		g_inPass = false;
+		t_inPass = false;
 		Mark(PassPhase::kDrain);
 		DrainPasses(accumulator);
 		Mark(PassPhase::kRestore);
@@ -2257,6 +2367,13 @@ namespace Portal
 				g_gameAnimationUpdates[i].fetch_add(1, std::memory_order_relaxed);
 			}
 		}
+	}
+
+	void ToggleSoftEffects()
+	{
+		g_softEffects = !g_softEffects;
+		Trace::Write("portal.soft", Trace::Args{}.Bool("softEffects", g_softEffects).Bool("portal", g_active), nullptr, true);
+		Hud::Show("portal", std::format("CLR: soft particles in the portal {}", g_softEffects ? "on" : "off"), true);
 	}
 
 	void AddAnimatedActors(const RE::BSTArray<RE::ActorHandle>& a_handles, void* a_list)
@@ -2526,6 +2643,79 @@ namespace Portal
 		}
 	}
 
+	void NoteFootFeedback(const RE::Actor* a_actor)
+	{
+		if (PortalActorIndex(a_actor) < kMaxAnimatedActors) {
+			g_footFeedback.fetch_add(1, std::memory_order_relaxed);
+		}
+	}
+
+	void AfterActorCulled(RE::Actor* a_actor)
+	{
+		if (g_actorsSeen.load(std::memory_order_relaxed) && PortalActorIndex(a_actor) < kMaxAnimatedActors) {
+			ClearNotVisible(a_actor->Get3D());
+		}
+	}
+
+	ActorScope::ActorScope(const RE::Actor* a_actor)
+	{
+		if (g_virtualCamera.load(std::memory_order_relaxed) && PortalActorIndex(a_actor) < kMaxAnimatedActors) {
+			++t_actorScope;
+			_entered = true;
+		}
+	}
+
+	ActorScope::~ActorScope()
+	{
+		if (_entered) {
+			--t_actorScope;
+		}
+	}
+
+	RE::NiCamera* ScopedCamera()
+	{
+		if (t_actorScope == 0) {
+			return nullptr;
+		}
+		auto* camera = g_virtualCamera.load(std::memory_order_relaxed);
+		if (camera) {
+			g_worldCameraCarried.fetch_add(1, std::memory_order_relaxed);
+		}
+		return camera;
+	}
+
+	bool DistanceThroughDoor(const RE::TESObjectREFR* a_first, const RE::TESObjectREFR* a_second, float& a_squared)
+	{
+		const auto* space = g_space.load(std::memory_order_acquire);
+		if (!space || !g_distanceThroughDoor.load(std::memory_order_relaxed)) {
+			return false;
+		}
+		const auto* player = RE::PlayerCharacter::GetSingleton();
+		const auto* other = a_first == player ? a_second : a_second == player ? a_first : nullptr;
+		if (!other || other->GetParentCell() != space->cell) {
+			return false;
+		}
+		const auto carried = space->toInterior * player->GetPosition();
+		a_squared = carried.GetSquaredDistance(other->GetPosition());
+		g_distancesCarried.fetch_add(1, std::memory_order_relaxed);
+		return true;
+	}
+
+	bool SoundThroughDoor(RE::NiPoint3& a_position)
+	{
+		const auto* space = g_space.load(std::memory_order_acquire);
+		if (!space || !g_soundThroughDoor.load(std::memory_order_relaxed) || a_position.GetDistance(space->center) > space->radius) {
+			return false;
+		}
+		if (a_position.x == 0.0f && a_position.y == 0.0f && a_position.z == 0.0f) {
+			return false;  // a sound with no place of its own
+		}
+		a_position = space->toExterior * a_position;
+		g_lastSound = a_position;
+		g_soundsCarried.fetch_add(1, std::memory_order_relaxed);
+		return true;
+	}
+
 	void NoteVisible(const RE::NiAVObject* a_object)
 	{
 		if (!t_culling || g_watchedEffects.empty()) {
@@ -2586,9 +2776,50 @@ namespace Portal
 		}
 	}
 
+	void BeforeParticlePack(PackedCamera& a_saved)
+	{
+		if (!t_inPass) {
+			return;
+		}
+		auto&       state = RE::BSGraphics::RendererShadowState::GetSingleton()->GetRuntimeData();
+		auto*       origin = reinterpret_cast<RE::NiPoint3*>(&state.posAdjust);  // the fields are private arrays of one eye
+		auto*       view = reinterpret_cast<RE::BSGraphics::ViewData*>(&state.cameraData);
+		const auto  heldUp = ReadVector(&view->viewUp);
+		const auto  heldRight = ReadVector(&view->viewRight);
+		++g_packCalls;
+		g_packHeldPortal += Faces(heldUp, heldRight, g_packPortal) ? 1 : 0;
+		g_packHeldMain += Faces(heldUp, heldRight, g_packMain) ? 1 : 0;
+		g_packHeldOther += !Faces(heldUp, heldRight, g_packPortal) && !Faces(heldUp, heldRight, g_packMain) ? 1 : 0;
+		g_packOriginDrift = (std::max)(g_packOriginDrift, origin->GetDistance(g_packPortal.origin));
+
+		const auto facing = static_cast<ParticleFacing>(Settings::Get().portalParticleFacing);
+		if (facing != ParticleFacing::kPortal && facing != ParticleFacing::kView) {
+			return;
+		}
+		a_saved = { .origin = *origin, .up = heldUp, .right = heldRight, .forward = ReadVector(&view->viewForward), .replaced = true };
+		const auto& camera = facing == ParticleFacing::kView ? g_packView : g_packPortal;
+		*origin = camera.origin;
+		WriteVector(&view->viewUp, camera.up);
+		WriteVector(&view->viewRight, camera.right);
+		WriteVector(&view->viewForward, camera.forward);
+	}
+
+	void AfterParticlePack(const PackedCamera& a_saved)
+	{
+		if (!a_saved.replaced) {
+			return;
+		}
+		auto& state = RE::BSGraphics::RendererShadowState::GetSingleton()->GetRuntimeData();
+		auto* view = reinterpret_cast<RE::BSGraphics::ViewData*>(&state.cameraData);
+		*reinterpret_cast<RE::NiPoint3*>(&state.posAdjust) = a_saved.origin;
+		WriteVector(&view->viewUp, a_saved.up);
+		WriteVector(&view->viewRight, a_saved.right);
+		WriteVector(&view->viewForward, a_saved.forward);
+	}
+
 	std::uint32_t BeforeEffectTechnique(std::uint32_t a_technique)
 	{
-		if (!g_inPass) {
+		if (!t_inPass) {
 			return a_technique;
 		}
 		++g_effectSetups;
@@ -2702,7 +2933,18 @@ namespace Portal
 		g_fullProcessing.store(settings.portalFullActorProcessing, std::memory_order_relaxed);
 		g_gameAnimation.store(settings.portalGameAnimatesActors, std::memory_order_relaxed);
 		WatchEffects();
-		g_space.store(new Space{ .cell = g_door.cell, .scene = g_door.scene.get(), .toInterior = g_door.toExterior.Invert() }, std::memory_order_release);
+		g_actorsSeen.store(settings.portalActorsSeen, std::memory_order_relaxed);
+		g_soundThroughDoor.store(settings.portalSoundThroughDoor, std::memory_order_relaxed);
+		g_distanceThroughDoor.store(settings.portalDistanceThroughDoor, std::memory_order_relaxed);
+		g_space.store(new Space{ .cell = g_door.cell,
+						  .scene = g_door.scene.get(),
+						  .toInterior = g_door.toExterior.Invert(),
+						  .toExterior = g_door.toExterior,
+						  .center = g_door.scene->worldBound.center,
+						  .radius = g_door.scene->worldBound.radius },
+			std::memory_order_release);
+		CarryCamera();
+		g_virtualCamera.store(settings.portalVirtualCamera ? g_camera.get() : nullptr, std::memory_order_relaxed);
 		g_active = true;
 
 		std::string lights;
@@ -2727,6 +2969,9 @@ namespace Portal
 	void Stop()
 	{
 		g_active = false;
+		g_virtualCamera.store(nullptr, std::memory_order_relaxed);
+		g_soundThroughDoor.store(false, std::memory_order_relaxed);
+		g_distanceThroughDoor.store(false, std::memory_order_relaxed);
 		g_space.store(nullptr, std::memory_order_release);
 		RemoveLights();
 		ForgetActors();
@@ -2738,6 +2983,38 @@ namespace Portal
 			g_quad->parent->DetachChild(g_quad.get());
 		}
 		g_door = {};
+	}
+
+	void Tick()
+	{
+		if (!g_active) {
+			return;
+		}
+		CarryCamera();
+		if (g_actorsSeen.load(std::memory_order_relaxed)) {
+			for (const auto& root : g_actorRoots) {
+				ClearNotVisible(root.get());
+			}
+		}
+		const auto now = Trace::NowUs();
+		if (now < g_nextActorRefreshUs) {
+			return;
+		}
+		RefreshActors(now);
+
+		// Lights added before their cell's references arrived hold no shapes, and the game collects a
+		// static light's shapes only once (0.8.22: a dark portal after a quick load).
+		auto* scene = WorldScene();
+		const bool lit = std::ranges::any_of(g_lights, [](const AddedLight& a_added) { return a_added.mirror || !a_added.light || !a_added.light->geomList.empty(); });
+		if (scene && !lit) {
+			for (auto& added : g_lights) {
+				if (added.light) {
+					CollectLitShapes(scene, added.light);
+				}
+			}
+			++g_shapeRecollects;
+			g_rebuildPasses = true;
+		}
 	}
 
 	bool Active()
@@ -2814,6 +3091,20 @@ namespace Portal
 							  .Int("fadesCarried", static_cast<std::int64_t>(g_pointsCarried[std::to_underlying(Carried::kFade)].exchange(0, std::memory_order_relaxed)))
 							  .Int("maxPassesPerFrame", static_cast<std::int64_t>(g_maxPassesPerFrame))
 							  .Bool("passAtFence", g_passAtFence.load(std::memory_order_relaxed))
+							  .Int("particleFacing", Settings::Get().portalParticleFacing)
+							  .Int("packCalls", static_cast<std::int64_t>(g_packCalls))
+							  .Int("packHeldPortal", static_cast<std::int64_t>(g_packHeldPortal))
+							  .Int("packHeldMain", static_cast<std::int64_t>(g_packHeldMain))
+							  .Int("packHeldOther", static_cast<std::int64_t>(g_packHeldOther))
+							  .Num("packOriginDrift", g_packOriginDrift)
+							  .Int("shapeRecollects", static_cast<std::int64_t>(g_shapeRecollects))
+							  .Bool("actorsSeen", g_actorsSeen.load(std::memory_order_relaxed))
+							  .Int("notVisibleCleared", static_cast<std::int64_t>(g_notVisibleCleared.exchange(0, std::memory_order_relaxed)))
+							  .Int("footFeedback", static_cast<std::int64_t>(g_footFeedback.exchange(0, std::memory_order_relaxed)))
+							  .Int("worldCameraCarried", static_cast<std::int64_t>(g_worldCameraCarried.exchange(0, std::memory_order_relaxed)))
+							  .Int("distancesCarried", static_cast<std::int64_t>(g_distancesCarried.exchange(0, std::memory_order_relaxed)))
+							  .Int("soundsCarried", static_cast<std::int64_t>(g_soundsCarried.exchange(0, std::memory_order_relaxed)))
+							  .Pos("lastSound", g_lastSound)
 							  .Str("leftoverGroups", std::format("0x{:05X}", g_leftoverGroups))
 							  .Str("fault", g_fault)
 							  .Bool("quadMaterialOurs", QuadMaterialNow() == g_quadMaterial)
@@ -2834,6 +3125,11 @@ namespace Portal
 							  .Json();
 		g_rendered = 0;
 		g_maxPassesPerFrame = 0;
+		g_packCalls = 0;
+		g_packHeldPortal = 0;
+		g_packHeldMain = 0;
+		g_packHeldOther = 0;
+		g_packOriginDrift = 0.0f;
 		g_leftoverGroups = 0;
 		g_skipped = 0;
 		g_cpuMsSum = 0.0;

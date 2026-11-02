@@ -1,6 +1,7 @@
 // CellLoadResearch: traces how Skyrim AE loads cells and locations during transitions.
 // Output: <sLogDirectory>\CellLoadResearch.log (text) and CellLoadResearch.trace.jsonl (trace).
 
+#include "AccessWatch.h"
 #include "Events.h"
 #include "Hooks.h"
 #include "InteriorSim.h"
@@ -213,7 +214,7 @@ namespace
 SKSE_PLUGIN_LOAD(const SKSE::LoadInterface* a_skse)
 {
 	// Built-in logger is off: it always writes to <MyDocuments>\My Games\...\SKSE.
-	SKSE::Init(a_skse, { .log = false, .trampoline = true, .trampolineSize = 64 });
+	SKSE::Init(a_skse, { .log = false, .trampoline = true, .trampolineSize = 128 });
 
 	auto& settings = Settings::Get();
 	settings.Load();
@@ -227,6 +228,7 @@ SKSE_PLUGIN_LOAD(const SKSE::LoadInterface* a_skse)
 			Trace::Init(directory);
 		}
 		Watchdog::Start(directory);
+		AccessWatch::Init(directory);
 	}
 
 	TracePluginInfo();

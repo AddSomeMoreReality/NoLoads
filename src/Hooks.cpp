@@ -1,5 +1,6 @@
 #include "Hooks.h"
 
+#include "AccessWatch.h"
 #include "Detectors.h"
 #include "Events.h"
 #include "Hud.h"
@@ -94,6 +95,21 @@ namespace
 				if (byPlayer) {
 					logs::info("[Door] {} -> {}", Trace::FormString(a_targetRef->GetParentCell()), Trace::FormString(destCell));
 				}
+			}
+
+			// 0.8.22-0.8.24: Idolaf came in through a door thousands of units away, within a second of the
+			// player. Where he stood and who sent him, for every NPC at a teleport door.
+			if (!byPlayer && a_activatorRef && a_targetRef) {
+				std::array<void*, 16> frames{};
+				const auto            count = ::RtlCaptureStackBackTrace(0, static_cast<DWORD>(frames.size()), frames.data(), nullptr);
+				std::string           stack;
+				for (std::size_t i = 0; i < count; ++i) {
+					stack += (stack.empty() ? "" : ",") + Trace::JsonString(Trace::DescribeAddress(reinterpret_cast<std::uintptr_t>(frames[i]), true));
+				}
+				args.Pos("activatorPos", a_activatorRef->GetPosition())
+					.Pos("doorPos", a_targetRef->GetPosition())
+					.Num("doorDistance", a_activatorRef->GetPosition().GetDistance(a_targetRef->GetPosition()))
+					.Raw("stack", "[" + stack + "]");
 			}
 
 			auto*     player = RE::PlayerCharacter::GetSingleton();
@@ -374,6 +390,7 @@ namespace
 			func(a_this, a_delta);
 			MainThread::Drain();
 			Hud::Tick();
+			AccessWatch::Tick();
 			Preload::Tick();
 			Detectors::Tick();
 			InteriorSim::Tick();
@@ -669,7 +686,10 @@ namespace
 	{
 		static void thunk(RE::Actor* a_this, RE::BSAnimationUpdateData& a_data)
 		{
-			func(a_this, a_data);
+			{
+				Portal::ActorScope scope{ a_this };
+				func(a_this, a_data);
+			}
 			Portal::AdjustAnimationUpdate(a_this, a_data);
 		}
 
@@ -721,10 +741,112 @@ namespace
 		static std::uint64_t thunk(RE::Actor* a_actor, float a_delta)
 		{
 			Portal::NoteMovementUpdate(a_actor);
+			Portal::ActorScope scope{ a_actor };
 			return func(a_actor, a_delta);
 		}
 
 		static inline decltype(&thunk) func;
+	};
+
+	// Character::Update (vfunc 0xAD, AE#37348 until overridden): everything an NPC does in a frame that
+	// measures against the camera runs inside it or inside the movement update above.
+	struct CharacterUpdate
+	{
+		static void thunk(RE::Character* a_this, float a_delta)
+		{
+			Portal::ActorScope scope{ a_this };
+			func(a_this, a_delta);
+		}
+
+		static inline REL::Relocation<decltype(thunk)> func;
+	};
+
+	// AE#36609: the camera of the world, read by the game's distance and fade checks (AE#19384, AE#37286,
+	// AE#37361, AE#37507, AE#37690, AE#38054, AE#38308, AE#43851, AE#44213). See docs/DISTANCE_CHECKS.md.
+	struct WorldCamera
+	{
+		static RE::NiCamera* thunk()
+		{
+			if (auto* camera = Portal::ScopedCamera()) {
+				return camera;
+			}
+			return func();
+		}
+
+		static inline decltype(&thunk) func;
+	};
+
+	// AE#19823 (TESObjectREFR::GetDistance) and AE#19824 (its square): 10 and 98 call sites. For references
+	// in different worlds they answer FLT_MAX. See docs/DISTANCE_CHECKS.md.
+	struct ReferenceDistance
+	{
+		static float thunk(const RE::TESObjectREFR* a_this, const RE::TESObjectREFR* a_other, bool a_disabled, bool a_anyWorld)
+		{
+			float squared = 0.0f;
+			if (Portal::DistanceThroughDoor(a_this, a_other, squared)) {
+				return std::sqrt(squared);
+			}
+			return func(a_this, a_other, a_disabled, a_anyWorld);
+		}
+
+		static inline decltype(&thunk) func;
+	};
+
+	struct ReferenceDistanceSquared
+	{
+		static float thunk(const RE::TESObjectREFR* a_this, const RE::TESObjectREFR* a_other, bool a_disabled, bool a_anyWorld)
+		{
+			float squared = 0.0f;
+			if (Portal::DistanceThroughDoor(a_this, a_other, squared)) {
+				return squared;
+			}
+			return func(a_this, a_other, a_disabled, a_anyWorld);
+		}
+
+		static inline decltype(&thunk) func;
+	};
+
+	// HighActorCuller vfunc 1 (AE#40335): marks an actor's 3D kNotVisible by the main camera's frustum.
+	struct HighActorCulled
+	{
+		static void thunk(void* a_this, RE::Actor* a_actor)
+		{
+			func(a_this, a_actor);
+			Portal::AfterActorCulled(a_actor);
+		}
+
+		static inline REL::Relocation<decltype(thunk)> func;
+	};
+
+	// AE#43690: moves an actor's position towards its character controller, by the foot IK. Without it
+	// (kNotVisible, AE#41375, AE#41447) a walking actor's X and Y follow the controller and Z stays:
+	// AE#43691 keeps Z for actors in the foot IK database (AE#401101), and only this function moves it.
+	struct FootFeedback
+	{
+		static bool thunk(RE::Actor* a_actor)
+		{
+			Portal::NoteFootFeedback(a_actor);
+			return func(a_actor);
+		}
+
+		static inline decltype(&thunk) func;
+	};
+
+	// BSXAudio2GameSound::SetEmitterPositionImpl (vfunc 0x0F, AE#68007): every sound's place in the world,
+	// moving or not, on the audio thread. It works out listenerDistance from it.
+	struct SoundEmitterPosition
+	{
+		static constexpr std::uint32_t kAtListener = 1u << 10;  // AE#68007 puts such a sound at the listener itself
+
+		static void thunk(RE::BSGameSound* a_this, const RE::NiPoint3& a_position)
+		{
+			RE::NiPoint3 position = a_position;
+			const bool   carried = (a_this->soundType.underlying() & kAtListener) == 0 && !a_this->IsMusic() && Portal::SoundThroughDoor(position);
+			func(a_this, position);
+			Probe::NoteSound(a_this, position, carried);
+		}
+
+		static inline REL::Relocation<decltype(thunk)> func;
 	};
 
 	// AE#13291: TES's per-frame update of the loaded cells (a job, AE#39067): it adds the frame's time to
@@ -847,6 +969,22 @@ namespace
 		static inline REL::Relocation<decltype(thunk)> func;
 	};
 
+	// AE#77463: the quads of NiParticles, built on the CPU to face RendererShadowState's camera, called by
+	// the batch renderer's generic draw (AE#107637). Flames and smoke are particles, not billboard nodes. A
+	// detour, not a call hook: the mirrors mod hooks that call site and insists on finding it native.
+	struct PackParticles
+	{
+		static void thunk(std::uint32_t a_count, RE::NiParticles* a_particles, void* a_vertices)
+		{
+			Portal::PackedCamera saved;
+			Portal::BeforeParticlePack(saved);
+			func(a_count, a_particles, a_vertices);
+			Portal::AfterParticlePack(saved);
+		}
+
+		static inline decltype(&thunk) func;
+	};
+
 	std::atomic<bool> g_detoursReady{ false };
 	std::atomic<bool> g_callsReady{ false };
 
@@ -875,10 +1013,12 @@ namespace
 		const bool lod = WriteCall<CharControllerLodDistance>("Actor::Update -> CharController LOD distance", REL::ID(37348), 0x1F3, REL::ID(78274));
 		const bool fade = WriteCall<FadeNodeDistance>("animated reference fade -> fade node distance", REL::ID(19384), 0xE4, REL::ID(105486));
 		g_callsReady = lod && fade;
+		bool fence = false;
 		if (Settings::Get().portalPassAtSceneListFence) {
-			Portal::SetPassAtSceneListFence(WriteCall<SceneListFence>("RenderPlayerView -> scene list fence", REL::ID(36559), 0x17E, REL::ID(69353)));
+			fence = WriteCall<SceneListFence>("RenderPlayerView -> scene list fence", REL::ID(36559), 0x17E, REL::ID(69353));
+			Portal::SetPassAtSceneListFence(fence);
 		}
-		logs::info("call hooks installed: controller LOD {}, fade {}, pass at the scene list fence {}", lod, fade, Settings::Get().portalPassAtSceneListFence);
+		logs::info("call hooks installed: controller LOD {}, fade {}, pass at the scene list fence {}", lod, fade, fence);
 	}
 
 	template <class Hook>
@@ -929,6 +1069,11 @@ namespace
 			results.emplace_back("ShadowSceneNode::SetPortalGraph", AttachDetour<SetPortalGraph>(REL::Relocation<std::uintptr_t>{ REL::ID(106385) }.address()));
 			results.emplace_back("TESObjectCELL::Detach", AttachDetour<CellDetach>(REL::Relocation<std::uintptr_t>{ REL::ID(19130) }.address()));
 			results.emplace_back("NiPSysEmitter::EmitParticles", AttachDetour<EmitParticles>(REL::Relocation<std::uintptr_t>{ REL::ID(74651) }.address()));
+			results.emplace_back("NiParticles::PackQuads", AttachDetour<PackParticles>(RELOCATION_ID(75657, 77463)));
+			results.emplace_back("Main::WorldCamera", AttachDetour<WorldCamera>(REL::Relocation<std::uintptr_t>{ REL::ID(36609) }.address()));
+			results.emplace_back("Actor::FootFeedback", AttachDetour<FootFeedback>(REL::Relocation<std::uintptr_t>{ REL::ID(43690) }.address()));
+			results.emplace_back("TESObjectREFR::GetDistance", AttachDetour<ReferenceDistance>(RELOCATION_ID(19396, 19823)));
+			results.emplace_back("TESObjectREFR::GetDistanceSquared", AttachDetour<ReferenceDistanceSquared>(REL::Relocation<std::uintptr_t>{ REL::ID(19824) }.address()));
 		}
 
 		bool ok = true;
@@ -1001,6 +1146,11 @@ namespace Hooks
 		WriteVfunc<EffectGetRenderPasses>(effectProperty, 0x2A);
 		REL::Relocation<std::uintptr_t> character{ RE::VTABLE_Character[0] };  // the interior's NPCs; Actor's own vtable has the same function
 		WriteVfunc<ModifyAnimationUpdateData>(character, 0x79);
+		WriteVfunc<CharacterUpdate>(character, 0xAD);  // Actor::Update
+		REL::Relocation<std::uintptr_t> highActorCuller{ RE::VTABLE_HighActorCuller[0] };
+		WriteVfunc<HighActorCulled>(highActorCuller, 0x1);
+		REL::Relocation<std::uintptr_t> gameSound{ RE::VTABLE_BSXAudio2GameSound[0] };
+		WriteVfunc<SoundEmitterPosition>(gameSound, 0x0F);
 
 		logs::info("vfunc hooks installed");
 
@@ -1011,5 +1161,12 @@ namespace Hooks
 	bool Ready()
 	{
 		return g_detoursReady.load() && g_callsReady.load();
+	}
+
+	void BufferInterior(RE::TESObjectCELL* a_cell)
+	{
+		if (auto* tes = RE::TES::GetSingleton(); tes && g_detoursReady.load()) {
+			TesBufferInterior::func(tes, a_cell);
+		}
 	}
 }

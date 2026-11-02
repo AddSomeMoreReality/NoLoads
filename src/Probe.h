@@ -14,4 +14,8 @@ namespace Probe
 
 	// Thread-safe: probe on the next tick (e.g. right after a transition or on the hotkey).
 	void Request(std::string_view a_reason);
+
+	// The audio thread, from the sound position hook: remembers the sounds playing, for the probe's "sounds".
+	// 0.8.23: the bard played and sang in silence, with the player inside.
+	void NoteSound(const RE::BSGameSound* a_sound, const RE::NiPoint3& a_position, bool a_carried);
 }

@@ -33,6 +33,7 @@
 | Ячейки рендера | `[Portal] iColorSlot`, `iDepthSlot` | `17`, `9` | Свой выбор свободной ячейки или вообще без подмены ячеек |
 | Индекс группы | `Portal.cpp`, `kRefractionNormalsGroup`, `kGeometryGroups` | `5`, `16` | В разборе мода зеркал так на SE и AE, на VR групп 19 |
 | Безымянные поля | `Portal.cpp` | `BSAnimationUpdateData::unk2A`, `unk2C`; `BSFadeNode::unk144`; `NiParticleSystem::unk180`, `unk188` | Назвать в NG, сверить на SE |
+| Звук у слушателя | `Hooks.cpp`, `SoundEmitterPosition::kAtListener` | Бит 10 в `BSGameSound::soundType` | Назвать в NG, сверить на SE |
 
 ### Индексы виртуальных функций
 
@@ -47,7 +48,9 @@
 | `NiNode`, `BSFadeNode`, `BSMultiBoundNode`, `BSMultiBoundRoom`, `BSTriShape`, `BSDynamicTriShape`, `BSSubIndexTriShape` | `0x34` |
 | `BSEffectShader` | `2` |
 | `BSEffectShaderProperty` | `0x2A` |
-| `Character` | `0x79` |
+| `Character` | `0x79`, `0xAD` |
+| `HighActorCuller` | `1` |
+| `BSXAudio2GameSound` | `0x0F` |
 
 ## 3. Номера Address Library
 
@@ -62,11 +65,13 @@ SE и AE нумеруются отдельно. Без SE-номера код н
 | 106385 | 99741 | `ShadowSceneNode::SetPortalGraph` |
 | 107142 | 100424 | `Main::RenderWorld` |
 
-**SE-номер неизвестен (34 штуки):**
+`RELOCATION_ID` уже стоит у `AE#106600` (SE 99955), `AE#77463` (SE 75657, упаковщик частиц) и `AE#19823` (SE 19396, `GetDistance`).
+
+**SE-номер неизвестен (37 штук):**
 
 | Модуль | AE-номера |
 |---|---|
-| `Hooks.cpp` | 13291, 13325, 13370, 13419, 13434, 13721, 18547, 19130, 19384, 37277, 37348, 37350, 40845, 41466, 61410, 74651, 77851, 78274, 105486 |
+| `Hooks.cpp` | 13291, 13325, 13370, 13419, 13434, 13721, 18547, 19130, 19384, 19824, 36609, 37277, 37348, 37350, 40845, 41466, 43690, 61410, 74651, 77851, 78274, 105486 |
 | `InteriorSim.cpp` | 18890, 18900, 18976, 19046, 19063, 19130, 77905, 77906, 400333 |
 | `Portal.cpp` | 18966, 41496, 105643, 106342, 388630, 400333, 411270 |
 | `Preload.cpp` | 18540 |
@@ -81,9 +86,12 @@ SE и AE нумеруются отдельно. Без SE-номера код н
 - `BSShaderAccumulator`: `batchRenderer` на `+0x130`, на VR на `+0x158`;
 - `BSBatchRenderer::renderPass` хранит записи `PassGroup` прямо в массиве, хотя NG объявляет указатели.
 
+Проверено на 1.6.1170 самостоятельно: `RendererShadowState` (`AE#388819`) + `0x35C` = `AE#388909`, `+0x380` = `AE#388915`, `+0x390` = `AE#388918`. Упаковщик частиц `AE#77463` читает именно эти поля.
+
 ## 5. Уже убрано
 
 | Что | Версия | Как |
 |---|---|---|
 | `bhkWorld + 0xC5F9` | 0.8.22 | Поле NG `bhkWorld::toggleCollision` |
 | Ручной вызов `AE#18995` | 0.8.22 | `TESObjectCELL::GetbhkWorld()` |
+| Поля камеры упаковщика | 0.8.23 | Адреса полей NG `posAdjust` и `cameraData`, числовых сдвигов нет. Перехват — detour по ID, без смещения внутри `AE#107637` |

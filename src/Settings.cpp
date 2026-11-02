@@ -119,6 +119,8 @@ void Settings::Load()
 	ini.Read(L"Hotkeys", L"iDetectorsReport", detectorsKey);
 	ini.Read(L"Hotkeys", L"iInteriorSimStage", interiorSimKey);
 	ini.Read(L"Hotkeys", L"iToggleTemporalAA", toggleTemporalAAKey);
+	ini.Read(L"Hotkeys", L"iToggleSoftEffects", toggleSoftEffectsKey);
+	ini.Read(L"Hotkeys", L"iAccessWatch", accessWatchKey);
 
 	overrideSets.clear();
 	for (int i = 1; i <= 9; ++i) {
@@ -179,10 +181,19 @@ void Settings::Load()
 	ini.Read(L"Portal", L"bIgnoreParticleBudget", portalIgnoreParticleBudget);
 	ini.Read(L"Portal", L"bMasterParticles", portalMasterParticles);
 	ini.Read(L"Portal", L"bPassAtSceneListFence", portalPassAtSceneListFence);
+	ini.Read(L"Portal", L"iParticleFacing", portalParticleFacing);
+	ini.Read(L"Portal", L"bActorsSeen", portalActorsSeen);
+	ini.Read(L"Portal", L"bVirtualCamera", portalVirtualCamera);
+	ini.Read(L"Portal", L"bSoundThroughDoor", portalSoundThroughDoor);
+	ini.Read(L"Portal", L"bDistanceThroughDoor", portalDistanceThroughDoor);
 
 	ini.Read(L"Watchdog", L"bEnabled", watchdogEnabled);
 	ini.Read(L"Watchdog", L"fHangSeconds", watchdogHangSeconds);
 	ini.Read(L"Watchdog", L"bTerminate", watchdogTerminate);
+
+	ini.Read(L"AccessWatch", L"bEnabled", accessWatchEnabled);
+	ini.Read(L"AccessWatch", L"fSeconds", accessWatchSeconds);
+	ini.Read(L"AccessWatch", L"iMaxHits", accessWatchMaxHits);
 
 	ini.Read(L"Probe", L"bEnabled", probeEnabled);
 	ini.Read(L"Probe", L"fIntervalSeconds", probeIntervalSeconds);

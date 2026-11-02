@@ -52,6 +52,9 @@ namespace Portal
 	void               Stop();
 	[[nodiscard]] RE::NiAVObject* Quad();
 
+	// Main thread, every PlayerCharacter::Update: the work that does not depend on the door being seen.
+	void Tick();
+
 	// Any thread.
 	[[nodiscard]] bool Active();
 	[[nodiscard]] std::string_view PassPhaseName();  // the step of the pass running now
@@ -71,6 +74,9 @@ namespace Portal
 	// the portal's picture doubled while its texture was clean; is it TAA mixing frames?
 	void ToggleTemporalAA();
 
+	// Main thread (hotkey, 0.8.24): soft particles in the portal's pass on or off, to compare the flames at once.
+	void ToggleSoftEffects();
+
 	// Character::ModifyAnimationUpdateData hook (vfunc 0x79, AE#38054), after the original, on whatever
 	// thread updates the actor: an actor of the portal's interior gets a full update, as if seen.
 	void AdjustAnimationUpdate(const RE::Actor* a_actor, RE::BSAnimationUpdateData& a_data);
@@ -89,6 +95,44 @@ namespace Portal
 	// Detour of AE#37350 (the actor's movement update, a job of AE#41306 per high actor), any thread:
 	// counts the calls for the portal's interior actors.
 	void NoteMovementUpdate(const RE::Actor* a_actor);
+
+	// Detour of AE#43690 (the foot IK feedback of an actor's height), any thread: counts the calls for the
+	// portal's interior actors. Its callers skip an actor whose 3D is kNotVisible.
+	void NoteFootFeedback(const RE::Actor* a_actor);
+
+	// HighActorCuller vfunc 1 (AE#40335), after the original: the game marks an actor's 3D kNotVisible by the
+	// main camera's frustum, and only BSFadeNodeCuller (AE#107507) clears it, for nodes of the main camera's
+	// scene. The portal's interior actors are seen by the portal's camera: the mark goes
+	// ([Portal] bActorsSeen). Tick does the same every frame.
+	void AfterActorCulled(RE::Actor* a_actor);
+
+	// While an actor of the portal's interior updates on this thread, the camera of the world (AE#36609) is
+	// the portal's camera, which stands in the player's eye carried through the door ([Portal] bVirtualCamera).
+	// Every distance and fade check the game makes against that camera then measures through the door.
+	class ActorScope
+	{
+	public:
+		explicit ActorScope(const RE::Actor* a_actor);
+		~ActorScope();
+		ActorScope(const ActorScope&) = delete;
+		ActorScope& operator=(const ActorScope&) = delete;
+
+	private:
+		bool _entered{ false };
+	};
+
+	// Detour of AE#36609, any thread: the camera to answer with, or null for the game's own.
+	[[nodiscard]] RE::NiCamera* ScopedCamera();
+
+	// Detours of AE#19823 and AE#19824 (TESObjectREFR::GetDistance and its squared form), any thread: the
+	// game answers "infinitely far" for two references in different worlds. When one is the player and the
+	// other stands in the portal's interior, a_squared is the distance through the door
+	// ([Portal] bDistanceThroughDoor).
+	[[nodiscard]] bool DistanceThroughDoor(const RE::TESObjectREFR* a_first, const RE::TESObjectREFR* a_second, float& a_squared);
+
+	// BSXAudio2GameSound::SetEmitterPositionImpl (vfunc 0x0F), the audio thread: a sound inside the portal's
+	// interior is carried through the door to where it is heard in the street ([Portal] bSoundThroughDoor).
+	bool SoundThroughDoor(RE::NiPoint3& a_position);
 
 	// What a point carried through the door is for: counted apart in the status.
 	enum class Carried
@@ -134,6 +178,22 @@ namespace Portal
 	// them back after the call.
 	[[nodiscard]] bool BeforeEffectPasses(const RE::BSGeometry* a_geometry);
 	void               AfterEffectPasses(bool a_held, const RE::BSGeometry* a_geometry, bool a_gotPasses);
+
+	// What BeforeParticlePack replaced in RendererShadowState.
+	struct PackedCamera
+	{
+		RE::NiPoint3 origin;
+		RE::NiPoint3 up;
+		RE::NiPoint3 right;
+		RE::NiPoint3 forward;
+		bool         replaced{ false };
+	};
+
+	// AE#107637 + 0xC4 calls AE#77463, which builds the quads of NiParticles (flames, embers, smoke) on the
+	// CPU, facing the camera RendererShadowState holds. BeforeParticlePack counts what it holds during our
+	// pass and replaces it ([Portal] iParticleFacing); AfterParticlePack puts it back.
+	void BeforeParticlePack(PackedCamera& a_saved);
+	void AfterParticlePack(const PackedCamera& a_saved);
 
 	// BSEffectShader::SetupTechnique hook, before the original: counts the effects our pass draws and,
 	// in depth mode 2, copies the depth buffer at the first of them. Returns the technique to set up:

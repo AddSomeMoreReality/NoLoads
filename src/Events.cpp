@@ -1,5 +1,6 @@
 #include "Events.h"
 
+#include "AccessWatch.h"
 #include "Detectors.h"
 #include "Hud.h"
 #include "InteriorSim.h"
@@ -465,6 +466,14 @@ namespace
 				if (button && button->IsDown() && button->GetIDCode() == Settings::Get().toggleTemporalAAKey) {
 					Trace::Write("input.hotkey", Trace::Args{}.Str("action", "toggleTemporalAA"));
 					MainThread::Post(Portal::ToggleTemporalAA);
+				}
+				if (button && button->IsDown() && button->GetIDCode() == Settings::Get().toggleSoftEffectsKey) {
+					Trace::Write("input.hotkey", Trace::Args{}.Str("action", "toggleSoftEffects"));
+					MainThread::Post(Portal::ToggleSoftEffects);
+				}
+				if (button && button->IsDown() && button->GetIDCode() == Settings::Get().accessWatchKey) {
+					Trace::Write("input.hotkey", Trace::Args{}.Str("action", "accessWatch"));
+					MainThread::Post(AccessWatch::Start);
 				}
 				if (button && button->IsDown() && button->GetIDCode() == Settings::Get().snapshotKey) {
 					Trace::Write("input.hotkey", Trace::Args{}.Str("action", "snapshot"));

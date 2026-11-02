@@ -20,6 +20,8 @@ struct Settings
 	std::uint32_t detectorsKey{ 64 };         // F6: doors and windows summary on the HUD
 	std::uint32_t interiorSimKey{ 66 };       // F8: InteriorSim off / portal
 	std::uint32_t toggleTemporalAAKey{ 62 };  // F4: the game's TAA on or off in memory (0.8.20; until 0.8.19 soft particles in the portal)
+	std::uint32_t toggleSoftEffectsKey{ 60 }; // F2: soft particles in the portal's pass on or off
+	std::uint32_t accessWatchKey{ 61 };       // F3: capture who reads the player's and the camera's position
 
 	// [Overrides] sSet1..sSet9: "name:Section=value | ..." applied in memory by the hotkey
 	std::vector<std::string> overrideSets;
@@ -77,13 +79,23 @@ struct Settings
 	bool          portalGameAnimatesActors{ true };  // ... and the game's own animation jobs (AE#41466)
 	bool          portalSoftEffects{ true };         // soft particles in the portal's pass
 	bool          portalIgnoreParticleBudget{ true };  // the interior's emitters ignore the game's particle budget
-	bool          portalMasterParticles{ false };      // the pass also culls the master particle systems (candle flames); froze 0.8.21 before RenderWorld
-	bool          portalPassAtSceneListFence{ false };  // the pass runs at the scene list fence, not right before RenderWorld
+	bool          portalMasterParticles{ true };       // the pass also culls the master particle systems (candle flames); only at the fence: froze 0.8.21 before RenderWorld
+	bool          portalPassAtSceneListFence{ true };  // the pass runs at the scene list fence, not right before RenderWorld
+	std::uint32_t portalParticleFacing{ 2 };           // what particle quads face: 0 the game's choice, 1 the portal camera, 2 the player's view through the door
+	bool          portalActorsSeen{ true };            // the interior's actors count as seen: no kNotVisible (their height follows the controller)
+	bool          portalVirtualCamera{ true };         // the world camera, for the interior's actors, is the portal's camera
+	bool          portalSoundThroughDoor{ true };      // the interior's sounds are heard in the street
+	bool          portalDistanceThroughDoor{ true };   // GetDistance between the player and the interior's references goes through the door
 
 	// [Watchdog] sees a frozen game from outside while the portal runs
 	bool  watchdogEnabled{ true };
 	float watchdogHangSeconds{ 6.0f };
 	bool  watchdogTerminate{ true };  // end the process after writing the stacks
+
+	// [AccessWatch] hardware breakpoints on the positions the game measures from
+	bool          accessWatchEnabled{ true };
+	float         accessWatchSeconds{ 3.0f };
+	std::uint32_t accessWatchMaxHits{ 20000000 };  // the capture ends early after that many
 
 	// [Probe] simulation probe (H11, H12)
 	bool          probeEnabled{ true };

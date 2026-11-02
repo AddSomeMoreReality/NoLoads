@@ -10,9 +10,77 @@ namespace
 	constexpr std::uint32_t kUnattached = 4;  // TESObjectCELL::CellState
 	constexpr std::uint32_t kAttached = 7;
 
+	constexpr std::int64_t kSceneCheckUs = 1'000'000;
+	constexpr std::int64_t kSoundFreshUs = 6'000'000;
+
+	// One slot per sound by its address; a clash loses the older one. Written on the audio thread, read for
+	// the probe: a torn value only spoils one row of a diagnostic.
+	struct HeardSound
+	{
+		const RE::BSGameSound* sound{ nullptr };
+		RE::NiPoint3           position;
+		float                  listenerDistance{ 0.0f };
+		float                  volume{ 0.0f };
+		std::uint32_t          file{ 0 };
+		std::uint32_t          directory{ 0 };
+		std::uint32_t          durationMs{ 0 };
+		std::int64_t           seenUs{ 0 };
+		bool                   carried{ false };
+	};
+	std::array<HeardSound, 64> g_heardSounds{};
+
+	std::string SoundsJson()
+	{
+		const auto  now = Trace::NowUs();
+		std::string json;
+		for (const auto& heard : g_heardSounds) {
+			if (heard.sound && now - heard.seenUs < kSoundFreshUs) {
+				json += (json.empty() ? "" : ",") + Trace::Args{}
+														.Pos("pos", heard.position)
+														.Num("listenerDistance", heard.listenerDistance)
+														.Num("volume", heard.volume)
+														.Int("durationMs", heard.durationMs)
+														.Hex("file", heard.file)
+														.Hex("dir", heard.directory)
+														.Bool("carried", heard.carried)
+														.Json();
+			}
+		}
+		return "[" + json + "]";
+	}
+
 	std::int64_t g_nextProbeUs{ 0 };
 	std::mutex   g_requestLock;
 	std::string  g_requested;  // reason of a requested probe, empty if none; guarded by g_requestLock
+	std::int64_t         g_nextSceneCheckUs{ 0 };
+	std::set<RE::FormID> g_playingScenes;
+
+	// Scenes that started or stopped: a bard's song is one, and 0.8.22 saw it break off. NG does not
+	// define the scene events, so the scenes' own flag is polled.
+	void TrackScenes(std::int64_t a_now)
+	{
+		auto* data = RE::TESDataHandler::GetSingleton();
+		if (a_now < g_nextSceneCheckUs || !data) {
+			return;
+		}
+		g_nextSceneCheckUs = a_now + kSceneCheckUs;
+		auto* player = RE::PlayerCharacter::GetSingleton();
+		for (const auto* scene : data->GetFormArray<RE::BGSScene>()) {
+			if (!scene || scene->isPlaying == g_playingScenes.contains(scene->GetFormID())) {
+				continue;
+			}
+			if (scene->isPlaying) {
+				g_playingScenes.insert(scene->GetFormID());
+			} else {
+				g_playingScenes.erase(scene->GetFormID());
+			}
+			Trace::Write("scene.change", Trace::Args{}
+											 .FormID("scene", scene->GetFormID())
+											 .Bool("playing", scene->isPlaying)
+											 .Form("quest", scene->parentQuest)
+											 .Cell("playerCell", player ? player->GetParentCell() : nullptr));
+		}
+	}
 
 	std::string CellJson(RE::TESObjectCELL* a_cell, std::string_view a_category)
 	{
@@ -149,8 +217,10 @@ namespace
 		for (auto* cell : linked) {
 			add(cell, "doorInterior");
 		}
-		if (tes->interiorBuffer) {
-			for (std::uint32_t i = 0; i < 3; ++i) {  // uInterior Cell Buffer=3, confirmed by H9
+		auto*       ini = RE::INISettingCollection::GetSingleton();
+		const auto* bufferSetting = ini ? ini->GetSetting("uInterior Cell Buffer:General") : nullptr;  // its length, H9
+		if (tes->interiorBuffer && bufferSetting) {
+			for (std::uint32_t i = 0; i < bufferSetting->data.u; ++i) {
 				add(tes->interiorBuffer[i], "bufferedInterior");
 			}
 		}
@@ -184,12 +254,28 @@ namespace
 				.Raw("masters", Portal::MasterParticlesJson(playerCell->GetRuntimeData().loadedData->cell3D.get()));
 		}
 
+		args.Raw("sounds", SoundsJson());
+
 		Trace::Write("probe", args, nullptr, true);
 	}
 }
 
 namespace Probe
 {
+	void NoteSound(const RE::BSGameSound* a_sound, const RE::NiPoint3& a_position, bool a_carried)
+	{
+		auto& heard = g_heardSounds[(reinterpret_cast<std::uintptr_t>(a_sound) >> 4) % g_heardSounds.size()];
+		heard.sound = a_sound;
+		heard.position = a_position;
+		heard.listenerDistance = a_sound->listenerDistance;
+		heard.volume = a_sound->volume;
+		heard.file = a_sound->resourceID.file;
+		heard.directory = a_sound->resourceID.dir;
+		heard.durationMs = a_sound->durationMilliseconds;
+		heard.seenUs = Trace::NowUs();
+		heard.carried = a_carried;
+	}
+
 	void Tick()
 	{
 		const auto& settings = Settings::Get();
@@ -202,6 +288,7 @@ namespace Probe
 			reason.swap(g_requested);
 		}
 		const auto now = Trace::NowUs();
+		TrackScenes(now);
 		if (reason.empty() && now < g_nextProbeUs) {
 			return;
 		}

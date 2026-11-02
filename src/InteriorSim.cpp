@@ -19,6 +19,8 @@ namespace
 	constexpr std::uint32_t  kStagePortal = 1;  // the interior simulated and drawn by a second camera into a quad in its doorway (Portal)
 	constexpr std::int64_t   kPromoteIntervalUs = 1'000'000;
 	constexpr std::int64_t   kAttachRetryUs = 1'000'000;
+	constexpr std::int64_t   kSettleUs = 1'500'000;     // after a loading screen or a load of the interior: the autosave, the first references
+	constexpr std::int64_t   kActors3DWaitUs = 8'000'000;  // the longest wait for the interior's actors to get their 3D
 	constexpr float          kUnitsPerMeter = 70.0f;
 
 	// the door rectangle guessed from the door's bound sphere radius when it has no CPU vertex copy
@@ -63,6 +65,8 @@ namespace
 	std::atomic<const void*>                   g_hostRoot{ nullptr };  // the same, compared from the grid hooks
 	std::int64_t                               g_nextAttachUs{ 0 };
 	std::string                                g_renderFailure;
+	std::int64_t                               g_loadedSinceUs{ 0 };  // the interior is loaded since then; 0: it is not
+	std::atomic<std::int64_t>                  g_transitionEndUs{ 0 };
 
 	// culling: OnVisible calls (from any thread) for the portal quad, the interior's nodes the portal
 	// camera's culling should reach, and for a baseline the game draws itself. The culling process calls OnVisible for every object that
@@ -107,6 +111,17 @@ namespace
 		return player ? player->GetParentCell() : nullptr;
 	}
 
+	std::size_t ActorsWithout3D(RE::TESObjectCELL* a_cell)
+	{
+		std::size_t count = 0;
+		a_cell->ForEachReference([&](RE::TESObjectREFR* a_ref) {
+			const auto* actor = a_ref ? a_ref->As<RE::Actor>() : nullptr;
+			count += actor && !actor->IsDisabled() && !actor->Get3D() ? 1 : 0;
+			return RE::BSContainer::ForEachResult::kContinue;
+		});
+		return count;
+	}
+
 	// Why the stages cannot run right now, or empty when they can.
 	std::string Blocker(RE::TESObjectCELL* a_cell, RE::TESObjectCELL* a_playerCell)
 	{
@@ -125,6 +140,18 @@ namespace
 		const auto state = Trace::CellState(a_cell);
 		if (state != kUnattached && !(state == kAttached && g_attached.load() == a_cell)) {
 			return std::format("interior is {}", Trace::CellStateName(state));
+		}
+		// kUnattached comes right after the load is queued, long before the references have their 3D: a
+		// portal started then collected no shapes for its lights, and MoveToHigh pulled actors that were
+		// not loaded (0.8.22). The first seconds after an exit also hold the autosave, which detaches it.
+		if (state == kUnattached && !Portal::Active()) {
+			const auto now = Trace::NowUs();
+			if (now < (std::max)(g_loadedSinceUs + kSettleUs, g_transitionEndUs.load() + kSettleUs)) {
+				return "interior is settling";
+			}
+			if (now < g_loadedSinceUs + kActors3DWaitUs && ActorsWithout3D(a_cell) > 0) {
+				return "interior's actors have no 3D yet";
+			}
 		}
 		return {};
 	}
@@ -253,6 +280,8 @@ namespace
 										 .Int("attaches", static_cast<std::int64_t>(g_attaches))
 										 .Int("charControllersBefore", static_cast<std::int64_t>(controllersBefore))
 										 .Int("charControllersAfter", static_cast<std::int64_t>(CountCharControllers(a_cell)))
+										 .Bool("refsFullyLoaded", loaded && loaded->refsFullyLoaded)
+										 .Int("queuedRefs", loaded ? loaded->queuedRefCount : -1)
 										 .Bool("rootInOurNode", root->parent == g_attachRoot.get())
 										 .Int("portalGraphsKept", static_cast<std::int64_t>(g_portalGraphsKept.load())),
 			nullptr, true);
@@ -277,8 +306,11 @@ namespace
 			return;
 		}
 		const auto state = Trace::CellState(cell);
-		g_attached = nullptr;
-		ReleaseAttached3D();
+		{
+			const std::scoped_lock lock{ g_worldLock, g_attachLock };  // the per-frame updates may be walking it
+			g_attached = nullptr;
+			ReleaseAttached3D();
+		}
 		Trace::Write("interior.sim", Trace::Args{}.Str("action", "cellLost").Cell("cell", cell).Str("state", Trace::CellStateName(state)), nullptr, true);
 		DetachNow("cell lost");  // the portal started on an attached cell; it starts again
 	}
@@ -823,6 +855,12 @@ namespace InteriorSim
 		auto*      cell = Preload::Interior();
 		auto*      playerCell = PlayerCell();
 		const auto stage = g_stage.load();
+		const auto cellState = Trace::CellState(cell);
+		if (cellState != kUnattached && cellState != kAttached) {
+			g_loadedSinceUs = 0;
+		} else if (g_loadedSinceUs == 0) {
+			g_loadedSinceUs = now;
+		}
 		const auto blocker = stage > 0 ? Blocker(cell, playerCell) : std::string{ "off" };
 		const bool ready = blocker.empty();
 		g_playerWorld = ready ? playerCell->GetbhkWorld() : nullptr;
@@ -830,6 +868,7 @@ namespace InteriorSim
 
 		CheckAttachment();
 		UpdateRender(cell, ready, now);
+		Portal::Tick();
 		if (ready && stage == kStagePortal && now >= g_nextPromoteUs) {
 			g_nextPromoteUs = now + kPromoteIntervalUs;
 			PromoteActors(cell);
@@ -889,6 +928,8 @@ namespace InteriorSim
 		g_transition = a_active;
 		if (a_active) {
 			g_playerWorld = nullptr;
+		} else {
+			g_transitionEndUs = Trace::NowUs();
 		}
 	}
 
@@ -1003,6 +1044,8 @@ namespace InteriorSim
 		const auto* loaded = a_cell ? a_cell->GetRuntimeData().loadedData : nullptr;
 		auto*       root = loaded ? loaded->cell3D.get() : nullptr;
 		if (root && g_attachRoot && root->parent == g_attachRoot.get()) {
+			// Only the game's own detach gets here: DetachCell, which holds this lock, took the 3D off first.
+			const std::scoped_lock lock{ g_attachLock };
 			g_attachRoot->DetachChild(root);
 			Trace::Write("interior.sim", Trace::Args{}.Str("action", "cellDetachedByGame").Cell("cell", const_cast<RE::TESObjectCELL*>(a_cell)), nullptr, true);
 		}
