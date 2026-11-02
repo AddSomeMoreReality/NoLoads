@@ -109,7 +109,7 @@ void Settings::Load()
 	ini.Read(L"General", L"bReadCellBuffers", readCellBuffers);
 	ini.Read(L"General", L"bLogCellAttachPerRef", logCellAttachPerRef);
 	ini.Read(L"General", L"bBlockDoorsInCombat", blockDoorsInCombat);
-	ini.Read(L"General", L"bShowCellNotifications", showCellNotifications);
+	ini.Read(L"General", L"bHotkeyMessages", hotkeyMessages);
 	ini.Read(L"General", L"bProfileLoadingScreen", profileLoadingScreen);
 	ini.Read(L"General", L"sLogDirectory", logDirectory);
 
@@ -119,7 +119,7 @@ void Settings::Load()
 	ini.Read(L"Hotkeys", L"iDetectorsReport", detectorsKey);
 	ini.Read(L"Hotkeys", L"iInteriorSimStage", interiorSimKey);
 	ini.Read(L"Hotkeys", L"iToggleTemporalAA", toggleTemporalAAKey);
-	ini.Read(L"Hotkeys", L"iToggleSoftEffects", toggleSoftEffectsKey);
+	ini.Read(L"Hotkeys", L"iInteriorImageSpace", interiorImageSpaceKey);
 	ini.Read(L"Hotkeys", L"iAccessWatch", accessWatchKey);
 
 	overrideSets.clear();
@@ -148,7 +148,6 @@ void Settings::Load()
 	ini.Read(L"Preload", L"bKeepInteriorNearDoorOnly", keepInteriorNearDoorOnly);
 
 	ini.Read(L"Detectors", L"bEnabled", detectorsEnabled);
-	ini.Read(L"Detectors", L"bNotify", detectorsNotify);
 	ini.Read(L"Detectors", L"fDoorsIntervalSeconds", doorsIntervalSeconds);
 	ini.Read(L"Detectors", L"iNearestCount", nearestCount);
 	ini.Read(L"Detectors", L"bWindows", windowsEnabled);
@@ -186,6 +185,7 @@ void Settings::Load()
 	ini.Read(L"Portal", L"bVirtualCamera", portalVirtualCamera);
 	ini.Read(L"Portal", L"bSoundThroughDoor", portalSoundThroughDoor);
 	ini.Read(L"Portal", L"bDistanceThroughDoor", portalDistanceThroughDoor);
+	ini.Read(L"Portal", L"bSubtitlesThroughDoor", portalSubtitlesThroughDoor);
 
 	ini.Read(L"Watchdog", L"bEnabled", watchdogEnabled);
 	ini.Read(L"Watchdog", L"fHangSeconds", watchdogHangSeconds);
@@ -198,6 +198,7 @@ void Settings::Load()
 	ini.Read(L"Probe", L"bEnabled", probeEnabled);
 	ini.Read(L"Probe", L"fIntervalSeconds", probeIntervalSeconds);
 	ini.Read(L"Probe", L"iMaxActors", probeMaxActors);
+	ini.Read(L"Probe", L"bActorJumps", probeActorJumps);
 }
 
 std::filesystem::path Settings::ResolveLogDirectory(bool& a_usedFallback) const

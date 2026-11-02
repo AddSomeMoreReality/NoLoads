@@ -63,19 +63,31 @@ namespace Portal
 	// empty; see PassInventory in Portal.cpp.
 	[[nodiscard]] const std::string& Fault();
 
-	// Main thread: a line for the HUD and a JSON object for the trace; counters restart after it.
-	[[nodiscard]] std::string StatusText();
+	// Main thread: a JSON object for the trace; counters restart after it.
 	[[nodiscard]] std::string StatusJson();
 
-	// Main thread (hotkey): the next pass writes the portal texture to <log directory>\portal-<n>.dds.
+	// Main thread (hotkey): the game's HDR frame (kMAIN before the image space: tone mapping, bloom, colour)
+	// goes to <log directory>\main-<n>.dds after the next RenderPlayerView, and with the portal running the
+	// next pass writes its texture to portal-<n>.dds as well (0.8.25: the hearth inside and through the door,
+	// in the same units).
 	void RequestDump();
+
+	// AE#36558 + 0x11D calls RenderPlayerView (AE#36559): main thread, after it.
+	void AfterPlayerView();
 
 	// Main thread (hotkey, 0.8.20): the game's temporal antialiasing on or off, in memory only. 0.8.18-0.8.19:
 	// the portal's picture doubled while its texture was clean; is it TAA mixing frames?
 	void ToggleTemporalAA();
 
-	// Main thread (hotkey, 0.8.24): soft particles in the portal's pass on or off, to compare the flames at once.
-	void ToggleSoftEffects();
+	// Main thread (hotkey, 0.8.25). Run 0.8.24: through the door the whole interior is brighter and greyer than
+	// inside and the hearth's flames are dim and brown, while the particles are the same. The street's image
+	// space (eye adaptation, bloom, saturation, tint) grades the portal's picture. While on, the interior's
+	// image space, as the game blended it the last time the player stood inside, replaces the street's in
+	// every frame the portal is drawn: the whole screen is graded as inside.
+	void ToggleInteriorImageSpace();
+
+	// Main thread: the image space the game applies now (ImageSpaceManager data), as JSON.
+	[[nodiscard]] std::string ImageSpaceJson();
 
 	// Character::ModifyAnimationUpdateData hook (vfunc 0x79, AE#38054), after the original, on whatever
 	// thread updates the actor: an actor of the portal's interior gets a full update, as if seen.
@@ -133,6 +145,13 @@ namespace Portal
 	// BSXAudio2GameSound::SetEmitterPositionImpl (vfunc 0x0F), the audio thread: a sound inside the portal's
 	// interior is carried through the door to where it is heard in the street ([Portal] bSoundThroughDoor).
 	bool SoundThroughDoor(RE::NiPoint3& a_position);
+
+	// AE#52638 (the subtitle manager's update, main thread) + 0x122 calls AE#19784 for the speaker: its
+	// position and the space it stands in (interior cell or worldspace). AE#18517 then measures it against the
+	// player's, and AE#52637 shows only subtitles closer than fMaxSubtitleDistance:Interface (1250): a speaker
+	// in another space is never shown. A speaker in the portal's interior is carried through the door into the
+	// player's space ([Portal] bSubtitlesThroughDoor, 0.8.25: the bard's song had no subtitles in the street).
+	bool SpeakerThroughDoor(const RE::TESObjectREFR* a_speaker, RE::NiPoint3& a_position);
 
 	// What a point carried through the door is for: counted apart in the status.
 	enum class Carried

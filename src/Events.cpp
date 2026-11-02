@@ -24,13 +24,6 @@ namespace
 		return a_ref && a_ref->IsPlayerRef();
 	}
 
-	using Hud::CellLabel;
-
-	void Notify(std::string_view a_channel, std::string a_text, bool a_urgent = false)
-	{
-		Hud::Show(a_channel, std::move(a_text), a_urgent);
-	}
-
 	std::atomic<std::int64_t> g_loadingClosedUs{ -1 };  // last Loading Menu close
 
 	// What the player sees: door -> (wait) -> Fader Menu open = fade-out -> Loading Menu open ->
@@ -124,14 +117,6 @@ namespace
 				nullptr, true);
 			logs::info("[Transition] {} -> picture {} ms: door->fade-out {} | fade-out {} | loading {} | fade-in {} (ms), override set {}",
 				a_stamps.door ? "door" : "loading screen", total, wait, fadeOut, loading, fadeIn, Overrides::Active());
-
-			auto text = a_stamps.door ?
-			                std::format("CLR: door -> picture {} ms = wait {} + fade-out {} + loading {} + fade-in {}", total, wait, fadeOut, loading, fadeIn) :
-			                std::format("CLR: loading -> picture {} ms = loading {} + fade-in {}", total, loading, fadeIn);
-			if (Overrides::Active() > 0) {
-				text += std::format(" [set {}]", Overrides::Active());
-			}
-			Notify("visible", std::move(text));
 		}
 
 		std::mutex _lock;
@@ -255,19 +240,10 @@ namespace
 													.Cell("cell", cell));
 				Preload::CheckStates(entered ? "ActorCell.enter" : "ActorCell.leave");
 
-				// Keep a label, not the pointer: exterior cells of the old worldspace are freed when it
-				// unloads, and a stored TESObjectCELL* crashed 0.4.0 on coc into another worldspace.
-				if (!entered) {
-					_fromLabel = CellLabel(cell);
-				} else {
-					auto text = std::format("CLR: {} -> {}", _fromLabel.empty() ? "?" : _fromLabel, CellLabel(cell));
-					if (_timing.pre && !_timing.enter) {
-						// kPre -> ActorCell enter: the cell load itself, without the loading screen around it
-						_timing.enter = Trace::NowUs();
-						Profiler::SetPhase(Profiler::Phase::kEnterToPost);
-						text += std::format(" | load {} ms", (*_timing.enter - *_timing.pre) / 1000);
-					}
-					Notify("cell", std::move(text));
+				if (entered && _timing.pre && !_timing.enter) {
+					// kPre -> ActorCell enter: the cell load itself, without the loading screen around it
+					_timing.enter = Trace::NowUs();
+					Profiler::SetPhase(Profiler::Phase::kEnterToPost);
 				}
 			}
 			return Result::kContinue;
@@ -432,7 +408,6 @@ namespace
 		}
 
 		Timing      _timing;
-		std::string _fromLabel;  // label of the cell the player left
 	};
 
 	class InputSink final : public RE::BSTEventSink<RE::InputEvent*>
@@ -467,9 +442,9 @@ namespace
 					Trace::Write("input.hotkey", Trace::Args{}.Str("action", "toggleTemporalAA"));
 					MainThread::Post(Portal::ToggleTemporalAA);
 				}
-				if (button && button->IsDown() && button->GetIDCode() == Settings::Get().toggleSoftEffectsKey) {
-					Trace::Write("input.hotkey", Trace::Args{}.Str("action", "toggleSoftEffects"));
-					MainThread::Post(Portal::ToggleSoftEffects);
+				if (button && button->IsDown() && button->GetIDCode() == Settings::Get().interiorImageSpaceKey) {
+					Trace::Write("input.hotkey", Trace::Args{}.Str("action", "interiorImageSpace"));
+					MainThread::Post(Portal::ToggleInteriorImageSpace);
 				}
 				if (button && button->IsDown() && button->GetIDCode() == Settings::Get().accessWatchKey) {
 					Trace::Write("input.hotkey", Trace::Args{}.Str("action", "accessWatch"));
@@ -480,7 +455,7 @@ namespace
 					Snapshot::Take("hotkey");
 					Probe::Request("hotkey");
 					MainThread::Post(Portal::RequestDump);
-					Notify("snapshot", std::format("CLR: snapshot #{} written to the trace", ++_snapshots), true);
+					Hud::Show("snapshot", std::format("CLR: snapshot #{} written to the trace", ++_snapshots));
 				}
 			}
 			return RE::BSEventNotifyControl::kContinue;

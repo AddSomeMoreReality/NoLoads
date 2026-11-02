@@ -247,7 +247,6 @@ namespace
 				g_keepLoadsUs.clear();
 				g_keepPausedUntilUs = now + 60'000'000;
 				Trace::Write("preload.keep", Trace::Args{}.Str("action", "pause").Cell("cell", g_interior.cell), nullptr, true);
-				Hud::Show("keep", std::format("CLR: keep: {} unloads right after loading, paused for 60 s", Hud::CellLabel(g_interior.cell)));
 				return;
 			}
 			g_keepLoadsUs.push_back(now);
@@ -264,7 +263,6 @@ namespace
 											 .Int("blockedUnloads", static_cast<std::int64_t>(g_blockedUnloads.load()))
 											 .Int("blockedCancels", static_cast<std::int64_t>(g_blockedCancels.load())),
 				nullptr, true);
-			Hud::Show("keep", std::format("CLR: keep: loading {}", Hud::CellLabel(g_interior.cell)));
 		}
 	}
 
@@ -424,10 +422,6 @@ namespace Preload
 																   .Json() +
 																   "]"),
 			nullptr, true);
-		if (g_interior.lastState != kStateUnknown) {
-			Hud::Show("keep", std::format("CLR: {}: {} -> {}", Hud::CellLabel(g_interior.cell),
-				Trace::CellStateName(g_interior.lastState), Trace::CellStateName(state)));
-		}
 		if (state != kUnattached && !InteriorSim::OwnsAttachedCell(g_interior.cell)) {
 			InteriorSim::Detach(a_where);  // its 3D may be rendered outside; the game owns it now
 		}

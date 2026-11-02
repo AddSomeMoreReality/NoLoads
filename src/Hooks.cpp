@@ -1,6 +1,7 @@
 #include "Hooks.h"
 
 #include "AccessWatch.h"
+#include "ActorJumps.h"
 #include "Detectors.h"
 #include "Events.h"
 #include "Hud.h"
@@ -391,6 +392,7 @@ namespace
 			MainThread::Drain();
 			Hud::Tick();
 			AccessWatch::Tick();
+			ActorJumps::Tick();
 			Preload::Tick();
 			Detectors::Tick();
 			InteriorSim::Tick();
@@ -985,6 +987,58 @@ namespace
 		static inline decltype(&thunk) func;
 	};
 
+	// AE#36558 + 0x11D calls RenderPlayerView (AE#36559: this, int, bool). After it kMAIN holds the frame
+	// before the image space (F11 writes it, 0.8.25).
+	struct PlayerView
+	{
+		static void thunk(void* a_this, std::uint32_t a_arg2, bool a_arg3)
+		{
+			func(a_this, a_arg2, a_arg3);
+			Portal::AfterPlayerView();
+		}
+
+		static inline REL::Relocation<decltype(thunk)> func;
+	};
+
+	// AE#52638 (the subtitle manager's update) + 0x122 calls AE#19784 for the speaker: its position and the
+	// space it stands in, which AE#18517 measures against the player's (0.8.25).
+	struct SubtitleSpeakerPosition
+	{
+		struct WorldPosition
+		{
+			RE::NiPoint3  position;
+			std::uint32_t pad0C;
+			RE::TESForm*  space;  // the interior cell, or the exterior cell's worldspace
+		};
+		static_assert(sizeof(WorldPosition) == 0x18);
+
+		static WorldPosition* thunk(RE::TESObjectREFR* a_speaker, WorldPosition* a_out)
+		{
+			auto* result = func(a_speaker, a_out);
+			auto* player = RE::PlayerCharacter::GetSingleton();
+			auto* cell = player ? player->GetParentCell() : nullptr;
+			if (result && cell && Portal::SpeakerThroughDoor(a_speaker, result->position)) {
+				auto* world = cell->IsInteriorCell() ? nullptr : cell->GetRuntimeData().worldSpace;
+				result->space = world ? static_cast<RE::TESForm*>(world) : cell;
+			}
+			return result;
+		}
+
+		static inline REL::Relocation<decltype(thunk)> func;
+	};
+
+	// TESObjectREFR::SetPosition (AE#19790): who moves an NPC far in one call (0.8.25, ActorJumps).
+	struct ReferenceSetPosition
+	{
+		static void thunk(RE::TESObjectREFR* a_this, const RE::NiPoint3& a_position)
+		{
+			ActorJumps::BeforeSetPosition(a_this, a_position);
+			func(a_this, a_position);
+		}
+
+		static inline decltype(&thunk) func;
+	};
+
 	std::atomic<bool> g_detoursReady{ false };
 	std::atomic<bool> g_callsReady{ false };
 
@@ -1013,12 +1067,14 @@ namespace
 		const bool lod = WriteCall<CharControllerLodDistance>("Actor::Update -> CharController LOD distance", REL::ID(37348), 0x1F3, REL::ID(78274));
 		const bool fade = WriteCall<FadeNodeDistance>("animated reference fade -> fade node distance", REL::ID(19384), 0xE4, REL::ID(105486));
 		g_callsReady = lod && fade;
+		const bool view = WriteCall<PlayerView>("Main -> RenderPlayerView", REL::ID(36558), 0x11D, REL::ID(36559));
+		const bool subtitles = WriteCall<SubtitleSpeakerPosition>("subtitle update -> speaker position", REL::ID(52638), 0x122, REL::ID(19784));
 		bool fence = false;
 		if (Settings::Get().portalPassAtSceneListFence) {
 			fence = WriteCall<SceneListFence>("RenderPlayerView -> scene list fence", REL::ID(36559), 0x17E, REL::ID(69353));
 			Portal::SetPassAtSceneListFence(fence);
 		}
-		logs::info("call hooks installed: controller LOD {}, fade {}, pass at the scene list fence {}", lod, fade, fence);
+		logs::info("call hooks installed: controller LOD {}, fade {}, pass at the scene list fence {}, player view {}, subtitles {}", lod, fade, fence, view, subtitles);
 	}
 
 	template <class Hook>
@@ -1073,6 +1129,7 @@ namespace
 			results.emplace_back("Main::WorldCamera", AttachDetour<WorldCamera>(REL::Relocation<std::uintptr_t>{ REL::ID(36609) }.address()));
 			results.emplace_back("Actor::FootFeedback", AttachDetour<FootFeedback>(REL::Relocation<std::uintptr_t>{ REL::ID(43690) }.address()));
 			results.emplace_back("TESObjectREFR::GetDistance", AttachDetour<ReferenceDistance>(RELOCATION_ID(19396, 19823)));
+			results.emplace_back("TESObjectREFR::SetPosition", AttachDetour<ReferenceSetPosition>(RELOCATION_ID(19363, 19790)));
 			results.emplace_back("TESObjectREFR::GetDistanceSquared", AttachDetour<ReferenceDistanceSquared>(REL::Relocation<std::uintptr_t>{ REL::ID(19824) }.address()));
 		}
 

@@ -161,6 +161,20 @@ namespace
 	std::uint32_t                               g_tracedLeftovers{ 0 };   // geometry groups already reported
 	std::uint32_t                               g_leftoverGroups{ 0 };    // ... and since the last status
 	bool                                        g_dumpRequested{ false };
+	bool                                        g_mainDumpRequested{ false };
+	std::uint32_t                               g_mainDumps{ 0 };
+
+	// The interior's image space as the game blended it while the player stood inside (0.8.25, F2).
+	struct InteriorLook
+	{
+		RE::FormID         cell{ 0 };
+		RE::ImageSpaceData data{};
+	};
+	std::optional<InteriorLook> g_interiorLook;
+	bool                        g_interiorImageSpace{ false };  // F2
+	std::optional<RE::ImageSpaceData> g_gameImageSpace;          // what the manager held before we wrote the interior's
+	std::uint64_t               g_imageSpaceSwaps{ 0 };
+	std::uint64_t               g_imageSpaceHeld{ 0 };  // swaps still in place after RenderPlayerView
 	std::uint32_t                               g_dumps{ 0 };
 	std::vector<AddedLight>                     g_lights;
 	std::vector<RE::NiPointer<RE::NiAVObject>>  g_actorRoots;  // the interior's actors' 3D, hidden by the game while the cell is unattached
@@ -218,6 +232,8 @@ namespace
 	std::atomic<RE::NiCamera*> g_virtualCamera{ nullptr };  // the portal's camera while [Portal] bVirtualCamera; never freed in a session
 	std::atomic<bool>          g_soundThroughDoor{ false };
 	std::atomic<bool>          g_distanceThroughDoor{ false };
+	std::atomic<bool>          g_subtitlesThroughDoor{ false };
+	std::uint64_t              g_subtitlesCarried{ 0 };  // main thread
 	std::atomic<std::uint64_t> g_distancesCarried{ 0 };
 	thread_local std::uint32_t t_actorScope{ 0 };
 	std::atomic<std::uint64_t> g_worldCameraCarried{ 0 };
@@ -1934,7 +1950,7 @@ namespace
 		manager->GetDepthStencilTargetData()[RE::RENDER_TARGET_DEPTHSTENCIL::kMAIN] = a_saved.mainDepthProperties;
 	}
 
-	void WriteDump();
+	void WriteDump(ID3D11Texture2D* a_texture, std::uint32_t a_width, std::uint32_t a_height, std::string_view a_name, std::uint32_t a_number);
 
 	void Mark(PassPhase a_phase)
 	{
@@ -2191,7 +2207,18 @@ namespace
 
 		if (g_dumpRequested) {
 			g_dumpRequested = false;
-			WriteDump();
+			WriteDump(g_target.color, g_viewportWidth, g_viewportHeight, "portal", ++g_dumps);
+		}
+
+		if (g_interiorImageSpace && g_interiorLook && g_door.cell && g_interiorLook->cell == g_door.cell->GetFormID()) {
+			if (auto* imageSpaces = RE::ImageSpaceManager::GetSingleton()) {
+				auto& data = imageSpaces->GetImageSpaceData();
+				if (!g_gameImageSpace) {
+					g_gameImageSpace = data;
+				}
+				data = g_interiorLook->data;
+				++g_imageSpaceSwaps;
+			}
 		}
 
 		// Back to the game: nothing of ours stays bound, and its whole state is applied again.
@@ -2219,16 +2246,40 @@ namespace
 		g_maxPassesPerFrame = (std::max)(g_maxPassesPerFrame, g_passesInFrame);
 	}
 
-	// DDS (DX10 header) of the render target, read back through a staging copy: the GPU waits for it.
-	void WriteDump()
+	std::uint32_t BytesPerPixel(DXGI_FORMAT a_format)
+	{
+		switch (a_format) {
+		case DXGI_FORMAT_R16G16B16A16_FLOAT:
+			return 8;
+		case DXGI_FORMAT_R11G11B10_FLOAT:
+		case DXGI_FORMAT_R8G8B8A8_UNORM:
+		case DXGI_FORMAT_R8G8B8A8_UNORM_SRGB:
+		case DXGI_FORMAT_R10G10B10A2_UNORM:
+			return 4;
+		default:
+			return 0;
+		}
+	}
+
+	// DDS (DX10 header) of the top left a_width x a_height of a texture, read back through a staging copy:
+	// the GPU waits for it.
+	void WriteDump(ID3D11Texture2D* a_texture, std::uint32_t a_width, std::uint32_t a_height, std::string_view a_name, std::uint32_t a_number)
 	{
 		auto* device = Device();
 		auto* context = Context();
-		if (!device || !context) {
+		if (!device || !context || !a_texture) {
 			return;
 		}
 		D3D11_TEXTURE2D_DESC desc{};
-		g_target.color->GetDesc(&desc);
+		a_texture->GetDesc(&desc);
+		const auto pixelBytes = BytesPerPixel(desc.Format);
+		if (pixelBytes == 0 || desc.SampleDesc.Count != 1) {
+			Trace::Write("portal.dump", Trace::Args{}.Str("name", a_name).Int("format", desc.Format).Int("samples", desc.SampleDesc.Count).Str("skipped", "format"), nullptr, true);
+			return;
+		}
+		desc.MipLevels = 1;
+		desc.ArraySize = 1;
+		desc.MiscFlags = 0;
 		desc.BindFlags = 0;
 		desc.Usage = D3D11_USAGE_STAGING;
 		desc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
@@ -2236,19 +2287,18 @@ namespace
 		if (FAILED(device->CreateTexture2D(&desc, nullptr, &staging))) {
 			return;
 		}
-		context->CopyResource(staging, g_target.color);
+		context->CopySubresourceRegion(staging, 0, 0, 0, 0, a_texture, 0, nullptr);
 		D3D11_MAPPED_SUBRESOURCE mapped{};
 		if (FAILED(context->Map(staging, 0, D3D11_MAP_READ, 0, &mapped))) {
 			staging->Release();
 			return;
 		}
-		// Only the viewport this pass filled.
-		const std::uint32_t width = (std::min)(g_viewportWidth, desc.Width);
-		const std::uint32_t height = (std::min)(g_viewportHeight, desc.Height);
+		const std::uint32_t width = (std::min)(a_width, desc.Width);
+		const std::uint32_t height = (std::min)(a_height, desc.Height);
 		bool                fallback = false;
-		const auto          path = Settings::Get().ResolveLogDirectory(fallback) / std::format("portal-{}.dds", ++g_dumps);
+		const auto          path = Settings::Get().ResolveLogDirectory(fallback) / std::format("{}-{}.dds", a_name, a_number);
 		if (std::ofstream file{ path, std::ios::binary }) {
-			const std::uint32_t rowBytes = width * 8;  // R16G16B16A16
+			const std::uint32_t rowBytes = width * pixelBytes;
 			std::uint32_t       header[32]{};
 			header[0] = 124;
 			header[1] = 0x100F;  // caps, height, width, pitch, pixel format
@@ -2269,7 +2319,18 @@ namespace
 		}
 		context->Unmap(staging, 0);
 		staging->Release();
-		Trace::Write("portal.dump", Trace::Args{}.Str("path", path.string()).Int("width", width).Int("height", height), nullptr, true);
+		auto*      player = RE::PlayerCharacter::GetSingleton();
+		const auto format = desc.Format;
+		Trace::Write("portal.dump", Trace::Args{}
+										.Str("name", a_name)
+										.Str("path", path.string())
+										.Int("width", width)
+										.Int("height", height)
+										.Int("format", format)
+										.Cell("playerCell", player ? player->GetParentCell() : nullptr)
+										.Bool("portal", g_active)
+										.Raw("imageSpace", Portal::ImageSpaceJson()),
+			nullptr, true);
 	}
 
 	void RunPass()
@@ -2346,12 +2407,12 @@ namespace Portal
 		auto* manager = RE::ImageSpaceManager::GetSingleton();
 		auto* taa = manager ? manager->GetRuntimeData().BSImagespaceShaderISTemporalAA : nullptr;
 		if (!taa) {
-			Hud::Show("portal", "CLR: TAA switch not found", true);
+			Hud::Show("portal", "CLR: TAA switch not found");
 			return;
 		}
 		taa->taaEnabled = !taa->taaEnabled;
 		Trace::Write("portal.taa", Trace::Args{}.Bool("taaEnabled", taa->taaEnabled).Bool("portal", g_active), nullptr, true);
-		Hud::Show("portal", std::format("CLR: temporal antialiasing (TAA) {}", taa->taaEnabled ? "on" : "off"), true);
+		Hud::Show("portal", std::format("CLR: temporal antialiasing (TAA) {}", taa->taaEnabled ? "on" : "off"));
 	}
 
 	void AdjustAnimationUpdate(const RE::Actor* a_actor, RE::BSAnimationUpdateData& a_data)
@@ -2369,11 +2430,76 @@ namespace Portal
 		}
 	}
 
-	void ToggleSoftEffects()
+	void ToggleInteriorImageSpace()
 	{
-		g_softEffects = !g_softEffects;
-		Trace::Write("portal.soft", Trace::Args{}.Bool("softEffects", g_softEffects).Bool("portal", g_active), nullptr, true);
-		Hud::Show("portal", std::format("CLR: soft particles in the portal {}", g_softEffects ? "on" : "off"), true);
+		g_interiorImageSpace = !g_interiorImageSpace;
+		Trace::Write("portal.imageSpace", Trace::Args{}
+											   .Bool("on", g_interiorImageSpace)
+											   .Bool("portal", g_active)
+											   .FormID("captured", g_interiorLook ? g_interiorLook->cell : 0)
+											   .Raw("game", ImageSpaceJson()),
+			nullptr, true);
+		Hud::Show("portal", g_interiorImageSpace && !g_interiorLook ?
+		                        "CLR: interior image space through the portal on, but not captured yet: step inside once" :
+		                        std::format("CLR: interior image space through the portal {}", g_interiorImageSpace ? "on" : "off"));
+	}
+
+	std::string ImageSpaceDataJson(const RE::ImageSpaceData& a_data)
+	{
+		const auto& hdr = a_data.baseData.hdr;
+		const auto& cinematic = a_data.baseData.cinematic;
+		const auto& tint = a_data.baseData.tint;
+		return Trace::Args{}
+			.Raw("hdr", std::format("[{:.3f},{:.3f},{:.3f},{:.3f},{:.3f},{:.3f},{:.3f},{:.3f},{:.3f}]", hdr.eyeAdaptSpeed, hdr.bloomBlurRadius, hdr.bloomThreshold,
+							hdr.bloomScale, hdr.receiveBloomThreshold, hdr.white, hdr.sunlightScale, hdr.skyScale, hdr.eyeAdaptStrength))
+			.Raw("cinematic", std::format("[{:.3f},{:.3f},{:.3f}]", cinematic.saturation, cinematic.brightness, cinematic.contrast))
+			.Raw("tint", std::format("[{:.3f},{:.3f},{:.3f},{:.3f}]", tint.amount, tint.color.red, tint.color.green, tint.color.blue))
+			.Num("fade", a_data.modData.data[RE::ImageSpaceModData::kFadeAmount])
+			.Num("baseAmount", a_data.baseAmount)
+			.Num("modAmount", a_data.modAmount)
+			.Json();
+	}
+
+	std::string ImageSpaceJson()
+	{
+		auto* manager = RE::ImageSpaceManager::GetSingleton();
+		if (!manager) {
+			return "null";
+		}
+		// hdr: eyeAdaptSpeed, bloomBlurRadius, bloomThreshold, bloomScale, receiveBloomThreshold, white,
+		// sunlightScale, skyScale, eyeAdaptStrength; cinematic: saturation, brightness, contrast; tint: amount, rgb
+		return Trace::Args{}
+			.Raw("now", ImageSpaceDataJson(manager->GetImageSpaceData()))
+			.Raw("interior", g_interiorLook ? ImageSpaceDataJson(g_interiorLook->data) : "null")
+			.FormID("interiorCell", g_interiorLook ? g_interiorLook->cell : 0)
+			.Bool("swapOn", g_interiorImageSpace)
+			.Int("swaps", static_cast<std::int64_t>(g_imageSpaceSwaps))
+			.Int("held", static_cast<std::int64_t>(g_imageSpaceHeld))
+			.Json();
+	}
+
+	// Every frame, before the passes: the swap of the last frame goes back unless the game wrote its own
+	// values since, and inside an interior its image space is kept for the swap.
+	void LookTick()
+	{
+		auto* manager = RE::ImageSpaceManager::GetSingleton();
+		if (!manager) {
+			return;
+		}
+		auto& data = manager->GetImageSpaceData();
+		if (g_gameImageSpace) {
+			if (g_interiorLook && std::memcmp(&data, &g_interiorLook->data, sizeof(data)) == 0) {
+				data = *g_gameImageSpace;
+			}
+			g_gameImageSpace.reset();
+		}
+		auto*      player = RE::PlayerCharacter::GetSingleton();
+		auto*      cell = player ? player->GetParentCell() : nullptr;
+		auto*      ui = RE::UI::GetSingleton();
+		const bool transition = !ui || ui->IsMenuOpen(RE::FaderMenu::MENU_NAME) || ui->IsMenuOpen(RE::LoadingMenu::MENU_NAME);
+		if (cell && cell->IsInteriorCell() && !g_active && !transition) {
+			g_interiorLook = InteriorLook{ cell->GetFormID(), data };
+		}
 	}
 
 	void AddAnimatedActors(const RE::BSTArray<RE::ActorHandle>& a_handles, void* a_list)
@@ -2701,6 +2827,17 @@ namespace Portal
 		return true;
 	}
 
+	bool SpeakerThroughDoor(const RE::TESObjectREFR* a_speaker, RE::NiPoint3& a_position)
+	{
+		const auto* space = g_space.load(std::memory_order_acquire);
+		if (!space || !a_speaker || !g_subtitlesThroughDoor.load(std::memory_order_relaxed) || a_speaker->GetParentCell() != space->cell) {
+			return false;
+		}
+		a_position = space->toExterior * a_position;
+		++g_subtitlesCarried;
+		return true;
+	}
+
 	bool SoundThroughDoor(RE::NiPoint3& a_position)
 	{
 		const auto* space = g_space.load(std::memory_order_acquire);
@@ -2936,6 +3073,7 @@ namespace Portal
 		g_actorsSeen.store(settings.portalActorsSeen, std::memory_order_relaxed);
 		g_soundThroughDoor.store(settings.portalSoundThroughDoor, std::memory_order_relaxed);
 		g_distanceThroughDoor.store(settings.portalDistanceThroughDoor, std::memory_order_relaxed);
+		g_subtitlesThroughDoor.store(settings.portalSubtitlesThroughDoor, std::memory_order_relaxed);
 		g_space.store(new Space{ .cell = g_door.cell,
 						  .scene = g_door.scene.get(),
 						  .toInterior = g_door.toExterior.Invert(),
@@ -2972,6 +3110,7 @@ namespace Portal
 		g_virtualCamera.store(nullptr, std::memory_order_relaxed);
 		g_soundThroughDoor.store(false, std::memory_order_relaxed);
 		g_distanceThroughDoor.store(false, std::memory_order_relaxed);
+		g_subtitlesThroughDoor.store(false, std::memory_order_relaxed);
 		g_space.store(nullptr, std::memory_order_release);
 		RemoveLights();
 		ForgetActors();
@@ -2987,6 +3126,7 @@ namespace Portal
 
 	void Tick()
 	{
+		LookTick();
 		if (!g_active) {
 			return;
 		}
@@ -3025,23 +3165,6 @@ namespace Portal
 	RE::NiAVObject* Quad()
 	{
 		return g_quad.get();
-	}
-
-	std::string StatusText()
-	{
-		const auto average = g_rendered ? g_cpuMsSum / static_cast<double>(g_rendered) : 0.0;
-		const auto mirrors = std::ranges::count_if(g_lights, [](const AddedLight& a_added) { return a_added.mirror; });
-		const auto controllerMs = g_controllerUpdates ? g_controllerMsSum / static_cast<double>(g_controllerUpdates) : 0.0;
-		auto       text = std::format("portal {} passes, {:.2f} ms CPU (max {:.2f}), {}x{} px, eye {:.1f} m, lights {}+{}, NPC {} (pose moved {}/{}, by game {}, by portal {}, "
-									  "full AI {}), effects {} (soft {}, {}), controllers {} ({:.2f} ms){}",
-				  g_rendered, average, g_cpuMsMax, g_viewportWidth, g_viewportHeight, g_eyeDistance / 70.0f, g_lights.size() - mirrors, mirrors, g_actorsShown,
-				  g_poseChanged, g_poseChecks, g_animatedByGame, g_animated, g_fullProcessingGranted.load(std::memory_order_relaxed), g_effectSetups,
-				  g_softEffectSetups, g_softEffects ? "on" : "off", kControllerModeNames[std::to_underlying(g_controllerMode)], controllerMs,
-				  g_textureSwapped ? "" : ", texture NOT swapped");
-		if (g_skipped) {
-			text += std::format(", skipped {} ({})", g_skipped, g_skipWhy);
-		}
-		return text;
 	}
 
 	std::string StatusJson()
@@ -3105,6 +3228,8 @@ namespace Portal
 							  .Int("distancesCarried", static_cast<std::int64_t>(g_distancesCarried.exchange(0, std::memory_order_relaxed)))
 							  .Int("soundsCarried", static_cast<std::int64_t>(g_soundsCarried.exchange(0, std::memory_order_relaxed)))
 							  .Pos("lastSound", g_lastSound)
+							  .Int("subtitlesCarried", static_cast<std::int64_t>(std::exchange(g_subtitlesCarried, 0)))
+							  .Raw("imageSpace", ImageSpaceJson())
 							  .Str("leftoverGroups", std::format("0x{:05X}", g_leftoverGroups))
 							  .Str("fault", g_fault)
 							  .Bool("quadMaterialOurs", QuadMaterialNow() == g_quadMaterial)
@@ -3153,5 +3278,27 @@ namespace Portal
 	void RequestDump()
 	{
 		g_dumpRequested = g_active;
+		g_mainDumpRequested = true;
+	}
+
+	void AfterPlayerView()
+	{
+		if (g_gameImageSpace && g_interiorLook) {
+			auto* imageSpaces = RE::ImageSpaceManager::GetSingleton();
+			if (imageSpaces && std::memcmp(&imageSpaces->GetImageSpaceData(), &g_interiorLook->data, sizeof(RE::ImageSpaceData)) == 0) {
+				++g_imageSpaceHeld;  // the game did not write its own values between our pass and the image space
+			}
+		}
+		if (!g_mainDumpRequested) {
+			return;
+		}
+		g_mainDumpRequested = false;
+		auto* renderer = RE::BSGraphics::Renderer::GetSingleton();
+		auto* texture = renderer ? reinterpret_cast<ID3D11Texture2D*>(renderer->GetRuntimeData().renderTargets[RenderTarget::kMAIN].texture) : nullptr;
+		if (texture) {
+			D3D11_TEXTURE2D_DESC desc{};
+			texture->GetDesc(&desc);
+			WriteDump(texture, desc.Width, desc.Height, "main", ++g_mainDumps);
+		}
 	}
 }

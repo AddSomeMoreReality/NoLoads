@@ -289,10 +289,8 @@ namespace
 			g_attachFailed = true;
 			g_attached = a_cell;  // DetachCell puts it back as far as the game's detach can
 			DetachCell("attach failed");
-			Hud::Show("sim.attach", std::format("CLR: attaching {} failed ({}): the portal runs it unattached", Hud::CellLabel(a_cell), Trace::CellStateName(state)));
 			return false;
 		}
-		Hud::Show("sim.attach", std::format("CLR: {} attached like a neighbouring cell ({:.0f} ms)", Hud::CellLabel(a_cell), ms));
 		return true;
 	}
 
@@ -368,7 +366,6 @@ namespace
 		}
 		g_renderFailure = a_why;
 		Trace::Write("interior.sim", Trace::Args{}.Str("action", "renderFail").Str("why", a_why), nullptr, true);
-		Hud::Show("sim.render", "CLR: interior render: " + a_why);
 	}
 
 	// The door's transform in the interior's own coordinates: its 3D world transform if that was
@@ -451,29 +448,18 @@ namespace
 		g_watchedTypes.clear();
 	}
 
-	// Calls per second since the last report, then the counters start again.
-	struct Visibility
+	// Calls per second since the last report as JSON, then the counters start again.
+	std::string TakeVisibility(std::int64_t a_now)
 	{
 		std::string json;
-		std::string text;  // short, for the HUD
-	};
-
-	Visibility TakeVisibility(std::int64_t a_now)
-	{
-		Visibility result;
 		const auto seconds = (std::max)(static_cast<double>(a_now - g_visibleSinceUs) / 1'000'000.0, 0.001);
 		g_visibleSinceUs = a_now;
 		const auto count = (std::min)(static_cast<std::size_t>(g_watchedCount.load()), g_watchedNames.size());
 		for (std::size_t i = 0; i < count; ++i) {
 			const auto perSecond = g_visibleCalls[i].exchange(0) / seconds;
-			const auto& name = g_watchedNames[i];
-			result.json += (result.json.empty() ? "" : ",") + Trace::Args{}.Str("what", name).Str("type", g_watchedTypes[i]).Num("perSecond", perSecond).Json();
-			if (!name.ends_with(" shape")) {
-				result.text += std::format("{}{} {:.0f}", result.text.empty() ? "" : ", ", name, perSecond);
-			}
+			json += (json.empty() ? "" : ",") + Trace::Args{}.Str("what", g_watchedNames[i]).Str("type", g_watchedTypes[i]).Num("perSecond", perSecond).Json();
 		}
-		result.json = "[" + result.json + "]";
-		return result;
+		return "[" + json + "]";
 	}
 
 	// The node chain up to the scene root, "name (class) < parent (class) < ...".
@@ -756,9 +742,6 @@ namespace
 																 mainFrustum.fTop, mainFrustum.fBottom, mainFrustum.fNear, mainFrustum.fFar))
 										 .Int("hidden", static_cast<std::int64_t>(g_hidden.size())),
 			nullptr, true);
-		Hud::Show("sim.render", std::format("CLR: {} portal in its door ({:.0f} m): door {:.1f} x {:.1f} m{}; F11 saves the portal picture",
-									Hud::CellLabel(a_cell), door->distance / kUnitsPerMeter, rect.width / kUnitsPerMeter, rect.height / kUnitsPerMeter,
-									rect.points ? "" : " (size guessed)"));
 		return true;
 	}
 
@@ -795,19 +778,7 @@ namespace
 		g_frames = 0;
 
 		const auto stage = g_stage.load();
-		auto       text = std::format("CLR: sim {} [{}]", Hud::CellLabel(a_cell), stage);
-		if (!a_blocker.empty()) {
-			text += ": waiting, " + a_blocker;
-		} else {
-			text += std::format(": {}physics +{} steps | NPC high {}/{}", g_attached.load() ? "attached | " : "", newSteps, g_highActors, g_actors);
-			text += Portal::Active() ? " | " + Portal::StatusText() : " | no portal";
-		}
-		text += std::format(" | frame {:.1f} ms", frameMs);
-		Hud::Show("sim", std::move(text));
 		const auto visibility = TakeVisibility(Trace::NowUs());
-		if (g_watchedCount.load() > 0) {
-			Hud::Show("sim.cull", "CLR: drawn per second: " + visibility.text);
-		}
 
 		Trace::Write("interior.sim", Trace::Args{}
 										 .Str("action", "status")
@@ -831,7 +802,7 @@ namespace
 										 .Int("portalGraphsKeptTotal", static_cast<std::int64_t>(g_portalGraphsKept.load()))
 										 .Int("renderMode", Portal::Active() ? 1 : 0)
 										 .Num("frameMs", frameMs)
-										 .Raw("visible", visibility.json)
+										 .Raw("visible", visibility)
 										 .Raw("portal", Portal::StatusJson()));
 	}
 }
@@ -888,7 +859,7 @@ namespace InteriorSim
 		g_renderFailure.clear();
 		auto* cell = Preload::Interior();
 		Trace::Write("interior.sim", Trace::Args{}.Str("action", "stage").Int("stage", next).Str("name", kStageNames[next]).Cell("cell", cell), nullptr, true);
-		Hud::Show("sim.stage", std::format("CLR: interior sim {}/{}: {} ({})", next, kStages - 1, kStageNames[next], Hud::CellLabel(cell)), true);
+		Hud::Show("sim.stage", std::format("CLR: interior sim {}/{}: {} ({})", next, kStages - 1, kStageNames[next], Hud::CellLabel(cell)));
 	}
 
 	void Detach(std::string_view a_why)

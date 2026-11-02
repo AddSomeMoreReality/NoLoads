@@ -109,7 +109,6 @@ namespace
 	// ------------------------------------------------------------------
 	std::vector<Detectors::Door> g_doors;  // sorted by distance
 	std::vector<RE::FormID>      g_tracedDoors;
-	RE::FormID                   g_nearestDoor{ 0 };
 	std::int64_t                 g_nextDoorsUs{ 0 };
 
 	void ScanDoors(const RE::NiPoint3& a_playerPos)
@@ -217,13 +216,6 @@ namespace
 			g_tracedDoors = nearest;
 			TraceDoors("changed");
 		}
-		const auto nearestId = g_doors.empty() ? 0 : g_doors.front().id;
-		if (nearestId != g_nearestDoor) {
-			g_nearestDoor = nearestId;
-			if (nearestId && Settings::Get().detectorsNotify) {
-				Hud::Show("door", "CLR: door " + DoorText(g_doors.front()));
-			}
-		}
 	}
 
 	// ------------------------------------------------------------------
@@ -255,7 +247,6 @@ namespace
 	const void*                                          g_windowSpace{ nullptr };  // interior cell or worldspace
 	WindowStats                                          g_windowStats;
 	std::vector<std::pair<RE::FormID, std::size_t>>      g_tracedWindows;
-	std::pair<RE::FormID, std::size_t>                   g_nearestWindow{ 0, 0 };
 	std::int64_t                                         g_nextWindowsUs{ 0 };
 
 	std::string_view DiffuseTexture(RE::BSGeometry* a_geometry)
@@ -822,7 +813,7 @@ namespace
 			}
 		}
 		Trace::Write("detector.look", args.Raw("hits", "[" + json + "]"), nullptr, true);
-		Hud::Show("detectors.look", hits.empty() ? "CLR: looking at: nothing within 40 m" : text, true);
+		Hud::Show("detectors.look", hits.empty() ? "CLR: looking at: nothing within 40 m" : text);
 	}
 
 	void UpdateWindows(const RE::NiPoint3& a_playerPos)
@@ -864,13 +855,6 @@ namespace
 		if (keys != g_tracedWindows) {
 			g_tracedWindows = keys;
 			TraceWindows("changed", NearestWindows(a_playerPos, kMaxTracedWindows));
-		}
-		const auto nearestKey = keys.empty() ? std::pair<RE::FormID, std::size_t>{ 0, 0 } : keys.front();
-		if (nearestKey != g_nearestWindow) {
-			g_nearestWindow = nearestKey;
-			if (!nearest.empty() && Settings::Get().detectorsNotify) {
-				Hud::Show("window", "CLR: window " + WindowText(nearest.front()));
-			}
 		}
 	}
 }
@@ -923,13 +907,13 @@ namespace Detectors
 		if (!nearest.empty()) {
 			windows += " | nearest " + WindowText(nearest.front());
 		}
-		Hud::Show("detectors.windows", std::move(windows), true);
+		Hud::Show("detectors.windows", std::move(windows));
 
 		auto doors = std::format("CLR: doors {}", g_doors.size());
 		for (std::size_t i = 0; i < g_doors.size() && i < 3; ++i) {
 			doors += " | " + DoorText(g_doors[i]);
 		}
-		Hud::Show("detectors.doors", std::move(doors), true);
+		Hud::Show("detectors.doors", std::move(doors));
 
 		TraceDoors("hotkey");
 		TraceWindows("hotkey", NearestWindows(pos, kMaxTracedWindows));

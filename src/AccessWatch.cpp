@@ -239,7 +239,7 @@ namespace
 			json += (json.empty() ? "" : ",") + Trace::Args{}.Str("target", g_targets[slot].name).Int("instructions", static_cast<std::int64_t>(rows.size())).Raw("top", "[" + top + "]").Json();
 		}
 		Trace::Write("access.watch", Trace::Args{}.Int("hits", static_cast<std::int64_t>(g_hits.load())).Int("lost", static_cast<std::int64_t>(g_lost.load())).Int("threads", g_threads).Cell("playerCell", cell).Str("file", path.filename().string()).Raw("targets", "[" + json + "]"), nullptr, true);
-		Hud::Show("portal", std::format("CLR: access watch: {} hits, {}", g_hits.load(), path.filename().string()), true);
+		Hud::Show("portal", std::format("CLR: access watch: {} hits, {}", g_hits.load(), path.filename().string()));
 		logs::info("access watch: {} hits, {} lost, {}", g_hits.load(), g_lost.load(), path.filename().string());
 	}
 
@@ -280,7 +280,7 @@ namespace AccessWatch
 		std::uint32_t threads = 0;
 		std::thread{ [&threads]() { threads = ApplyToThreads(true); } }.join();
 		g_threads = threads;
-		Hud::Show("portal", std::format("CLR: access watch for {:.0f} s, {} threads", settings.accessWatchSeconds, threads), true);
+		Hud::Show("portal", std::format("CLR: access watch for {:.0f} s, {} threads", settings.accessWatchSeconds, threads));
 	}
 
 	void Tick()

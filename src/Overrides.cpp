@@ -139,7 +139,7 @@ namespace Overrides
 
 		Trace::Write("overrides.set", Trace::Args{}.Int("set", next).Str("values", Describe(next)), nullptr, true);
 		logs::info("override set {}: {}", next, Describe(next));
-		Hud::Show("overrides", std::format("CLR: set {}/{}: {}", next, g_sets.size(), Describe(next)), true);
+		Hud::Show("overrides", std::format("CLR: set {}/{}: {}", next, g_sets.size(), Describe(next)));
 	}
 
 	std::uint32_t Active()

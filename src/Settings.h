@@ -9,7 +9,7 @@ struct Settings
 	bool                  readCellBuffers{ false };
 	bool                  logCellAttachPerRef{ false };
 	bool                  blockDoorsInCombat{ false };
-	bool                  showCellNotifications{ true };  // HUD message on every cell change
+	bool                  hotkeyMessages{ true };         // HUD answers to hotkeys (the only HUD messages since 0.8.25)
 	bool                  profileLoadingScreen{ true };   // sample the main thread while the Loading Menu is open
 	std::filesystem::path logDirectory;                   // empty -> <MyDocuments>\My Games\Skyrim Special Edition\SKSE
 
@@ -20,7 +20,7 @@ struct Settings
 	std::uint32_t detectorsKey{ 64 };         // F6: doors and windows summary on the HUD
 	std::uint32_t interiorSimKey{ 66 };       // F8: InteriorSim off / portal
 	std::uint32_t toggleTemporalAAKey{ 62 };  // F4: the game's TAA on or off in memory (0.8.20; until 0.8.19 soft particles in the portal)
-	std::uint32_t toggleSoftEffectsKey{ 60 }; // F2: soft particles in the portal's pass on or off
+	std::uint32_t interiorImageSpaceKey{ 60 }; // F2: the interior's image space while the portal is drawn (0.8.25; 0.8.24 soft particles)
 	std::uint32_t accessWatchKey{ 61 };       // F3: capture who reads the player's and the camera's position
 
 	// [Overrides] sSet1..sSet9: "name:Section=value | ..." applied in memory by the hotkey
@@ -46,7 +46,6 @@ struct Settings
 
 	// [Detectors] load doors and windows near the player; off since 0.8.4 (doors are still scanned silently)
 	bool          detectorsEnabled{ false };
-	bool          detectorsNotify{ true };
 	float         doorsIntervalSeconds{ 0.5f };
 	std::uint32_t nearestCount{ 5 };
 	bool          windowsEnabled{ true };
@@ -86,6 +85,7 @@ struct Settings
 	bool          portalVirtualCamera{ true };         // the world camera, for the interior's actors, is the portal's camera
 	bool          portalSoundThroughDoor{ true };      // the interior's sounds are heard in the street
 	bool          portalDistanceThroughDoor{ true };   // GetDistance between the player and the interior's references goes through the door
+	bool          portalSubtitlesThroughDoor{ true };  // subtitles of the interior's speakers are shown in the street
 
 	// [Watchdog] sees a frozen game from outside while the portal runs
 	bool  watchdogEnabled{ true };
@@ -101,6 +101,7 @@ struct Settings
 	bool          probeEnabled{ true };
 	float         probeIntervalSeconds{ 5.0f };
 	std::uint32_t probeMaxActors{ 400 };
+	bool          probeActorJumps{ true };  // actor.jump: steps longer than a sprint, cell changes, returns far away
 
 	[[nodiscard]] static Settings& Get();
 

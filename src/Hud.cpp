@@ -21,27 +21,20 @@ namespace
 
 namespace Hud
 {
-	void Show(std::string_view a_channel, std::string a_text, bool a_urgent)
+	void Show(std::string_view a_channel, std::string a_text)
 	{
-		if (!Settings::Get().showCellNotifications) {
+		if (!Settings::Get().hotkeyMessages) {
 			return;
 		}
 		const std::scoped_lock lock{ g_lock };
 		const auto             it = std::ranges::find(g_waiting, a_channel, &Message::channel);
 		if (it != g_waiting.end()) {
 			it->text = std::move(a_text);
-			if (a_urgent) {
-				std::rotate(g_waiting.begin(), it, it + 1);
-			}
 			return;
 		}
-		if (a_urgent) {
-			g_waiting.push_front({ std::string{ a_channel }, std::move(a_text) });
-		} else {
-			g_waiting.push_back({ std::string{ a_channel }, std::move(a_text) });
-		}
+		g_waiting.push_back({ std::string{ a_channel }, std::move(a_text) });
 		if (g_waiting.size() > kMaxWaiting) {
-			g_waiting.erase(g_waiting.begin() + (a_urgent ? 1 : 0));  // drop the oldest one that is not the new urgent one
+			g_waiting.pop_front();
 		}
 	}
 
