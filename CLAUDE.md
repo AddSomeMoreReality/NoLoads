@@ -54,13 +54,13 @@ SKSE-плагин для Skyrim AE: начинался как исследова
 - **Конфиг:** `xmake f -m releasedbg --skyrim_vr=n -y` (SE+AE без VR, `EXCLUSIVE_SKYRIM_FLAT`). INI — `--rex_ini=y` или WinAPI `GetPrivateProfileString*`. Mid-function хуки — `--skse_xbyak=y`. spdlog с `std_format = true`: в `SKSE::log::*` синтаксис `std::format`.
 - **Не задавай `XSE_TES5_GAME_PATH` и `XSE_TES5_MODS_PATH`:** иначе xmake скопирует DLL в `Data` в обход Vortex.
 - **WSL:** MSVC через `powershell.exe` и VS Dev Shell, подробности в `lib/commonlibsse-ng/CLAUDE.md`.
-- **Упаковка:** `scripts/build.ps1` — `xmake f` + `xmake build`, stage-папка, `dist/CellLoadResearch-<version>.zip` (версия из `xmake.lua`). В архиве `SKSE/Plugins/` (`.dll`, `.pdb`, `.ini`), с 0.8.6 рядом `Meshes/` и `Textures/` (из `res/data/`); других папок первого уровня нет. Скриптов Papyrus и `.esp` нет (5.14, п. 7).
+- **Упаковка:** `scripts/build.ps1` — `xmake f` + `xmake build`, stage-папка, `dist/CellLoadResearch-<version>.zip` (версия из `xmake.lua`). В архиве `SKSE/Plugins/` (`.dll`, `.pdb`, `.ini`), с 0.8.6 рядом `Meshes/` и `Textures/` (из `res/data/`); других папок первого уровня нет. Скриптов Papyrus и `.esp` нет (5.14, п. 7). Ветка, кроме `main` и `feature/interior-portal`, добавляется к имени архива; ветка и коммит пишутся в лог и в `info.plugin` (`src/BuildInfo.h`, генерирует `build.ps1`).
   - **Нет папки `Data/` в корне.** `xmake package` для Vortex не используй.
   - Архивируй `tar.exe -a -c -f <zip> -C <stage> ...` или `ZipFile::CreateFromDirectory` (PowerShell 7). `Compress-Archive` из PS 5.1 пишет `\` — не использовать.
   - После упаковки выведи `tar -tf <zip>`: разделители `/`, первый уровень как выше.
 - **Установка (пользователь):** Vortex → Install From File → Enable → Deploy; обновление — Replace. Проверка: `<Game>\Data\SKSE\Plugins\CellLoadResearch.dll` существует, после запуска появляется `CellLoadResearch.log`.
 - **Прогон:** игру запускает пользователь. Автономный запуск (`skse64_loader.exe`, правка INI в `Data` на месте, `bQuitWhenDone=1`) — только с его явного разрешения; после прогона значения вернуть.
-- **Анализ трассы:** `tools/analyze_trace.py` (stdlib Python 3), `tools/name_functions.py`. Подробности — `docs/ORIGINAL_TASK.md`, раздел 6.
+- **Анализ трассы:** сначала `tools/run_digest.py <папка прогона>` (сводка в `digest.md`), подробно — `tools/analyze_trace.py` (stdlib Python 3), имена функций — `tools/name_functions.py`. Подробности — `docs/ORIGINAL_TASK.md`, раздел 6.
 
 ---
 
