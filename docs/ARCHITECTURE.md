@@ -166,8 +166,9 @@ Main::RenderWorld (detour AE#107142, главный поток)
 
 | Инструмент | Назначение |
 |---|---|
-| `scripts/build.ps1` | Сборка и zip для Vortex |
-| `tools/analyze_trace.py` | Разбор трассы: `python tools/analyze_trace.py <trace> --timeline` |
+| `scripts/build.ps1` | Сборка и zip для Vortex. Пишет `src/BuildInfo.h` (ветка и коммит, в `.gitignore`), к имени архива добавляет ветку, кроме `main` и `feature/interior-portal` |
+| `tools/run_digest.py` | Короткая сводка прогона: `python tools/run_digest.py logs/run-X.Y.Z [--full]` → `digest.md` в папке прогона. Переходы, клавиши, портал, `actor.jump`, `scene.change`, сбои. Первый шаг разбора |
+| `tools/analyze_trace.py` | Полный разбор трассы: `python tools/analyze_trace.py <trace> --timeline`. Нужен для исследования загрузки ячеек (0.2–0.7); для портала хватает `run_digest.py` |
 | `tools/name_functions.py` | Подпись `AE#id`, дерево вызовов, поиск ссылок (`--xref`) |
 | `tools/portal_dump_to_png.py` | DDS портала в PNG рядом с исходным файлом |
 | `tools/make_portal_assets.py` | Квадрат и заглушка текстуры в `res/data/` |

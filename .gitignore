@@ -15,3 +15,6 @@ vs*/
 # files
 *.zip
 compile_commands.json
+
+# generated
+src/BuildInfo.h
