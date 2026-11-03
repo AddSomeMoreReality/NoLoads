@@ -1,9 +1,8 @@
 #pragma once
 
-// Experiment: keep one interior cell and one exterior area loaded so entering them is near-instant.
-// - exterior: (2r+1)^2 cells around [Preload] sExteriorCell are queued with ExteriorCellLoader::QueueCellLoad
-//   whenever they are unloaded (checked every fRefreshSeconds; off when sExteriorCell is empty);
-// - interior: the game's own bPreloadLinkedInteriors is switched on in memory (doors near the player),
+// Experiment: keep one interior cell loaded so entering it is near-instant (the kept exterior area,
+// [Preload] sExteriorCell, is gone since T02):
+// - the game's own bPreloadLinkedInteriors is switched on in memory (doors near the player),
 //   and [Preload] bKeepInterior calls ExteriorCellLoader::QueueInteriorCellLoad (AE#18540) for
 //   sInteriorCell every fRefreshSeconds: it queues the load when the cell is unloaded and moves it to
 //   the front of TES::interiorBuffer when it is buffered, so other preloaded interiors do not evict it;

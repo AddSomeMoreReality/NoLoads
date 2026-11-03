@@ -1069,11 +1069,7 @@ namespace
 		g_callsReady = lod && fade;
 		const bool view = WriteCall<PlayerView>("Main -> RenderPlayerView", REL::ID(36558), 0x11D, REL::ID(36559));
 		const bool subtitles = WriteCall<SubtitleSpeakerPosition>("subtitle update -> speaker position", REL::ID(52638), 0x122, REL::ID(19784));
-		bool fence = false;
-		if (Settings::Get().portalPassAtSceneListFence) {
-			fence = WriteCall<SceneListFence>("RenderPlayerView -> scene list fence", REL::ID(36559), 0x17E, REL::ID(69353));
-			Portal::SetPassAtSceneListFence(fence);
-		}
+		const bool fence = WriteCall<SceneListFence>("RenderPlayerView -> scene list fence", REL::ID(36559), 0x17E, REL::ID(69353));
 		logs::info("call hooks installed: controller LOD {}, fade {}, pass at the scene list fence {}, player view {}, subtitles {}", lod, fade, fence, view, subtitles);
 	}
 
@@ -1116,7 +1112,6 @@ namespace
 			results.emplace_back("TES::BufferInterior", AttachDetour<TesBufferInterior>(REL::Relocation<std::uintptr_t>{ REL::ID(13434) }.address()));
 			results.emplace_back("ExteriorCellLoader::CancelCellLoad", AttachDetour<LoaderCancel>(REL::Relocation<std::uintptr_t>{ REL::ID(18547) }.address()));
 			results.emplace_back("UnloadCell", AttachDetour<CellUnload>(REL::Relocation<std::uintptr_t>{ REL::ID(13721) }.address()));
-			results.emplace_back("Main::RenderWorld", Portal::AttachRenderWorldDetour());
 			results.emplace_back("Actor::ReducedProcessing", AttachDetour<ReducedProcessing>(REL::Relocation<std::uintptr_t>{ REL::ID(37277) }.address()));
 			results.emplace_back("ProcessLists::SelectAnimatedActors", AttachDetour<SelectAnimatedActors>(REL::Relocation<std::uintptr_t>{ REL::ID(41466) }.address()));
 			results.emplace_back("Actor::UpdateMovement", AttachDetour<MovementUpdate>(REL::Relocation<std::uintptr_t>{ REL::ID(37350) }.address()));

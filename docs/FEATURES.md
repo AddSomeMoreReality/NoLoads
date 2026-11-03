@@ -12,10 +12,10 @@
 | 5.7 | `Probe`, `ActorJumps` | проба симуляции, прыжки NPC |
 | 5.8 | `Profiler`, `tools/name_functions.py` | профиль экрана загрузки |
 | 5.9 | `Physics`, `Overrides` | прогрев физики, наборы настроек |
-| 5.10 | `Detectors` | двери и окна |
+| 5.10 | `Detectors` | двери (окна удалены в 0.8.26) |
 | 5.11 | `InteriorSim` | интерьер как соседняя ячейка |
-| 5.12 | `Portal` | портал: интерьер второй камерой (свет, NPC, частицы, расстояния, звук) |
-| 5.13 | `Portal` | цель «полноценный портал», шаги 1–6 |
+| 5.12 | `Portal*` | портал: интерьер второй камерой (свет, NPC, частицы, расстояния, звук). Файлы — `docs/ARCHITECTURE.md`, 3.3 |
+| 5.13 | `Portal*` | цель «полноценный портал», шаги 1–6 |
 | 5.15 | — | идеи из Realistic Reflections - Mirrors |
 
 ### 5.4 INI (`Data\SKSE\Plugins\CellLoadResearch.ini`)
@@ -28,17 +28,10 @@ bReadCellBuffers=0        ; H9: читать interior/exteriorBuffer — вык�
 bLogCellAttachPerRef=0    ; TESCellAttachDetachEvent очень шумный
 
 [Hotkeys]
-iStartAutoTest=68         ; F10 (DirectInput scan code)
-iSnapshot=87              ; F11
-
-[AutoTest]
-bEnabled=0
-sSaveName=                ; пусто — самое свежее сохранение
-fSettleSeconds=3.0
-fStepTimeoutSeconds=60
-bQuitWhenDone=0
-sSteps=coc:RiverwoodSleepingGiantInn | door:nearest | door:nearest | door:nearest | walk:+x,4 | coc:WhiterunBanneredMare | coc:Riverwood | coc:WhiterunBanneredMare | coc:Riverwood | purge | coc:WhiterunBanneredMare | coc:Riverwood | coc:Whiterun
+iSnapshot=87              ; F11 (DirectInput scan code)
 ```
+
+`[AutoTest]` и `iStartAutoTest` (F10) удалены в 0.8.26 (T02): автотест снят с требований 01.11.2026.
 
 Клавиши лови через `BSTEventSink<RE::InputEvent*>` на `RE::BSInputDeviceManager`: `ButtonEvent::IsDown()` и `GetIDCode()`.
 
@@ -52,7 +45,7 @@ sLogDirectory=            ; build.ps1 подставляет <проект>\logs
 
 [Hotkeys]
 iCycleOverrides=65        ; F7: перебор наборов [Overrides]. Не F9 — это быстрая загрузка игры
-iDetectorsReport=64       ; F6: сводка детекторов дверей и окон (5.10)
+iDetectorsReport=64       ; F6: сводка детекторов дверей (5.10; окна удалены в 0.8.26)
 iInteriorSimStage=66      ; F8: InteriorSim выключено / портал (5.11)
 iToggleTemporalAA=62      ; F4: TAA игры включено / выключено в памяти (5.12, с 0.8.20; до того мягкие частицы портала)
 iInteriorImageSpace=60    ; F2: ImageSpace интерьера на всём экране, пока виден портал (0.8.25; в 0.8.24 мягкие частицы)
@@ -66,11 +59,6 @@ bKeepInteriorNearDoorOnly=1
 bEnabled=0                ; выключены 24.10.2026 по просьбе пользователя
 fDoorsIntervalSeconds=0.5
 iNearestCount=5
-bWindows=1
-fWindowsIntervalSeconds=2.0
-fWindowRadius=3000
-sWindowKeywords=window
-sWindowExclude=lod
 
 [InteriorSim]             ; 5.11
 iStartStage=0             ; 0 выключено, 1 портал
@@ -90,14 +78,11 @@ bInteriorAmbient=1
 bLightEffects=0           ; эффекты со светом ламп интерьера
 bAnimateActors=1
 bSyncActorPositions=1
-iDepthMode=2
 iControllerUpdate=1       ; контроллеры интерьера (огонь, дым, свечи): 0 выключено, 1 выборочно, 2 всё дерево
 bFullActorProcessing=1    ; NPC интерьера получают полное обновление high (ИИ, передвижение)
 bGameAnimatesActors=1     ; NPC интерьера в заданиях анимации игры
-bSoftEffects=1            ; мягкие частицы в проходе портала
 bIgnoreParticleBudget=1   ; эмиттеры интерьера не подчиняются бюджету частиц игры
-bMasterParticles=1        ; проход портала рисует и общие системы частиц (огоньки свечей); только с bPassAtSceneListFence=1
-bPassAtSceneListFence=1   ; 0 — проход прямо перед RenderWorld; 1 — на границе списков сцены (5.12, 0.8.22)
+bMasterParticles=1        ; проход портала рисует и общие системы частиц (огоньки свечей)
 iParticleFacing=2         ; куда смотрят квады частиц: 0 как решит игра, 1 камера портала, 2 взгляд игрока через дверь (5.12, 0.8.23)
 bActorsSeen=1             ; NPC интерьера без kNotVisible: высота идёт за контроллером (0.8.24)
 bVirtualCamera=1          ; камера мира для NPC интерьера - камера портала (0.8.24)
@@ -125,8 +110,6 @@ sSet2=<sSet1> | fTeleportDoorActivateDelayTimer=0
 [Preload]                 ; 5.5
 bEnabled=1
 sInteriorCell=WhiterunBanneredMare
-sExteriorCell=            ; Riverwood — экстерьер; выключен по просьбе пользователя после падения 0.4.0
-iExteriorRadius=2
 fRefreshSeconds=2.0
 bPreloadLinkedInteriors=1
 ```
@@ -135,7 +118,7 @@ bPreloadLinkedInteriors=1
 
 **Цель пользователя:** один интерьер и одна область экстерьера заранее загружены и удерживаются в памяти, чтобы вход в них был почти мгновенным. Это должно работать как при естественном входе (через дверь или подходя к ячейке экстерьера), так и при `coc`.
 
-- **Экстерьер.** `(2r+1)²` ячеек вокруг `sExteriorCell` ставятся в очередь через `ExteriorCellLoader::QueueCellLoad`, если они выгружены. Повторная постановка той же ячейки — не чаще раза в 10 с.
+- **Экстерьер (удалён в 0.8.26, T02).** `(2r+1)²` ячеек вокруг `sExteriorCell` ставились в очередь через `ExteriorCellLoader::QueueCellLoad`, если они выгружены, не чаще раза в 10 с. Выключен по просьбе пользователя после падения 0.4.0 (`sExteriorCell` пуст).
 - **Интерьер.**
   - В памяти игры включается её собственный механизм `bPreloadLinkedInteriors` (`Skyrim.ini` не меняется): игра предзагружает интерьеры за ближними дверями.
   - Готовой функции, которая загружает произвольный интерьер без входа в него, нет. Если интерьер выгружается, надо найти, кто это делает, и заблокировать именно это место.
@@ -202,7 +185,7 @@ bPreloadLinkedInteriors=1
 
 ### 5.10 Детекторы дверей и окон (`Detectors.*`, запрос пользователя от 23.10.2026)
 
-**С 0.8.4 выключены** (`bEnabled=0`, просьба пользователя: «мутные» окна, скорее всего, часть больших текстур стен; эксперименты с окнами отложены).
+**С 0.8.4 выключены** (`bEnabled=0`, просьба пользователя: «мутные» окна, скорее всего, часть больших текстур стен; эксперименты с окнами отложены). **Поиск окон удалён в 0.8.26** (T02): ключи `bWindows`, `fWindows*`, `sWindow*`, запись `detector.windows`, флаг `window` в `detector.look`. Описание ниже — для истории. Поиск дверей остался.
 - Окна не ищутся, записей `detector.*` и сообщений нет.
 - Двери ищутся молча: `NearestDoorTo` нужен `Preload` и `InteriorSim`.
 - F6 показывает только то, что под взглядом.
@@ -287,7 +270,7 @@ bPreloadLinkedInteriors=1
   - смотрит поперёк плоскости двери;
   - пирамида видимости (`NiFrustum` на расстоянии 1) смещена так, что проходит через прямоугольник двери; ближняя плоскость — на 2 единицы перед дверью.
   - UV квадрата 0..1 совпадают с этой пирамидой, поэтому картинка верна с любой точки.
-- **Проход.** Detour `Main::RenderWorld` (`AE#107142`), перед оригиналом, в главном потоке. Шаги:
+- **Проход.** До 0.8.22 — detour `Main::RenderWorld` (`AE#107142`) перед оригиналом; с 0.8.22 — граница списков сцены (ниже, 0.8.22), с 0.8.26 только она. Главный поток. Шаги:
   1. копия теневого состояния;
   2. своя текстура (`R16G16B16A16_FLOAT`) и буфер глубины на время прохода подставляются в ячейки движка `iColorSlot`/`iDepthSlot`;
   3. `StartAccumulating`, затем `CullingContext` с `kIgnoreMultiBounds` по `cell3D` интерьера (не подвешенному никуда), затем `SubmitAccumulator`;
@@ -309,7 +292,7 @@ bPreloadLinkedInteriors=1
   - При старте у всей геометрии интерьера ставится `lightData->lightListChanged`, чтобы проходы собрались заново.
 - **Глубина `kMAIN` (0.8.10).** После эффектов игра возвращает текущим буфер глубины `kMAIN` (`AE#107522`, `AE#77457` = 0). Поэтому на время прохода подменяется вся ячейка `kMAIN`: текстура, `views`, `readOnlyViews`, SRV, размеры. Затем она возвращается.
 - **Отсечение (0.8.11):** контекст портала ставит `ignorePreprocess`. `BSCullingProcess::Process` (`AE#76553`) иначе пропускает узлы с `kPreProcessedNode` и `kNotVisible` — это устаревшие отметки игры для ячейки без игрока. В 0.8.10 так пропадали NPC.
-- **Режимы глубины (0.8.11, `[Portal] iDepthMode`, F4 по кругу):**
+- **Режимы глубины (0.8.11, `[Portal] iDepthMode`, F4 по кругу; с 0.8.26 только режим 2, ключа нет):**
   - 0 — своя ячейка и SRV `kMAIN` (0.8.9);
   - 1 — вся ячейка `kMAIN` (0.8.10, эффектов нет);
   - 2 — вся `kMAIN`, а мягкие частицы читают копию глубины. Её снимает перехват `BSEffectShader::SetupTechnique` (vfunc 2) перед первым эффектом прохода.
@@ -318,7 +301,7 @@ bPreloadLinkedInteriors=1
   - Эффекты с `kEffectLighting` иначе берут до 5 источников. В 0.8.10–0.8.11 огня не было совсем.
   - `[Portal] bLightEffects` включает и выключает это; проходы эффектов пересобираются (`lastRenderPassState = 0x7FFFFFFF`). Прогон 0.8.12: эффекты у очага без `kEffectLighting`, причина не в свете.
   - В статусе — `effects`: 8 эффектов у самой сильной лампы (очаг).
-  - Режим глубины с 0.8.12 задаётся только в INI (`iDepthMode`, по умолчанию 2).
+  - Режим глубины с 0.8.12 задавался только в INI (`iDepthMode`, по умолчанию 2), в 0.8.26 режимы 0 и 1 удалены.
 - **Анимация NPC (0.8.12, `bAnimateActors`, `bSyncActorPositions`).** Игра двигает анимацию актёров high (`AE#41377`) только с `BOOL_BITS::kProcessMe`. Портал перед проходом:
   - `Update3DPosition(false)`, если 3D дальше 1 единицы от позиции актёра;
   - `Actor::UpdateAnimation(dt)` (vfunc `0x7D`);
@@ -342,6 +325,7 @@ bPreloadLinkedInteriors=1
   - При старте портала до 64 эффектов интерьера, не скрытых узлами, попадают в наблюдение. `Portal::NoteVisible` из перехватов `OnVisible` и перехват `GetRenderPasses` считают для них проходы отсечения портала.
   - В статусе `watchedEffects`: `visits`, `parentVisits`, `passCalls`, `noPasses`, цепочка родителей.
 - **Мягкие частицы (0.8.14, `[Portal] bSoftEffects`; F4 до 0.8.19).** Прогон 0.8.14: огонь и дым с ними и без них одинаковы. Выключенные — перехват `BSEffectShader::SetupTechnique` снимает бит 18 (`kSoftEffectBit`) с техники эффекта в проходе портала. В статусе `softEffects`, `softEffectsDropped` и `hiddenEffects` — эффекты интерьера, не попавшие в отрисовку, с причинами.
+  - Прогон 0.8.24 подтвердил, что разницы нет. В 0.8.26 (T02) переключатель удалён: мягкие частицы всегда включены, в статусе остался `softEffectSetups`.
 - **Контроллеры интерьера (0.8.13, `[Portal] iControllerUpdate`; F4 только в 0.8.13).** Частицы огня и дыма и пламя свечей двигают контроллеры, а их — обновление сцены, куда ячейка без игрока не входит. Перед отсечением портал вызывает:
   - режим 1: `UpdateSelectedDownwardPass` (vfunc `0x2D`) у `cell3D`;
   - режим 2: `NiAVObject::Update` с битом 0 (контроллеры).
@@ -361,7 +345,7 @@ bPreloadLinkedInteriors=1
   - `SubmitAccumulator` (`AE#106436`) не рисует группу нормалей преломления: её рисует только кадр игры. После прохода нужен `AE#106600(accumulator, 5)`, как в `AE#52727`. Без него проходы остаются в накопителе.
   - `Render` проверяет `PassInventory` накопителя до и после прохода. Остатки в геометрических группах чистятся, остатки в группах техник или в группе прозрачности дают `portal.fault`, и портал останавливается на всю сессию.
   - `RenderPlayerView` (`AE#36559`) запускает задания отсечения мира до `RenderWorld`, а завершает после. Значит, в момент нашего прохода задания игры работают. Объекты, общие с игрой, можно регистрировать только на границе списков сцены.
-  - Граница списков сцены: `AE#36559 + 0x17E`, вызов `AE#69353`. Включается `[Portal] bPassAtSceneListFence=1`, перехват `SceneListFence`.
+  - Граница списков сцены: `AE#36559 + 0x17E`, вызов `AE#69353`, перехват `SceneListFence`. До 0.8.26 включалась `[Portal] bPassAtSceneListFence=1`. С 0.8.26 (T02) перехват ставится всегда, detour `RenderWorld` удалён: если вызов не найден, прохода нет.
   - Флаг отсечения портала `thread_local`: задания игры вызывают те же перехваты в то же время.
   - Метки `PassPhase` показывают сторожу шаг прохода.
 - **Поворот частиц к камере (0.8.23, `[Portal] iParticleFacing`).** Пламя, искры и дым — `NiParticleSystem`, а не `NiBillboardNode`: поворот 0.8.18 их не касался. Квады частиц строит на CPU `AE#77463`, вызов из `AE#107637`, по `RendererShadowState::posAdjust` и `cameraData.viewUp/viewRight`.

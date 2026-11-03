@@ -19,22 +19,22 @@
 
 | Что | Где | Значение | Чем заменить |
 |---|---|---|---|
-| Фоновый свет | `Portal.cpp`, `kAmbientOffset`, `kAmbientBytes` | `BSShaderManager::State + 0xC8`, `0x44` байта | Именованные поля в NG или сохранение через функции игры |
-| Остаток выпуска частиц | `Portal::BeforeEmission` | Первое поле после `NiPSysModifier` (`+0x30`) | Описать `NiPSysEmitter` в NG, класса там нет |
+| Фоновый свет | `PortalState.h`, `kAmbientOffset`, `kAmbientBytes` | `BSShaderManager::State + 0xC8`, `0x44` байта | Именованные поля в NG или сохранение через функции игры |
+| Остаток выпуска частиц | `PortalEffects.cpp`, `Portal::BeforeEmission` | Первое поле после `NiPSysModifier` (`+0x30`) | Описать `NiPSysEmitter` в NG, класса там нет |
 | Место `lodDistance` | `Hooks.cpp`, `InstallCalls` | `AE#37348 + 0x1F3` | Поиск сигнатурой внутри функции |
 | Место затухания | `Hooks.cpp`, `InstallCalls` | `AE#19384 + 0xE4` | То же |
-| Граница списков сцены | `Hooks.cpp`, `InstallCalls` | `AE#36559 + 0x17E` | То же. По разбору мода зеркал смещение на SE такое же |
+| Граница списков сцены | `Hooks.cpp`, `InstallCalls` | `AE#36559 + 0x17E` | То же. По разбору мода зеркал смещение на SE такое же. С 0.8.26 единственное место прохода: если вызов не найден, портала нет |
 | Вызов `RenderPlayerView` | `Hooks.cpp`, `InstallCalls` (0.8.25) | `AE#36558 + 0x11D` | Detour `AE#36559` (SE 35560) вместо перехвата вызова |
 | Место говорящего для субтитров | `Hooks.cpp`, `InstallCalls` (0.8.25) | `AE#52638 + 0x122`, раскладка «мировой позиции» `AE#19784` (точка, `+0x10` пространство) | Сигнатура внутри функции; SE-номера `52638` и `19784` не найдены |
 | Размер `AE#40845` | `Hooks.cpp`, `FromLinkedPreload` | `0x18E` | Размер из `.pdata` или сигнатура |
 | Тип накопителя | `Portal.cpp`, `kAccumulatorType` | `0x63` | Проверить на SE |
-| Техника эффектов | `Portal.cpp`, `kEffectTechniqueBase`, `kSoftEffectBit` | `0x4000002C`, бит 18 | Проверить на SE, вынести в NG |
-| Флаги света | `Portal.cpp`, `kLightInFrustum`, `kLightOutOfFrustum` | `0`, `0xFF` | Проверить на SE |
-| Режим глубины | `Portal.cpp`, `kDepthTestWrite` | `3` | Перечисление NG, если появится |
-| Сброс проходов | `Portal.cpp`, `kRebuildPasses` | `0x7FFFFFFF` | Проверить на SE |
+| Техника эффектов | `PortalRender.cpp`, `kEffectTechniqueBase`, `kSoftEffectBit` | `0x4000002C`, бит 18 | Проверить на SE, вынести в NG |
+| Флаги света | `PortalLights.cpp`, `kLightInFrustum`, `kLightOutOfFrustum` | `0`, `0xFF` | Проверить на SE |
+| Режим глубины | `PortalRender.cpp`, `kDepthTestWrite` | `3` | Перечисление NG, если появится |
+| Сброс проходов | `PortalEffects.cpp`, `kRebuildPasses` | `0x7FFFFFFF` | Проверить на SE |
 | Ячейки рендера | `[Portal] iColorSlot`, `iDepthSlot` | `17`, `9` | Свой выбор свободной ячейки или вообще без подмены ячеек |
-| Индекс группы | `Portal.cpp`, `kRefractionNormalsGroup`, `kGeometryGroups` | `5`, `16` | В разборе мода зеркал так на SE и AE, на VR групп 19 |
-| Безымянные поля | `Portal.cpp` | `BSAnimationUpdateData::unk2A`, `unk2C`; `BSFadeNode::unk144`; `NiParticleSystem::unk180`, `unk188` | Назвать в NG, сверить на SE |
+| Индекс группы | `PortalRender.cpp`, `kRefractionNormalsGroup`, `kGeometryGroups` | `5`, `16` | В разборе мода зеркал так на SE и AE, на VR групп 19 |
+| Безымянные поля | `PortalActors.cpp`, `PortalEffects.cpp` | `BSAnimationUpdateData::unk2A`, `unk2C`; `BSFadeNode::unk144`; `NiParticleSystem::unk180`, `unk188` | Назвать в NG, сверить на SE |
 | Звук у слушателя | `Hooks.cpp`, `SoundEmitterPosition::kAtListener` | Бит 10 в `BSGameSound::soundType` | Назвать в NG, сверить на SE |
 
 ### Индексы виртуальных функций
@@ -65,7 +65,6 @@ SE и AE нумеруются отдельно. Без SE-номера код н
 | 36559 | 35560 | `RenderPlayerView` |
 | 69353 | 67992 | `JobList::Finish` |
 | 106385 | 99741 | `ShadowSceneNode::SetPortalGraph` |
-| 107142 | 100424 | `Main::RenderWorld` |
 
 `RELOCATION_ID` уже стоит у `AE#106600` (SE 99955), `AE#77463` (SE 75657, упаковщик частиц) и `AE#19823` (SE 19396, `GetDistance`).
 
@@ -75,7 +74,7 @@ SE и AE нумеруются отдельно. Без SE-номера код н
 |---|---|
 | `Hooks.cpp` | 13291, 13325, 13370, 13419, 13434, 13721, 18547, 19130, 19384, 19784, 19824, 36558, 36609, 37277, 37348, 37350, 40845, 41466, 43690, 52638, 61410, 74651, 77851, 78274, 105486 |
 | `InteriorSim.cpp` | 18890, 18900, 18976, 19046, 19063, 19130, 77905, 77906, 400333 |
-| `Portal.cpp` | 18966, 41496, 105643, 106342, 388630, 400333, 411270 |
+| `Portal*.cpp` | 18966 и 105643 (`PortalImage`), 41496 (`PortalActors`), 106342 (`PortalLights`), 388630, 400333, 411270 (`PortalEffects`) |
 | `Preload.cpp` | 18540 |
 
 **Как получить SE-номера.** Нужны `SkyrimSE.exe` 1.5.97 и `version-1-5-97-0.bin`. На диске пользователя их нет. Дальше функции сопоставляются инструментами из `tools/`: по таблицам виртуальных функций, строкам и вызывающим. Часть номеров есть в NG и в исходниках мода зеркал: это пары `RELOCATION_ID(se, ae)` и `VariantID(se, ae, vr)`.
