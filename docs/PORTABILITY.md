@@ -65,7 +65,6 @@ SE и AE нумеруются отдельно. Без SE-номера код н
 | 36559 | 35560 | `RenderPlayerView` |
 | 69353 | 67992 | `JobList::Finish` |
 | 106385 | 99741 | `ShadowSceneNode::SetPortalGraph` |
-| 107142 | 100424 | `Main::RenderWorld` |
 
 `RELOCATION_ID` уже стоит у `AE#106600` (SE 99955), `AE#77463` (SE 75657, упаковщик частиц) и `AE#19823` (SE 19396, `GetDistance`).
 
