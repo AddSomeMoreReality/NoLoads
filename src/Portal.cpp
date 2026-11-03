@@ -5,7 +5,6 @@
 #include "Trace.h"
 
 #include <d3d11.h>
-#include <detours.h>
 
 namespace
 {
@@ -77,28 +76,16 @@ namespace
 		ID3D11DepthStencilView*   dsv{ nullptr };
 		ID3D11DepthStencilView*   dsvReadOnly{ nullptr };
 		ID3D11ShaderResourceView* depthSrv{ nullptr };
-		ID3D11Texture2D*          depthCopy{ nullptr };  // DepthMode::kCopiedView: what soft particles read
+		ID3D11Texture2D*          depthCopy{ nullptr };  // what soft particles read: our depth, copied at the pass's first effect
 		ID3D11ShaderResourceView* depthCopySrv{ nullptr };
 		std::uint32_t             width{ 0 };
 		std::uint32_t             height{ 0 };
 	};
 
-	// How the pass lends its depth buffer to the engine ([Portal] iDepthMode, cycled by a hotkey):
-	// effects test depth against the kMAIN slot after their first technique and read its shader view.
-	enum class DepthMode : std::uint32_t
-	{
-		kOwnSlot = 0,     // 0.8.9: our slot, and only the shader view of kMAIN (fire tested against the street's depth)
-		kWholeMain = 1,   // 0.8.10: kMAIN as a whole (no fire at all)
-		kCopiedView = 2,  // kMAIN as a whole, its shader view a copy of our depth taken at the pass's first effect
-		kTotal
-	};
-
-	constexpr std::array<const char*, 3> kDepthModeNames{ "own slot + main view", "whole main slot", "whole main slot, copied view" };
-
 	// How the pass advances the interior's controllers (fire and smoke particles, candle flames, animated
 	// textures): the game does it through the scene graph, which a cell without the player is not part
 	// of. 0.8.12: no particles before the player's first visit, and the smoke stood still after it.
-	// [Portal] iControllerUpdate, cycled by a hotkey.
+	// [Portal] iControllerUpdate.
 	enum class ControllerMode : std::uint32_t
 	{
 		kOff = 0,
@@ -156,7 +143,6 @@ namespace
 	Portal::Door                                g_door;
 	std::atomic<bool>                           g_active{ false };  // read by the watchdog
 	std::atomic<PassPhase>                      g_passPhase{ PassPhase::kIdle };
-	std::atomic<bool>                           g_passAtFence{ false };  // [Portal] bPassAtSceneListFence, once its hook is in
 	std::string                                 g_fault;           // the pass broke a rule of the game's renderer: no more passes
 	std::uint32_t                               g_tracedLeftovers{ 0 };   // geometry groups already reported
 	std::uint32_t                               g_leftoverGroups{ 0 };    // ... and since the last status
@@ -182,8 +168,6 @@ namespace
 	std::int64_t                                g_nextActorRefreshUs{ 0 };
 	std::vector<RE::NiPointer<RE::BSGeometry>>  g_sampledShapes;
 	bool                                        g_rebuildPasses{ false };  // the interior's render passes are built again on the next pass
-	DepthMode                                   g_depthMode{ DepthMode::kCopiedView };
-	bool                                        g_depthModeRead{ false };  // taken from the INI once
 	thread_local bool                           t_inPass{ false };         // SubmitAccumulator of our pass runs on this thread
 	bool                                        g_depthCopied{ false };    // this pass's copy of the depth buffer is taken
 	bool                                        g_foreground{ true };      // the game window was in the foreground at the last frame
@@ -209,8 +193,6 @@ namespace
 	std::atomic<std::uint64_t>                                    g_gameAnimationAdded{ 0 };
 	std::array<std::atomic<std::uint32_t>, kMaxAnimatedActors>    g_movementUpdates{};
 	thread_local bool                                             t_ownAnimation{ false };  // AnimateActors is updating the actor
-	bool                                                          g_softEffects{ true };    // soft particles in the pass ([Portal] bSoftEffects, hotkey)
-	bool                                                          g_softEffectsRead{ false };
 
 	// The portal's space for IntoInterior, read by the game's actor updates on job threads: published
 	// by Start, withdrawn by Stop, never freed (one per start).
@@ -273,7 +255,6 @@ namespace
 	std::uint64_t g_positionsSynced{ 0 };
 	std::uint64_t g_controllerUpdates{ 0 };
 	double        g_controllerMsSum{ 0.0 };
-	std::uint64_t g_softEffectsDropped{ 0 };  // soft effect techniques drawn without their soft part
 	std::uint64_t g_actorLightsLent{ 0 };     // our lights put into the light lists of the actors' shapes for a pass
 	std::uint64_t g_shapeRecollects{ 0 };     // times the lights' shapes were collected again: none had any
 
@@ -1872,7 +1853,9 @@ namespace
 	// kMAIN (AE#77457 returns 0), and soft particles read its shader view. 0.8.7 drew the hearth's fire
 	// through the interior's walls; 0.8.9, which lent only that view, drew it only with the eye a meter
 	// or more from the door: tested against the street's depth, where the door stands at the eye's
-	// distance, while the portal camera's near plane is 2 units in front of the door.
+	// distance, while the portal camera's near plane is 2 units in front of the door. 0.8.10 lent the
+	// whole slot, and there was no fire at all: its shader view must be a copy of our depth, taken at the
+	// pass's first effect (BeforeEffectTechnique). [Portal] iDepthMode chose among the three until T02.
 	struct LentSlots
 	{
 		RE::BSGraphics::RenderTargetData             color{};
@@ -1922,18 +1905,10 @@ namespace
 		};
 		lendDepth(settings.portalDepthSlot, a_saved.depth, a_saved.depthProperties);
 		auto& mainDepth = depths[RE::RENDER_TARGET_DEPTHSTENCIL::kMAIN];
-		if (g_depthMode == DepthMode::kOwnSlot) {
-			a_saved.mainDepth = mainDepth;
-			a_saved.mainDepthProperties = manager->GetDepthStencilTargetData()[RE::RENDER_TARGET_DEPTHSTENCIL::kMAIN];
-			mainDepth.depthSRV = AsRex<REX::W32::ID3D11ShaderResourceView>(g_target.depthSrv);
-			return;
-		}
 		lendDepth(RE::RENDER_TARGET_DEPTHSTENCIL::kMAIN, a_saved.mainDepth, a_saved.mainDepthProperties);
-		if (g_depthMode == DepthMode::kCopiedView) {
-			// a shader view of the buffer the effects test against is a hazard if it is ever bound writable
-			mainDepth.depthSRV = AsRex<REX::W32::ID3D11ShaderResourceView>(g_target.depthCopySrv);
-			depths[settings.portalDepthSlot].depthSRV = mainDepth.depthSRV;
-		}
+		// a shader view of the buffer the effects test against is a hazard if it is ever bound writable
+		mainDepth.depthSRV = AsRex<REX::W32::ID3D11ShaderResourceView>(g_target.depthCopySrv);
+		depths[settings.portalDepthSlot].depthSRV = mainDepth.depthSRV;
 	}
 
 	void ReturnSlots(const LentSlots& a_saved)
@@ -2075,7 +2050,7 @@ namespace
 		return a_up.Dot(a_camera.up) > kSameDirection && a_right.Dot(a_camera.right) > kSameDirection;
 	}
 
-	// One pass, main thread: right before Main::RenderWorld, or at the scene list fence.
+	// One pass, main thread, at the scene list fence.
 	void Render()
 	{
 		auto* main = RE::Main::WorldRootCamera();
@@ -2165,8 +2140,8 @@ namespace
 			// particles live in a master system under the particle manager, in world coordinates. The
 			// interior's flames were never in the tree culled above (0.8.8-0.8.20: no candle burned).
 			// Right before RenderWorld this froze the game (0.8.21): those shapes are the street's too, and
-			// the game's jobs are registering the same render passes at that moment. It takes the fence.
-			if (auto* manager = settings.portalMasterParticles && g_passAtFence.load(std::memory_order_relaxed) ? ParticleManager() : nullptr) {
+			// the game's jobs are registering the same render passes at that moment. The pass runs at the fence.
+			if (auto* manager = settings.portalMasterParticles ? ParticleManager() : nullptr) {
 				Mark(PassPhase::kCullMasterParticles);
 				context.scene.reset(manager);
 				RE::BSCullingProcess::Process(context);
@@ -2352,39 +2327,13 @@ namespace
 			g_skipWhy = "game window not in the foreground";
 		}
 	}
-
-	// Main::RenderWorld(bool) (AE#107142): draws the world. RenderPlayerView (AE#36559) submitted the
-	// world's culling jobs before it and finishes them after it (AE#69353), so they are running here.
-	struct RenderWorld
-	{
-		static void thunk(bool a_arg)
-		{
-			if (Trace::IsMainThread() && !g_passAtFence.load(std::memory_order_relaxed)) {
-				RunPass();
-			}
-			func(a_arg);
-		}
-
-		static inline decltype(&thunk) func;
-	};
 }
 
 namespace Portal
 {
-	long AttachRenderWorldDetour()
-	{
-		RenderWorld::func = reinterpret_cast<decltype(RenderWorld::func)>(REL::Relocation<std::uintptr_t>{ REL::ID(107142) }.address());
-		return DetourAttach(reinterpret_cast<PVOID*>(&RenderWorld::func), reinterpret_cast<PVOID>(&RenderWorld::thunk));
-	}
-
-	void SetPassAtSceneListFence(bool a_atFence)
-	{
-		g_passAtFence.store(a_atFence, std::memory_order_relaxed);
-	}
-
 	void OnSceneListFence()
 	{
-		if (g_passAtFence.load(std::memory_order_relaxed) && Trace::IsMainThread()) {
+		if (Trace::IsMainThread()) {
 			RunPass();
 		}
 	}
@@ -2962,12 +2911,8 @@ namespace Portal
 		++g_effectSetups;
 		if (((a_technique - kEffectTechniqueBase) & kSoftEffectBit) != 0) {
 			++g_softEffectSetups;
-			if (!g_softEffects) {
-				++g_softEffectsDropped;
-				return a_technique - kSoftEffectBit;  // the same effect without the soft part (its depth fade)
-			}
 		}
-		if (g_depthMode == DepthMode::kCopiedView && !g_depthCopied) {
+		if (!g_depthCopied) {
 			g_depthCopied = true;  // the opaque shapes are drawn: effects come after them
 			if (auto* context = Context()) {
 				context->CopyResource(g_target.depthCopy, g_target.depth);
@@ -2996,17 +2941,9 @@ namespace Portal
 		if (!CreateTarget(a_why) || !LoadQuad(a_why)) {
 			return false;
 		}
-		if (!g_depthModeRead) {
-			g_depthModeRead = true;
-			g_depthMode = static_cast<DepthMode>((std::min)(settings.portalDepthMode, std::to_underlying(DepthMode::kTotal) - 1));
-		}
 		if (!g_effectsLitRead) {
 			g_effectsLitRead = true;
 			g_effectsLit = settings.portalLightEffects;
-		}
-		if (!g_softEffectsRead) {
-			g_softEffectsRead = true;
-			g_softEffects = settings.portalSoftEffects;
 		}
 		if (!g_controllerModeRead) {
 			g_controllerModeRead = true;
@@ -3189,8 +3126,6 @@ namespace Portal
 							  .Int("actorsShown", static_cast<std::int64_t>(g_actorsShown))
 							  .Raw("actorStates", ActorsJson())
 							  .Raw("interiorPreprocessed", g_door.scene ? PreprocessedJson() : "null")
-							  .Int("depthMode", std::to_underlying(g_depthMode))
-							  .Str("depthModeName", kDepthModeNames[std::to_underlying(g_depthMode)])
 							  .Int("effectSetups", static_cast<std::int64_t>(g_effectSetups))
 							  .Int("softEffectSetups", static_cast<std::int64_t>(g_softEffectSetups))
 							  .Int("depthCopies", static_cast<std::int64_t>(g_depthCopies))
@@ -3207,13 +3142,10 @@ namespace Portal
 							  .Num("controllerMsAverage", g_controllerUpdates ? g_controllerMsSum / static_cast<double>(g_controllerUpdates) : 0.0)
 							  .Raw("controllers", g_door.scene ? ControllersJson() : "null")
 							  .Int("fullProcessingGranted", static_cast<std::int64_t>(g_fullProcessingGranted.exchange(0, std::memory_order_relaxed)))
-							  .Bool("softEffects", g_softEffects)
-							  .Int("softEffectsDropped", static_cast<std::int64_t>(g_softEffectsDropped))
 							  .Int("gameAnimationAdded", static_cast<std::int64_t>(g_gameAnimationAdded.exchange(0, std::memory_order_relaxed)))
 							  .Int("pointsCarried", static_cast<std::int64_t>(g_pointsCarried[std::to_underlying(Carried::kControllerLod)].exchange(0, std::memory_order_relaxed)))
 							  .Int("fadesCarried", static_cast<std::int64_t>(g_pointsCarried[std::to_underlying(Carried::kFade)].exchange(0, std::memory_order_relaxed)))
 							  .Int("maxPassesPerFrame", static_cast<std::int64_t>(g_maxPassesPerFrame))
-							  .Bool("passAtFence", g_passAtFence.load(std::memory_order_relaxed))
 							  .Int("particleFacing", Settings::Get().portalParticleFacing)
 							  .Int("packCalls", static_cast<std::int64_t>(g_packCalls))
 							  .Int("packHeldPortal", static_cast<std::int64_t>(g_packHeldPortal))
@@ -3270,7 +3202,6 @@ namespace Portal
 		g_positionsSynced = 0;
 		g_controllerUpdates = 0;
 		g_controllerMsSum = 0.0;
-		g_softEffectsDropped = 0;
 		g_actorLightsLent = 0;
 		return json;
 	}

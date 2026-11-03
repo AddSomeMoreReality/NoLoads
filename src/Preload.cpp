@@ -11,33 +11,19 @@ namespace
 {
 	constexpr std::uint32_t kStateUnknown = 0xFF;
 	constexpr std::uint32_t kUnloaded = 0;                 // TESObjectCELL::CellState
-	constexpr std::uint32_t kUnloading = 1;
 	constexpr std::uint32_t kUnattached = 4;
 	constexpr std::uint32_t kAttached = 7;
-	constexpr std::int64_t  kRequeueDelayUs = 10'000'000;  // do not re-queue the same cell more often
 
-	// Interior cells are permanent forms, so the pointer is kept. Exterior cells are not:
-	// the cells of a worldspace are freed when it unloads (0.4.0 crash), so exterior pins
-	// keep only coordinates and look the cell up again on every refresh.
+	// Interior cells are permanent forms, so the pointer is kept.
 	struct InteriorPin
 	{
 		RE::TESObjectCELL* cell{ nullptr };
 		std::uint32_t      lastState{ kStateUnknown };
 	};
 
-	struct ExteriorPin
-	{
-		std::int32_t  x{ 0 };
-		std::int32_t  y{ 0 };
-		std::uint32_t lastState{ kStateUnknown };
-		std::int64_t  lastQueuedUs{ -kRequeueDelayUs };
-	};
-
 	bool                     g_initialized{ false };
 	bool                     g_active{ false };
 	InteriorPin              g_interior;
-	RE::TESWorldSpace*       g_world{ nullptr };  // worldspaces are permanent forms
-	std::vector<ExteriorPin> g_exterior;
 	std::int64_t             g_nextRefreshUs{ 0 };
 	std::uint64_t            g_keepCalls{ 0 };  // QueueInteriorCellLoad calls for the kept interior
 	std::vector<std::int64_t> g_keepLoadsUs;    // recent loads started by KeepInterior
@@ -117,85 +103,9 @@ namespace
 			args.Str("interiorName", settings.preloadInterior).Cell("interior", g_interior.cell);
 		}
 
-		if (!settings.preloadExterior.empty()) {
-			auto*       center = FindCell(settings.preloadExterior);
-			const auto* coordinates = center && center->IsExteriorCell() ? center->GetCoordinates() : nullptr;
-			if (coordinates) {
-				g_world = center->GetRuntimeData().worldSpace;
-				const auto radius = static_cast<std::int32_t>(settings.preloadRadius);
-				for (std::int32_t dx = -radius; dx <= radius; ++dx) {
-					for (std::int32_t dy = -radius; dy <= radius; ++dy) {
-						g_exterior.push_back({ .x = coordinates->cellX + dx, .y = coordinates->cellY + dy });
-					}
-				}
-			} else {
-				logs::error("preload: exterior cell '{}' {}", settings.preloadExterior, center ? "is not an exterior" : "not found");
-			}
-			args.Str("exteriorName", settings.preloadExterior)
-				.Cell("exterior", center)
-				.Form("world", g_world)
-				.Int("cells", static_cast<std::int64_t>(g_exterior.size()));
-		}
-
-		g_active = g_interior.cell || (g_world && !g_exterior.empty());
+		g_active = g_interior.cell != nullptr;
 		Trace::Write("preload.init", args.Bool("active", g_active), nullptr, true);
-		logs::info("preload: active={} interior={} exterior={} cells", g_active, Trace::FormString(g_interior.cell), g_exterior.size());
-	}
-
-	// Current state of every kept exterior cell; a cell missing from the map counts as kUnloaded.
-	std::vector<std::uint32_t> ExteriorStates()
-	{
-		std::vector<std::uint32_t> states(g_exterior.size(), 0);
-		for (auto& entry : g_world->cellMap) {
-			auto*       cell = entry.second;
-			const auto* coordinates = cell && cell->IsExteriorCell() ? cell->GetCoordinates() : nullptr;
-			if (!coordinates) {
-				continue;
-			}
-			for (std::size_t i = 0; i < g_exterior.size(); ++i) {
-				if (g_exterior[i].x == coordinates->cellX && g_exterior[i].y == coordinates->cellY) {
-					states[i] = Trace::CellState(cell);
-				}
-			}
-		}
-		return states;
-	}
-
-	void RefreshExterior()
-	{
-		auto* loader = RE::ExteriorCellLoader::GetSingleton();
-		if (!g_world || g_exterior.empty() || !loader) {
-			return;
-		}
-
-		const auto  states = ExteriorStates();
-		const auto  now = Trace::NowUs();
-		std::string changes;
-		std::string queued;
-		for (std::size_t i = 0; i < g_exterior.size(); ++i) {
-			auto&      pin = g_exterior[i];
-			const auto state = states[i];
-			if (state != pin.lastState) {
-				changes += std::format("{}{}", changes.empty() ? "" : ",",
-					Trace::Args{}
-						.XY("xy", pin.x, pin.y)
-						.Str("from", pin.lastState == kStateUnknown ? "?"sv : Trace::CellStateName(pin.lastState))
-						.Str("to", Trace::CellStateName(state))
-						.Json());
-				pin.lastState = state;
-			}
-			if (state <= kUnloading && now - pin.lastQueuedUs >= kRequeueDelayUs) {
-				pin.lastQueuedUs = now;
-				loader->QueueCellLoad(g_world, static_cast<std::int16_t>(pin.x), static_cast<std::int16_t>(pin.y), false);
-				queued += std::format("{}[{},{}]", queued.empty() ? "" : ",", pin.x, pin.y);
-			}
-		}
-		if (!changes.empty()) {
-			Trace::Write("preload.change", Trace::Args{}.Str("where", "refresh").Raw("cells", "[" + changes + "]"), nullptr, true);
-		}
-		if (!queued.empty()) {
-			Trace::Write("preload.queue", Trace::Args{}.Form("world", g_world).Raw("xy", "[" + queued + "]"), nullptr, true);
-		}
+		logs::info("preload: active={} interior={}", g_active, Trace::FormString(g_interior.cell));
 	}
 
 	// The game's own preload path: PlayerCharacter::Update -> AE#40845 -> AE#13378 -> this, with true.
@@ -337,7 +247,6 @@ namespace Preload
 		const auto now = Trace::NowUs();
 		if (now >= g_nextRefreshUs) {
 			g_nextRefreshUs = now + static_cast<std::int64_t>(Settings::Get().preloadRefreshSeconds * 1'000'000.0f);
-			RefreshExterior();
 			KeepInterior();
 			ReturnToBuffer();
 		}

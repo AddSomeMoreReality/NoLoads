@@ -113,7 +113,6 @@ void Settings::Load()
 	ini.Read(L"General", L"bProfileLoadingScreen", profileLoadingScreen);
 	ini.Read(L"General", L"sLogDirectory", logDirectory);
 
-	ini.Read(L"Hotkeys", L"iStartAutoTest", startAutoTestKey);
 	ini.Read(L"Hotkeys", L"iSnapshot", snapshotKey);
 	ini.Read(L"Hotkeys", L"iCycleOverrides", overridesKey);
 	ini.Read(L"Hotkeys", L"iDetectorsReport", detectorsKey);
@@ -131,17 +130,8 @@ void Settings::Load()
 		}
 	}
 
-	ini.Read(L"AutoTest", L"bEnabled", autoTestEnabled);
-	ini.Read(L"AutoTest", L"sSaveName", saveName);
-	ini.Read(L"AutoTest", L"fSettleSeconds", settleSeconds);
-	ini.Read(L"AutoTest", L"fStepTimeoutSeconds", stepTimeoutSeconds);
-	ini.Read(L"AutoTest", L"bQuitWhenDone", quitWhenDone);
-	ini.Read(L"AutoTest", L"sSteps", steps);
-
 	ini.Read(L"Preload", L"bEnabled", preloadEnabled);
 	ini.Read(L"Preload", L"sInteriorCell", preloadInterior);
-	ini.Read(L"Preload", L"sExteriorCell", preloadExterior);
-	ini.Read(L"Preload", L"iExteriorRadius", preloadRadius);
 	ini.Read(L"Preload", L"fRefreshSeconds", preloadRefreshSeconds);
 	ini.Read(L"Preload", L"bPreloadLinkedInteriors", preloadLinkedInteriors);
 	ini.Read(L"Preload", L"bKeepInterior", keepInterior);
@@ -150,11 +140,6 @@ void Settings::Load()
 	ini.Read(L"Detectors", L"bEnabled", detectorsEnabled);
 	ini.Read(L"Detectors", L"fDoorsIntervalSeconds", doorsIntervalSeconds);
 	ini.Read(L"Detectors", L"iNearestCount", nearestCount);
-	ini.Read(L"Detectors", L"bWindows", windowsEnabled);
-	ini.Read(L"Detectors", L"fWindowsIntervalSeconds", windowsIntervalSeconds);
-	ini.Read(L"Detectors", L"fWindowRadius", windowRadius);
-	ini.Read(L"Detectors", L"sWindowKeywords", windowKeywords);
-	ini.Read(L"Detectors", L"sWindowExclude", windowExclude);
 
 	ini.Read(L"InteriorSim", L"iStartStage", interiorSimStage);
 	ini.Read(L"InteriorSim", L"fStatusSeconds", interiorSimStatusSeconds);
@@ -169,17 +154,14 @@ void Settings::Load()
 	ini.Read(L"Portal", L"bInteriorLights", portalInteriorLights);
 	ini.Read(L"Portal", L"bMirrorPlayerLights", portalMirrorPlayerLights);
 	ini.Read(L"Portal", L"bInteriorAmbient", portalInteriorAmbient);
-	ini.Read(L"Portal", L"iDepthMode", portalDepthMode);
 	ini.Read(L"Portal", L"bLightEffects", portalLightEffects);
 	ini.Read(L"Portal", L"bAnimateActors", portalAnimateActors);
 	ini.Read(L"Portal", L"bSyncActorPositions", portalSyncActorPositions);
 	ini.Read(L"Portal", L"iControllerUpdate", portalControllerMode);
 	ini.Read(L"Portal", L"bFullActorProcessing", portalFullActorProcessing);
 	ini.Read(L"Portal", L"bGameAnimatesActors", portalGameAnimatesActors);
-	ini.Read(L"Portal", L"bSoftEffects", portalSoftEffects);
 	ini.Read(L"Portal", L"bIgnoreParticleBudget", portalIgnoreParticleBudget);
 	ini.Read(L"Portal", L"bMasterParticles", portalMasterParticles);
-	ini.Read(L"Portal", L"bPassAtSceneListFence", portalPassAtSceneListFence);
 	ini.Read(L"Portal", L"iParticleFacing", portalParticleFacing);
 	ini.Read(L"Portal", L"bActorsSeen", portalActorsSeen);
 	ini.Read(L"Portal", L"bVirtualCamera", portalVirtualCamera);

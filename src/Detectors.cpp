@@ -8,16 +8,12 @@ namespace
 {
 	constexpr std::uint32_t kAttached = 7;            // TESObjectCELL::CellState
 	constexpr float         kUnitsPerMeter = 70.0f;   // one game unit is about 1.43 cm
-	constexpr std::uint32_t kMaxSplitVertices = 20'000;  // larger shapes are reported by their bound
-	constexpr std::size_t   kMaxPiecesPerShape = 64;
-	constexpr float         kMaxWindowSize = 1500.0f;  // units; a larger piece is not one window
+	constexpr std::uint32_t kMaxSplitVertices = 20'000;  // larger shapes are not read
 	constexpr float         kLookRadius = 3000.0f;     // F6: references around the camera checked against the view ray
 	constexpr std::size_t   kMaxLookHits = 12;
 	constexpr int           kMaxLookThrough = 4;       // F6: hidden references the ray may pass through
 	constexpr float         kLookThroughStep = 5.0f;   // units the ray restarts behind a hidden reference
-	constexpr std::size_t   kMaxNewRefsPerScan = 200;   // bounds the cost of one window scan
 	constexpr std::size_t   kMaxTracedDoors = 40;
-	constexpr std::size_t   kMaxTracedWindows = 20;
 
 	float Degrees(float a_radians)
 	{
@@ -41,31 +37,6 @@ namespace
 		std::string out{ a_str };
 		std::ranges::transform(out, out.begin(), [](char a_c) { return (a_c >= 'A' && a_c <= 'Z') ? static_cast<char>(a_c - 'A' + 'a') : a_c; });
 		return out;
-	}
-
-	std::vector<std::string> SplitList(std::string_view a_list)
-	{
-		std::vector<std::string> out;
-		for (const auto part : std::views::split(a_list, ',')) {
-			auto item = Lower(std::string_view{ part.begin(), part.end() });
-			std::erase(item, ' ');
-			if (!item.empty()) {
-				out.push_back(std::move(item));
-			}
-		}
-		return out;
-	}
-
-	bool IsWindowPath(std::string_view a_path)
-	{
-		static const auto keywords = SplitList(Settings::Get().windowKeywords);
-		static const auto excluded = SplitList(Settings::Get().windowExclude);
-		if (a_path.empty()) {
-			return false;
-		}
-		const auto path = Lower(a_path);
-		const auto has = [&](const std::string& a_word) { return path.find(a_word) != std::string::npos; };
-		return std::ranges::any_of(keywords, has) && std::ranges::none_of(excluded, has);
 	}
 
 	std::string FileName(std::string_view a_path)
@@ -219,36 +190,8 @@ namespace
 	}
 
 	// ------------------------------------------------------------------
-	// Windows
+	// Shapes: diffuse textures and vertices
 	// ------------------------------------------------------------------
-	struct Window
-	{
-		RE::FormID    ref{ 0 };
-		std::string   texture;  // file name of the diffuse texture, or of the model
-		RE::NiPoint3  center;   // world
-		RE::NiPoint3  normal;   // world, unit; zero when unknown
-		float         size{ 0.0f };  // largest extent, units
-		std::uint32_t triangles{ 0 };
-		bool          piece{ false };  // a connected piece of the shape, not the whole shape's bound
-	};
-
-	struct WindowStats
-	{
-		std::uint64_t refsScanned{ 0 };
-		std::uint64_t shapes{ 0 };
-		std::uint64_t shapesSplit{ 0 };     // vertices read from memory
-		std::uint64_t shapesNoVertices{ 0 };  // no CPU copy of the vertices: bound only
-		std::uint64_t pieces{ 0 };
-		std::uint64_t piecesRejected{ 0 };  // not finite or larger than kMaxWindowSize
-	};
-
-	std::vector<std::string>                             g_rawSamples;  // raw vertex bytes of the first window shapes
-	std::unordered_map<RE::FormID, std::vector<Window>> g_windowCache;  // per reference; statics do not move
-	const void*                                          g_windowSpace{ nullptr };  // interior cell or worldspace
-	WindowStats                                          g_windowStats;
-	std::vector<std::pair<RE::FormID, std::size_t>>      g_tracedWindows;
-	std::int64_t                                         g_nextWindowsUs{ 0 };
-
 	std::string_view DiffuseTexture(RE::BSGeometry* a_geometry)
 	{
 		auto* property = a_geometry->GetGeometryRuntimeData().shaderProperty.get();
@@ -341,270 +284,8 @@ namespace
 		return { HalfToFloat(half[0]), HalfToFloat(half[1]), HalfToFloat(half[2]) };
 	}
 
-	std::uint32_t Find(std::vector<std::uint32_t>& a_parent, std::uint32_t a_v)
-	{
-		while (a_parent[a_v] != a_v) {
-			a_parent[a_v] = a_parent[a_parent[a_v]];
-			a_v = a_parent[a_v];
-		}
-		return a_v;
-	}
-
-	// Connected pieces of a shape (triangles sharing vertices): with window textures one piece is
-	// about one window. Returns false when the shape has no CPU copy of its vertices.
-	bool SplitShape(RE::FormID a_ref, RE::BSGeometry* a_geometry, const std::string& a_texture, std::vector<Window>& a_out)
-	{
-		auto* triShape = a_geometry->AsTriShape();
-		auto& data = a_geometry->GetGeometryRuntimeData();
-		auto* renderer = data.rendererData;
-		if (!triShape || !renderer || !renderer->rawVertexData || !renderer->rawIndexData) {
-			return false;
-		}
-		const auto&         counts = triShape->GetTrishapeRuntimeData();
-		const std::uint32_t vertices = counts.vertexCount;
-		const std::uint32_t triangles = counts.triangleCount;
-		const auto          desc = std::bit_cast<std::uint64_t>(data.vertexDesc);
-		const auto [stride, fullPrecision] = LayoutOf(desc);
-		if (vertices == 0 || triangles == 0 || vertices > kMaxSplitVertices || stride < (fullPrecision ? 12u : 6u)) {
-			return false;
-		}
-
-		std::vector<std::uint8_t>  vertexData(static_cast<std::size_t>(vertices) * stride);
-		std::vector<std::uint16_t> indices(static_cast<std::size_t>(triangles) * 3);
-		if (!SafeCopy(vertexData.data(), renderer->rawVertexData, vertexData.size()) ||
-			!SafeCopy(indices.data(), renderer->rawIndexData, indices.size() * sizeof(std::uint16_t))) {
-			return false;
-		}
-
-		// 0.8.1: every piece came out with size 0, as if all positions were equal. The first shapes'
-		// raw bytes go to the trace to see what the CPU copy holds.
-		if (g_rawSamples.size() < 4) {
-			std::string bytes;
-			const auto  shown = (std::min)(vertexData.size(), std::size_t{ 96 });
-			for (std::size_t i = 0; i < shown; ++i) {
-				bytes += std::format("{:02X}{}", vertexData[i], (i + 1) % stride == 0 ? "|" : "");
-			}
-			g_rawSamples.push_back(Trace::Args{}
-									   .Str("shape", a_geometry->name.c_str())
-									   .Str("texture", a_texture)
-									   .Hex("desc", desc)
-									   .Int("stride", stride)
-									   .Bool("fullPrecision", fullPrecision)
-									   .Int("vertices", vertices)
-									   .Int("triangles", triangles)
-									   .Hex("rawVertexData", reinterpret_cast<std::uintptr_t>(renderer->rawVertexData))
-									   .Str("bytes", bytes)
-									   .Json());
-		}
-
-		std::vector<RE::NiPoint3> positions(vertices);
-		for (std::uint32_t v = 0; v < vertices; ++v) {
-			positions[v] = PositionAt(vertexData.data() + static_cast<std::size_t>(v) * stride, fullPrecision);
-		}
-
-		std::vector<std::uint32_t> parent(vertices);
-		std::iota(parent.begin(), parent.end(), 0u);
-		for (std::size_t t = 0; t + 2 < indices.size(); t += 3) {
-			const std::uint32_t a = indices[t], b = indices[t + 1], c = indices[t + 2];
-			if (a >= vertices || b >= vertices || c >= vertices) {
-				continue;
-			}
-			parent[Find(parent, b)] = Find(parent, a);
-			parent[Find(parent, c)] = Find(parent, a);
-		}
-
-		struct Piece
-		{
-			RE::NiPoint3  sum;
-			RE::NiPoint3  min{ FLT_MAX, FLT_MAX, FLT_MAX };
-			RE::NiPoint3  max{ -FLT_MAX, -FLT_MAX, -FLT_MAX };
-			RE::NiPoint3  normal;
-			RE::NiPoint3  firstNormal;
-			std::uint32_t vertices{ 0 };
-			std::uint32_t triangles{ 0 };
-		};
-		std::unordered_map<std::uint32_t, Piece> pieces;
-		for (std::size_t t = 0; t + 2 < indices.size(); t += 3) {
-			const std::uint32_t a = indices[t], b = indices[t + 1], c = indices[t + 2];
-			if (a >= vertices || b >= vertices || c >= vertices) {
-				continue;
-			}
-			auto&      piece = pieces[Find(parent, a)];
-			const auto n = (positions[b] - positions[a]).Cross(positions[c] - positions[a]);
-			if (piece.triangles++ == 0) {
-				piece.firstNormal = n;
-			}
-			// Both faces of a pane would cancel out: align every triangle with the first one.
-			piece.normal += n.Dot(piece.firstNormal) < 0.0f ? -n : n;
-		}
-		for (std::uint32_t v = 0; v < vertices; ++v) {
-			auto it = pieces.find(Find(parent, v));
-			if (it == pieces.end()) {
-				continue;
-			}
-			auto&       piece = it->second;
-			const auto& p = positions[v];
-			piece.sum += p;
-			piece.min = { (std::min)(piece.min.x, p.x), (std::min)(piece.min.y, p.y), (std::min)(piece.min.z, p.z) };
-			piece.max = { (std::max)(piece.max.x, p.x), (std::max)(piece.max.y, p.y), (std::max)(piece.max.z, p.z) };
-			++piece.vertices;
-		}
-
-		std::vector<const Piece*> ordered;
-		for (const auto& [root, piece] : pieces) {
-			if (piece.vertices > 0) {
-				ordered.push_back(&piece);
-			}
-		}
-		std::ranges::sort(ordered, std::greater{}, &Piece::triangles);
-		if (ordered.size() > kMaxPiecesPerShape) {
-			ordered.resize(kMaxPiecesPerShape);
-		}
-
-		const auto& world = a_geometry->world;
-		std::size_t added = 0;
-		for (const auto* piece : ordered) {
-			auto normal = world.rotate * piece->normal;
-			if (!std::isfinite(normal.x) || !std::isfinite(normal.y) || !std::isfinite(normal.z) || normal.Unitize() == 0.0f) {
-				normal = {};
-			}
-			const auto extent = piece->max - piece->min;
-			const auto center = world * (piece->sum / static_cast<float>(piece->vertices));
-			const auto size = (std::max)({ extent.x, extent.y, extent.z }) * world.scale;
-			if (!std::isfinite(center.x) || !std::isfinite(center.y) || !std::isfinite(center.z) || !std::isfinite(size) || size > kMaxWindowSize) {
-				++g_windowStats.piecesRejected;
-				continue;
-			}
-			a_out.push_back({ .ref = a_ref,
-				.texture = a_texture,
-				.center = center,
-				.normal = normal,
-				.size = size,
-				.triangles = piece->triangles,
-				.piece = true });
-			++added;
-		}
-		g_windowStats.pieces += added;
-		return true;
-	}
-
-	std::vector<Window> ScanReference(RE::TESObjectREFR* a_ref, RE::NiAVObject* a_root)
-	{
-		std::vector<Window> windows;
-		const auto          id = a_ref->GetFormID();
-		RE::BSVisit::TraverseScenegraphGeometries(a_root, [&](RE::BSGeometry* a_geometry) {
-			const auto texture = DiffuseTexture(a_geometry);
-			if (!IsWindowPath(texture)) {
-				return RE::BSVisit::BSVisitControl::kContinue;
-			}
-			++g_windowStats.shapes;
-			const auto name = FileName(texture);
-			if (SplitShape(id, a_geometry, name, windows)) {
-				++g_windowStats.shapesSplit;
-			} else {
-				++g_windowStats.shapesNoVertices;
-				windows.push_back({ .ref = id,
-					.texture = name,
-					.center = a_geometry->worldBound.center,
-					.size = a_geometry->worldBound.radius * 2.0f });
-			}
-			return RE::BSVisit::BSVisitControl::kContinue;
-		});
-
-		// Kit pieces named "...window..." whose window part has a generic texture.
-		if (windows.empty()) {
-			auto*       base = a_ref->GetBaseObject();
-			const auto* model = base ? skyrim_cast<RE::TESModel*>(base) : nullptr;
-			const char* path = model ? model->GetModel() : nullptr;
-			if (path && IsWindowPath(path)) {
-				windows.push_back({ .ref = id, .texture = FileName(path), .center = a_root->worldBound.center, .size = a_root->worldBound.radius * 2.0f });
-			}
-		}
-		return windows;
-	}
-
-	struct NearWindow
-	{
-		const Window* window;
-		std::size_t   index;  // within its reference
-		float         distance;
-	};
-
-	std::vector<NearWindow> NearestWindows(const RE::NiPoint3& a_playerPos, std::size_t a_count)
-	{
-		std::vector<NearWindow> all;
-		for (const auto& [ref, windows] : g_windowCache) {
-			for (std::size_t i = 0; i < windows.size(); ++i) {
-				all.push_back({ &windows[i], i, windows[i].center.GetDistance(a_playerPos) });
-			}
-		}
-		const auto count = (std::min)(a_count, all.size());
-		std::ranges::partial_sort(all, all.begin() + static_cast<std::ptrdiff_t>(count), {}, &NearWindow::distance);
-		all.resize(count);
-		return all;
-	}
-
-	std::string WindowJson(const NearWindow& a_near)
-	{
-		const auto& w = *a_near.window;
-		Trace::Args args;
-		args.Form("ref", RE::TESForm::LookupByID(w.ref))
-			.Int("index", static_cast<std::int64_t>(a_near.index))
-			.Str("texture", w.texture)
-			.Pos("center", w.center)
-			.Num("dist", a_near.distance)
-			.Num("size", w.size)
-			.Int("triangles", w.triangles)
-			.Bool("piece", w.piece);
-		if (w.normal.x != 0.0f || w.normal.y != 0.0f || w.normal.z != 0.0f) {
-			args.Pos("normal", w.normal).Num("facingYawDeg", YawDegrees(w.normal));
-		}
-		return args.Json();
-	}
-
-	std::string WindowText(const NearWindow& a_near)
-	{
-		const auto& w = *a_near.window;
-		auto text = std::format("{:.1f} m", a_near.distance / kUnitsPerMeter);
-		if (w.normal.x != 0.0f || w.normal.y != 0.0f) {
-			text += std::format(", facing {:.0f} deg", YawDegrees(w.normal));
-		}
-		return text + ", " + w.texture;
-	}
-
-	std::size_t WindowCount()
-	{
-		std::size_t count = 0;
-		for (const auto& [ref, windows] : g_windowCache) {
-			count += windows.size();
-		}
-		return count;
-	}
-
-	void TraceWindows(std::string_view a_reason, const std::vector<NearWindow>& a_nearest)
-	{
-		std::string windows;
-		for (std::size_t i = 0; i < a_nearest.size(); ++i) {
-			windows += (i ? "," : "") + WindowJson(a_nearest[i]);
-		}
-		Trace::Write("detector.windows", Trace::Args{}
-											 .Str("reason", a_reason)
-											 .Int("windows", static_cast<std::int64_t>(WindowCount()))
-											 .Int("refsCached", static_cast<std::int64_t>(g_windowCache.size()))
-											 .Int("refsScanned", static_cast<std::int64_t>(g_windowStats.refsScanned))
-											 .Int("shapes", static_cast<std::int64_t>(g_windowStats.shapes))
-											 .Int("shapesSplit", static_cast<std::int64_t>(g_windowStats.shapesSplit))
-											 .Int("shapesNoVertices", static_cast<std::int64_t>(g_windowStats.shapesNoVertices))
-											 .Int("pieces", static_cast<std::int64_t>(g_windowStats.pieces))
-											 .Int("piecesRejected", static_cast<std::int64_t>(g_windowStats.piecesRejected))
-											 .Raw("rawSamples", "[" + std::accumulate(g_rawSamples.begin(), g_rawSamples.end(), std::string{}, [](std::string a_all, const std::string& a_one) {
-												 return a_all.empty() ? a_one : a_all + "," + a_one;
-											 }) + "]")
-											 .Raw("nearest", "[" + windows + "]"));
-	}
-
 	// ------------------------------------------------------------------
-	// What the camera looks at (F6): to find the textures of windows the keywords miss
+	// What the camera looks at (F6)
 	// ------------------------------------------------------------------
 	struct ViewHit
 	{
@@ -614,7 +295,6 @@ namespace
 		std::string texture;
 		float       enter{ 0.0f };  // distance along the view ray to the bounding sphere
 		float       radius{ 0.0f };
-		bool        window{ false };
 	};
 
 	bool RayEntersSphere(const RE::NiPoint3& a_origin, const RE::NiPoint3& a_direction, const RE::NiBound& a_bound, float& a_enter)
@@ -717,12 +397,11 @@ namespace
 						.shape = a_geometry->name.c_str(),
 						.texture = FileName(texture),
 						.enter = bound.center.GetDistance(hitPoint) - bound.radius,  // < 0: the hit point is inside the bound
-						.radius = bound.radius,
-						.window = IsWindowPath(texture) });
+						.radius = bound.radius });
 					return RE::BSVisit::BSVisitControl::kContinue;
 				});
 				std::ranges::sort(hits, [](const ViewHit& a_lhs, const ViewHit& a_rhs) {
-					// inside the bound and small first: the window shape is smaller than the wall around it
+					// inside the bound and small first: a window or a sign is smaller than the wall around it
 					const bool lhsIn = a_lhs.enter <= 0.0f, rhsIn = a_rhs.enter <= 0.0f;
 					if (lhsIn != rhsIn) {
 						return lhsIn;
@@ -765,8 +444,7 @@ namespace
 						.shape = a_geometry->name.c_str(),
 						.texture = FileName(texture),
 						.enter = (std::max)(shapeEnter, 0.0f),
-						.radius = a_geometry->worldBound.radius,
-						.window = IsWindowPath(texture) });
+						.radius = a_geometry->worldBound.radius });
 				}
 				return RE::BSVisit::BSVisitControl::kContinue;
 			});
@@ -802,60 +480,17 @@ namespace
 													.Str("texture", hit.texture)
 													.Num("enter", hit.enter)
 													.Num("radius", hit.radius)
-													.Bool("window", hit.window)
 													.Json();
 			if (shown < 4 && std::ranges::find(seen, hit.texture) == seen.end()) {
 				seen.push_back(hit.texture);
 				const auto name = hit.texture.empty() ? hit.shape : hit.texture;
-				text += picked ? std::format("{} {}{}", shown ? "," : "", name, hit.window ? " (window)" : "") :
-				                 std::format("{} {} {:.0f} m{}", shown ? "," : "", name, hit.enter / kUnitsPerMeter, hit.window ? " (window)" : "");
+				text += picked ? std::format("{} {}", shown ? "," : "", name) :
+				                 std::format("{} {} {:.0f} m", shown ? "," : "", name, hit.enter / kUnitsPerMeter);
 				++shown;
 			}
 		}
 		Trace::Write("detector.look", args.Raw("hits", "[" + json + "]"), nullptr, true);
 		Hud::Show("detectors.look", hits.empty() ? "CLR: looking at: nothing within 40 m" : text);
-	}
-
-	void UpdateWindows(const RE::NiPoint3& a_playerPos)
-	{
-		auto* player = RE::PlayerCharacter::GetSingleton();
-		auto* playerCell = player ? player->GetParentCell() : nullptr;
-		if (!playerCell) {
-			return;
-		}
-		const void* space = playerCell->IsInteriorCell() ? static_cast<const void*>(playerCell) : playerCell->GetRuntimeData().worldSpace;
-		if (space != g_windowSpace) {
-			g_windowCache.clear();
-			g_windowSpace = space;
-		}
-
-		// Collect first, scan after: the cell's reference lock is held inside ForEachReference.
-		std::vector<RE::NiPointer<RE::TESObjectREFR>> refs;
-		for (auto* cell : LoadedCells()) {
-			cell->ForEachReferenceInRange(a_playerPos, Settings::Get().windowRadius, [&](RE::TESObjectREFR* a_ref) {
-				if (refs.size() < kMaxNewRefsPerScan && a_ref && !a_ref->IsDisabled() && !a_ref->As<RE::Actor>() &&
-					!g_windowCache.contains(a_ref->GetFormID()) && a_ref->Get3D()) {
-					refs.emplace_back(a_ref);
-				}
-				return RE::BSContainer::ForEachResult::kContinue;
-			});
-		}
-		for (const auto& ref : refs) {
-			if (auto* root = ref->Get3D()) {
-				g_windowCache.emplace(ref->GetFormID(), ScanReference(ref.get(), root));
-				++g_windowStats.refsScanned;
-			}
-		}
-
-		const auto nearest = NearestWindows(a_playerPos, Settings::Get().nearestCount);
-		std::vector<std::pair<RE::FormID, std::size_t>> keys;
-		for (const auto& n : nearest) {
-			keys.emplace_back(n.window->ref, n.index);
-		}
-		if (keys != g_tracedWindows) {
-			g_tracedWindows = keys;
-			TraceWindows("changed", NearestWindows(a_playerPos, kMaxTracedWindows));
-		}
 	}
 }
 
@@ -878,10 +513,6 @@ namespace Detectors
 				ScanDoors(pos);  // silent: NearestDoorTo serves [Preload] and [InteriorSim]
 			}
 		}
-		if (settings.detectorsEnabled && settings.windowsEnabled && now >= g_nextWindowsUs) {
-			g_nextWindowsUs = now + static_cast<std::int64_t>(settings.windowsIntervalSeconds * 1'000'000.0f);
-			UpdateWindows(pos);
-		}
 	}
 
 	void Report()
@@ -896,19 +527,6 @@ namespace Detectors
 		}
 		const auto pos = player->GetPosition();
 		UpdateDoors(pos);
-		if (Settings::Get().windowsEnabled) {
-			UpdateWindows(pos);
-		}
-
-		// Shown in this order: urgent messages go to the head of the queue, so the last one comes first.
-		const auto nearest = NearestWindows(pos, 1);
-		auto       windows = std::format("CLR: windows {} in {} shapes ({} split, {} bound only)", WindowCount(), g_windowStats.shapes,
-				  g_windowStats.shapesSplit, g_windowStats.shapesNoVertices);
-		if (!nearest.empty()) {
-			windows += " | nearest " + WindowText(nearest.front());
-		}
-		Hud::Show("detectors.windows", std::move(windows));
-
 		auto doors = std::format("CLR: doors {}", g_doors.size());
 		for (std::size_t i = 0; i < g_doors.size() && i < 3; ++i) {
 			doors += " | " + DoorText(g_doors[i]);
@@ -916,7 +534,6 @@ namespace Detectors
 		Hud::Show("detectors.doors", std::move(doors));
 
 		TraceDoors("hotkey");
-		TraceWindows("hotkey", NearestWindows(pos, kMaxTracedWindows));
 		ReportLookAt();
 	}
 
@@ -932,16 +549,6 @@ namespace Detectors
 			}
 		}
 		return std::nullopt;
-	}
-
-	std::vector<RE::TESObjectCELL*> SceneCells()
-	{
-		return LoadedCells();
-	}
-
-	std::string TextureFile(RE::BSGeometry* a_geometry)
-	{
-		return FileName(DiffuseTexture(a_geometry));
 	}
 
 	bool WorldPoints(RE::BSGeometry* a_geometry, std::vector<RE::NiPoint3>& a_out)
@@ -967,16 +574,5 @@ namespace Detectors
 			a_out.push_back(world * local);
 		}
 		return true;
-	}
-
-	RE::NiPointer<RE::TESObjectREFR> PickRef(const RE::NiPoint3& a_origin, const RE::NiPoint3& a_direction, RE::NiPoint3& a_point)
-	{
-		RE::NiPointer<RE::TESObjectREFR> ref;
-		RE::NiPoint3                     normal;
-		std::string                      skipped;
-		if (!PickView(a_origin, a_direction, ref, a_point, normal, skipped)) {
-			ref.reset();
-		}
-		return ref;
 	}
 }

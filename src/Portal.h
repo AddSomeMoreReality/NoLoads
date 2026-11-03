@@ -6,8 +6,9 @@
 // - A quad (meshes\CellLoadResearch\portalquad.nif, unlit BSEffectShaderProperty) takes the door's
 //   place in the door's cell node; its texture's shader resource view is swapped for the portal's
 //   render target, so the game draws it like any reference (depth, fog, tone mapping).
-// - Before Main::RenderWorld (AE#107142) the interior's own 3D, in its own coordinates and attached
-//   nowhere, is culled (BSCullingProcess::CullingContext) and drawn (Renderer::SubmitAccumulator)
+// - Right after RenderPlayerView (AE#36559) finishes its scene list jobs, before the world's accumulation
+//   (since 0.8.22; before it, right before Main::RenderWorld, AE#107142), the interior's own 3D, in its own
+//   coordinates and attached nowhere, is culled (BSCullingProcess::CullingContext) and drawn (Renderer::SubmitAccumulator)
 //   from the player's eye carried through the door: the camera looks across the door plane, its
 //   off-axis frustum passes through the door rectangle and its near plane lies on it. The quad's UVs
 //   span that frustum, so the picture is right from any viewpoint.
@@ -36,13 +37,10 @@ namespace Portal
 		bool                          attached{ false };  // the interior is attached like a grid cell (InteriorSim), its 3D under a node of no scene
 	};
 
-	// AE only: the Main::RenderWorld detour. Called from Hooks::InstallDetours inside its transaction.
-	[[nodiscard]] long AttachRenderWorldDetour();
-
-	// [Portal] bPassAtSceneListFence: the pass moves from right before Main::RenderWorld to the point
-	// right after RenderPlayerView finishes its scene list jobs (AE#36559 + 0x17E, AE#69353). No job
-	// culls or registers render passes there, and the world's accumulation has not begun.
-	void SetPassAtSceneListFence(bool a_atFence);
+	// AE#36559 (RenderPlayerView) + 0x17E calls AE#69353 for its scene list jobs: the pass runs right after
+	// it. No job culls or registers render passes there, and the world's accumulation has not begun.
+	// Right before Main::RenderWorld (AE#107142, [Portal] bPassAtSceneListFence=0 until T02) the game's
+	// jobs were still running, and the master particles froze it (0.8.21).
 	void OnSceneListFence();
 
 	// Main thread. Prepare checks everything a start needs and creates the shared resources, so the
@@ -214,8 +212,8 @@ namespace Portal
 	void BeforeParticlePack(PackedCamera& a_saved);
 	void AfterParticlePack(const PackedCamera& a_saved);
 
-	// BSEffectShader::SetupTechnique hook, before the original: counts the effects our pass draws and,
-	// in depth mode 2, copies the depth buffer at the first of them. Returns the technique to set up:
-	// without the soft particle bit while soft particles are off.
+	// BSEffectShader::SetupTechnique hook, before the original: counts the effects our pass draws and
+	// copies the depth buffer at the first of them. Returns the technique to set up, unchanged since T02
+	// (until then [Portal] bSoftEffects=0 took the soft particle bit off; run 0.8.24: no difference).
 	[[nodiscard]] std::uint32_t BeforeEffectTechnique(std::uint32_t a_technique);
 }
