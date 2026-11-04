@@ -6,7 +6,7 @@ namespace Portal::detail
 	{
 		std::string json;
 		for (const auto& name : g_refractionShapes) {
-			json += std::format("{}\"{}\"", json.empty() ? "" : ",", name);
+			json += (json.empty() ? "" : ",") + Trace::JsonString(name);
 		}
 		return "[" + json + "]";
 	}

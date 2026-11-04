@@ -557,6 +557,34 @@ float4 PSGrade(float4 pos : SV_Position) : SV_Target
 		return true;
 	}
 
+	// The game's render targets: 114 before 1.6.1130, 116 since. A flat build of NG sizes the array for VR (125),
+	// and past the real ones lie the depth stencils (NG's versioned offset of GetDepthStencilData follows them).
+	// 0.8.28 went through all 125: entry 122 is depthStencils[1].depthSRV, its GetDesc slot (10) is a thunk to
+	// QueryInterface in d3d11.dll, which wrote null through a stale register. F11 called it again and froze.
+	std::uint32_t RenderTargetCount(RE::BSGraphics::Renderer* a_renderer)
+	{
+		auto&      targets = a_renderer->GetRuntimeData().renderTargets;
+		const auto first = reinterpret_cast<std::uintptr_t>(&targets[0]);
+		const auto depth = reinterpret_cast<std::uintptr_t>(&a_renderer->GetDepthStencilData());
+		const auto count = depth > first ? (depth - first) / sizeof(RE::BSGraphics::RenderTargetData) : 0;
+		return static_cast<std::uint32_t>((std::min)(count, std::size(targets)));
+	}
+
+	// The texture of a real render target, asked for through QueryInterface (slot 0 of any COM object), never
+	// taken on trust: a referenced texture the caller releases, or null.
+	ID3D11Texture2D* TargetTexture(RE::BSGraphics::Renderer* a_renderer, std::uint32_t a_index)
+	{
+		if (a_index >= RenderTargetCount(a_renderer)) {
+			return nullptr;
+		}
+		auto* object = reinterpret_cast<IUnknown*>(a_renderer->GetRuntimeData().renderTargets[a_index].texture);
+		ID3D11Texture2D* texture = nullptr;
+		if (!object || FAILED(object->QueryInterface(__uuidof(ID3D11Texture2D), reinterpret_cast<void**>(&texture)))) {
+			return nullptr;
+		}
+		return texture;
+	}
+
 	// Render targets of at most 2 x 2 pixels: the HDR chain's last downsample (AE#107183 ends it at 1 or 2
 	// pixels) writes the adaptation into target base + 2 * flag, flag AE#415054 flipped every frame.
 	void FindAdaptTargets()
@@ -568,16 +596,19 @@ float4 PSGrade(float4 pos : SV_Position) : SV_Target
 		if (!renderer) {
 			return;
 		}
-		auto&      targets = renderer->GetRuntimeData().renderTargets;
-		const auto count = static_cast<std::uint32_t>(std::size(targets));
+		const auto count = RenderTargetCount(renderer);
 		for (std::uint32_t i = 0; i < count; ++i) {
-			auto* texture = reinterpret_cast<ID3D11Texture2D*>(targets[i].texture);
-			if (!texture || !targets[i].SRV) {
+			if (!renderer->GetRuntimeData().renderTargets[i].SRV) {
+				continue;
+			}
+			auto* texture = TargetTexture(renderer, i);
+			if (!texture) {
 				continue;
 			}
 			D3D11_TEXTURE2D_DESC desc{};
 			texture->GetDesc(&desc);
-			if (desc.Width <= 2 && desc.Height <= 2) {
+			texture->Release();
+			if (desc.Width <= 2 && desc.Height <= 2 && desc.SampleDesc.Count == 1) {
 				g_adaptCandidates.push_back(i);
 			}
 		}
@@ -595,7 +626,7 @@ float4 PSGrade(float4 pos : SV_Position) : SV_Target
 		for (const auto index : g_adaptCandidates) {
 			list += std::format("{}{}", list.empty() ? "" : ",", index);
 		}
-		Trace::Write("portal.adaptTargets", Trace::Args{}.Raw("candidates", "[" + list + "]").Int("base", g_adaptBase), nullptr, true);
+		Trace::Write("portal.adaptTargets", Trace::Args{}.Raw("candidates", "[" + list + "]").Int("base", g_adaptBase).Int("renderTargets", count), nullptr, true);
 	}
 
 	std::uint32_t AdaptFlag()
@@ -611,7 +642,10 @@ float4 PSGrade(float4 pos : SV_Position) : SV_Target
 			return nullptr;
 		}
 		const auto index = static_cast<std::uint32_t>(g_adaptBase) + 2 * AdaptFlag();
-		auto&      target = renderer->GetRuntimeData().renderTargets[index];
+		if (index >= RenderTargetCount(renderer)) {
+			return nullptr;
+		}
+		auto& target = renderer->GetRuntimeData().renderTargets[index];
 		if (a_srv) {
 			*a_srv = reinterpret_cast<ID3D11ShaderResourceView*>(target.SRV);
 		}
@@ -692,7 +726,7 @@ float4 PSGrade(float4 pos : SV_Position) : SV_Target
 		a_context->CopySubresourceRegion(a_to, 0, 0, 0, 0, a_from, 0, &box);
 	}
 
-	// F11: every candidate's first texel, the GPU waited for.
+	// F11: every candidate's first texel, the GPU waited for (a 1 x 1 copy, as WriteDump does for a frame).
 	void TraceAdaptTargets()
 	{
 		auto* renderer = RE::BSGraphics::Renderer::GetSingleton();
@@ -704,7 +738,7 @@ float4 PSGrade(float4 pos : SV_Position) : SV_Target
 		AdaptTexture(nullptr, &current);
 		std::string json;
 		for (const auto index : g_adaptCandidates) {
-			auto* texture = reinterpret_cast<ID3D11Texture2D*>(renderer->GetRuntimeData().renderTargets[index].texture);
+			auto* texture = TargetTexture(renderer, index);
 			if (!texture) {
 				continue;
 			}
@@ -720,6 +754,7 @@ float4 PSGrade(float4 pos : SV_Position) : SV_Target
 				}
 				staging->Release();
 			}
+			texture->Release();
 			json += (json.empty() ? "" : ",") + Trace::Args{}
 													.Int("index", index)
 													.Int("width", desc.Width)
@@ -1045,8 +1080,9 @@ namespace Portal
 			return;
 		}
 		FindAdaptTargets();
-		auto* context = Context();
-		if (g_ldrDumpRequested && context) {
+		auto*       context = Context();
+		const auto& settings = Settings::Get();
+		if (g_ldrDumpRequested && context && settings.portalDumpLdr) {
 			g_ldrDumpRequested = false;
 			ID3D11RenderTargetView* view = nullptr;
 			context->OMGetRenderTargets(1, &view, nullptr);
@@ -1064,9 +1100,12 @@ namespace Portal
 				view->Release();
 			}
 		}
+		g_ldrDumpRequested = false;
 		if (g_adaptDumpRequested) {
 			g_adaptDumpRequested = false;
-			TraceAdaptTargets();
+			if (settings.portalDumpAdaptTargets) {
+				TraceAdaptTargets();
+			}
 		}
 		CaptureInteriorAdapt();
 	}

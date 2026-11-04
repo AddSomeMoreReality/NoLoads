@@ -66,8 +66,11 @@ struct Settings
 	bool          portalSubtitlesThroughDoor{ true };  // subtitles of the interior's speakers are shown in the street
 	std::uint32_t portalGradeStages{ 2 };   // T12: 0 the pass's picture, 1 + the interior's composite, 2 + the interior's look under the street's
 	std::uint32_t portalQuadFogModel{ 2 };  // T12: what grading undoes on the quad: 0 nothing, 1 the effect shader's fog, 2 and the street's composite
+	bool          portalDumpLdr{ true };           // F11 also writes the frame after the HDR image space (ldr-N.dds)
+	bool          portalDumpAdaptTargets{ true };  // ... the 1x1 eye adaptation targets (portal.adapt; 0.8.28 froze there)
+	bool          portalDumpGraded{ true };        // ... and at grading stage 2 the graded picture (graded-N.dds)
 
-	// [Watchdog] sees a frozen game from outside while the portal runs
+	// [Watchdog] sees a frozen game from outside while the portal runs and for a while after F11
 	bool  watchdogEnabled{ true };
 	float watchdogHangSeconds{ 6.0f };
 	bool  watchdogTerminate{ true };  // end the process after writing the stacks

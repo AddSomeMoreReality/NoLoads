@@ -70,6 +70,10 @@ namespace Portal
 	// in the same units).
 	void RequestDump();
 
+	// Any thread: F11's snapshots were asked for less than 10 s ago. The watchdog watches the game then too (0.8.28
+	// froze in them with the portal off, and the watchdog only watched the portal).
+	[[nodiscard]] bool SnapshotWatched();
+
 	// AE#36558 + 0x11D calls RenderPlayerView (AE#36559): main thread, after it.
 	void AfterPlayerView();
 

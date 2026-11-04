@@ -167,6 +167,9 @@ void Settings::Load()
 	ini.Read(L"Portal", L"bSubtitlesThroughDoor", portalSubtitlesThroughDoor);
 	ini.Read(L"Portal", L"iGradeStages", portalGradeStages);
 	ini.Read(L"Portal", L"iQuadFogModel", portalQuadFogModel);
+	ini.Read(L"Portal", L"bDumpLdr", portalDumpLdr);
+	ini.Read(L"Portal", L"bDumpAdaptTargets", portalDumpAdaptTargets);
+	ini.Read(L"Portal", L"bDumpGraded", portalDumpGraded);
 
 	ini.Read(L"Watchdog", L"bEnabled", watchdogEnabled);
 	ini.Read(L"Watchdog", L"fHangSeconds", watchdogHangSeconds);

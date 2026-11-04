@@ -83,6 +83,56 @@ namespace Trace
 			}
 		}
 
+		// std::format writes nan, -nan, inf and -inf for non-finite floats, which is not JSON (0.8.28: the fog's raw
+		// words in "probe"). Raw values are built with std::format all over the plugin, so every record goes through
+		// this: outside strings, such a token where a value starts becomes null.
+		void ReplaceNonFinite(std::string& a_json)
+		{
+			if (a_json.find("nan") == std::string::npos && a_json.find("inf") == std::string::npos) {
+				return;
+			}
+			std::string out;
+			out.reserve(a_json.size());
+			bool inString = false;
+			char last = '\0';  // the last character outside strings that is not a space
+			for (std::size_t i = 0; i < a_json.size();) {
+				const char c = a_json[i];
+				if (inString) {
+					out += c;
+					if (c == '\\' && i + 1 < a_json.size()) {
+						out += a_json[i + 1];
+						i += 2;
+						continue;
+					}
+					inString = c != '"';
+					++i;
+					continue;
+				}
+				if ((last == ':' || last == ',' || last == '[') && (c == '-' || c == 'n' || c == 'i')) {
+					auto       end = i + (c == '-' ? 1 : 0);
+					const auto word = std::string_view(a_json).substr(end, 3);
+					if (word == "nan" || word == "inf") {
+						end += 3;
+						if (end < a_json.size() && a_json[end] == '(') {  // the CRT's printf: -nan(ind)
+							const auto close = a_json.find(')', end);
+							end = close == std::string::npos ? end : close + 1;
+						}
+						out += "null";
+						last = 'l';
+						i = end;
+						continue;
+					}
+				}
+				out += c;
+				inString = c == '"';
+				if (c != ' ' && c != '\t' && c != '\r' && c != '\n') {
+					last = c;
+				}
+				++i;
+			}
+			a_json = std::move(out);
+		}
+
 		std::string DescribeCaller(const void* a_address)
 		{
 			return DescribeAddress(reinterpret_cast<std::uintptr_t>(a_address), true);
@@ -239,6 +289,7 @@ namespace Trace
 		if (!a_args.Empty()) {
 			tail += ",\"args\":";
 			tail += a_args.Json();
+			ReplaceNonFinite(tail);
 		}
 		if (a_caller) {
 			tail += ",\"caller\":\"";

@@ -2,8 +2,11 @@
 
 namespace Portal::detail
 {
-	bool          g_mainDumpRequested{ false };
-	std::uint32_t g_mainDumps{ 0 };
+	bool                      g_mainDumpRequested{ false };
+	std::uint32_t             g_mainDumps{ 0 };
+	std::atomic<std::int64_t> g_snapshotWatchedUntilUs{ 0 };  // Trace::NowUs: the watchdog watches F11's snapshots until then
+
+	constexpr std::int64_t kSnapshotWatchUs = 10'000'000;
 
 	RE::BSFogProperty* WorldFog()
 	{
@@ -308,7 +311,7 @@ namespace Portal
 			// BSFogProperty + 0x58 ... 0x83: fields NG leaves unnamed (T13 looked for colours there)
 			const auto* words = reinterpret_cast<const float*>(reinterpret_cast<const std::byte*>(fog) + 0x58);
 			for (int i = 0; i < 11; ++i) {
-				unnamed += std::format("{}{:.3f}", i ? "," : "", words[i]);
+				unnamed += std::format("{}{}", i ? "," : "", std::isfinite(words[i]) ? std::format("{:.3f}", words[i]) : "null");  // word 0 was nan in 0.8.28
 			}
 		}
 		return Trace::Args{}
@@ -320,8 +323,14 @@ namespace Portal
 			.Json();
 	}
 
+	bool SnapshotWatched()
+	{
+		return Trace::NowUs() < g_snapshotWatchedUntilUs.load(std::memory_order_relaxed);
+	}
+
 	void RequestDump()
 	{
+		g_snapshotWatchedUntilUs.store(Trace::NowUs() + kSnapshotWatchUs, std::memory_order_relaxed);
 		g_dumpRequested = g_active;
 		g_mainDumpRequested = true;
 		RequestHdrDumps();

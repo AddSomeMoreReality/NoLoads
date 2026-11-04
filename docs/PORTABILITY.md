@@ -31,6 +31,7 @@
 | Техника эффектов | `PortalRender.cpp`, `kEffectTechniqueBase`, `kSoftEffectBit` | `0x4000002C`, бит 18 | Проверить на SE, вынести в NG |
 | Флаги света | `PortalLights.cpp`, `kLightInFrustum` | `0` | Проверить на SE |
 | Цели адаптации глаза (T12, 0.8.28) | `PortalGrade.cpp`, `FindAdaptTargets`, `AdaptFlag` | Цели рендера не больше 2 × 2; текущая = `base + 2 * флаг`, флаг `AE#415054` (`AE#107183 + 0x296`) | SE-номер флага; проверить раскладку цепочки HDR на SE и 1.7 |
+| Число целей рендера (0.8.29) | `PortalGrade.cpp`, `RenderTargetCount` | 114 до 1.6.1130, 116 с неё. В сборке FLAT массив NG `renderTargets` — 125 (`kVRTOTAL`), за настоящими целями лежат `depthStencils`. Число считается по версионному смещению `GetDepthStencilData` | Не обходить `renderTargets` по `std::size` (0.8.28 повис на элементе 122 = `depthStencils[1].depthSRV`) |
 | Поля BSFogProperty (T12, T13) | `PortalImage.cpp`, `FogJson` | Сырые float с `+0x58` по `+0x83` (в NG `unk58…unk80`) | Назвать в NG по `AE#107524 + 0xE7…+0x181` |
 | Режим глубины | `PortalRender.cpp`, `kDepthTestWrite` | `3` | Перечисление NG, если появится |
 | Сброс проходов | `PortalEffects.cpp`, `kRebuildPasses` | `0x7FFFFFFF` | Проверить на SE |

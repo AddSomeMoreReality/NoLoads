@@ -516,7 +516,7 @@ namespace Portal::detail
 			g_dumpRequested = false;
 			++g_dumps;
 			WriteDump(g_target.color, g_viewportWidth, g_viewportHeight, "portal", g_dumps);
-			if (g_gradeStages >= 2 && g_target.gradedSrv && QuadView() == g_target.gradedSrv) {
+			if (g_gradeStages >= 2 && g_target.gradedSrv && QuadView() == g_target.gradedSrv && Settings::Get().portalDumpGraded) {
 				WriteDump(g_target.graded, g_viewportWidth, g_viewportHeight, "graded", g_dumps);
 			}
 		}

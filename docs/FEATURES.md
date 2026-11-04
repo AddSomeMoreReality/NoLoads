@@ -88,6 +88,9 @@ bSoundThroughDoor=1       ; звуки интерьера слышны на ул
 bSubtitlesThroughDoor=1   ; субтитры говорящих в интерьере видны на улице (0.8.25)
 iGradeStages=2            ; T12: 0 как рисует проход, 1 + композит интерьера, 2 + вид интерьера под уличным (docs/tasks/results/T12.md)
 iQuadFogModel=2           ; T12: что стадия 2 снимает с квада: 0 ничего, 1 туман эффекта, 2 и композит улицы
+bDumpLdr=1                ; 0.8.29: F11 пишет кадр после HDR (ldr-N.dds)
+bDumpAdaptTargets=1       ; 0.8.29: F11 пишет цели адаптации 1x1 (portal.adapt); здесь повис 0.8.28
+bDumpGraded=1             ; 0.8.29: F11 при стадии 2 пишет картинку после цветокоррекции (graded-N.dds)
 
 [Probe]                   ; 5.7
 bActorJumps=1             ; запись actor.jump: прыжки NPC, смена ячейки, со стеком SetPosition (0.8.25)
