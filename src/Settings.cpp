@@ -145,6 +145,7 @@ void Settings::Load()
 	ini.Read(L"InteriorSim", L"fStatusSeconds", interiorSimStatusSeconds);
 	ini.Read(L"InteriorSim", L"bForceWorldActive", interiorSimForceWorldActive);
 	ini.Read(L"InteriorSim", L"bAttachInterior", interiorSimAttachInterior);
+	ini.Read(L"InteriorSim", L"bHoldPortalActors", interiorSimHoldActors);
 
 	ini.Read(L"Portal", L"bEnabled", portalEnabled);
 	ini.Read(L"Portal", L"iWidth", portalWidth);
@@ -181,6 +182,8 @@ void Settings::Load()
 	ini.Read(L"Probe", L"fIntervalSeconds", probeIntervalSeconds);
 	ini.Read(L"Probe", L"iMaxActors", probeMaxActors);
 	ini.Read(L"Probe", L"bActorJumps", probeActorJumps);
+	ini.Read(L"Probe", L"bTraceActorLevels", probeTraceActorLevels);
+	ini.Read(L"Probe", L"bTraceScenes", probeTraceScenes);
 }
 
 std::filesystem::path Settings::ResolveLogDirectory(bool& a_usedFallback) const

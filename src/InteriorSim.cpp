@@ -1,5 +1,6 @@
 #include "InteriorSim.h"
 
+#include "ActorHold.h"
 #include "Detectors.h"
 #include "Hooks.h"
 #include "Hud.h"
@@ -21,6 +22,8 @@ namespace
 	constexpr std::int64_t   kAttachRetryUs = 1'000'000;
 	constexpr std::int64_t   kSettleUs = 1'500'000;     // after a loading screen or a load of the interior: the autosave, the first references
 	constexpr std::int64_t   kActors3DWaitUs = 8'000'000;  // the longest wait for the interior's actors to get their 3D
+	constexpr std::int64_t   kHoldGraceUs = 10'000'000;    // after a transition the portal needs kSettleUs, at worst kActors3DWaitUs
+	constexpr std::uint32_t  kHoldOwner = 0;               // ActorHold owner bit of this (the only) portal
 	constexpr float          kUnitsPerMeter = 70.0f;
 
 	// the door rectangle guessed from the door's bound sphere radius when it has no CPU vertex copy
@@ -57,6 +60,12 @@ namespace
 	std::uint64_t g_promoted{ 0 };
 	std::size_t   g_actors{ 0 };
 	std::size_t   g_highActors{ 0 };
+
+	// T11: the interior's actors held at high through transitions (ActorHold)
+	RE::FormID    g_heldCell{ 0 };
+	std::int64_t  g_nextHoldNoteUs{ 0 };
+	std::size_t   g_heldActors{ 0 };
+	std::size_t   g_heldHigh{ 0 };
 
 	// render
 	RE::NiPointer<RE::NiNode>                  g_cell3D;  // the cell's own 3D the portal draws
@@ -353,6 +362,75 @@ namespace
 											 .Int("promoted", static_cast<std::int64_t>(promoted))
 											 .Int("highAfter", static_cast<std::int64_t>(high))
 											 .Raw("levelsBefore", "[" + levelsBefore + "]"));
+		}
+	}
+
+	// T11: the held interior's actors that are high now; MoveToHigh skips its snap for them for a while.
+	void NoteHeldActors(RE::TESObjectCELL* a_cell)
+	{
+		std::size_t actors = 0;
+		std::size_t high = 0;
+		a_cell->ForEachReference([&](RE::TESObjectREFR* a_ref) {
+			const auto* actor = a_ref ? a_ref->As<RE::Actor>() : nullptr;
+			if (actor && !actor->IsPlayerRef() && !actor->IsDisabled() && !actor->IsDead()) {
+				++actors;
+				if (actor->GetProcessLevel() == RE::PROCESS_TYPE::kHigh) {
+					++high;
+					ActorHold::NoteHigh(actor);
+				}
+			}
+			return RE::BSContainer::ForEachResult::kContinue;
+		});
+		g_heldActors = actors;
+		g_heldHigh = high;
+	}
+
+	// T11: the interior is held (its high actors are not lowered) while the portal shows it or may show it
+	// soon: the player is inside (he will leave through the portal's door), the portal runs, a loading screen
+	// is open, or a transition ended less than kHoldGraceUs ago (the portal waits kSettleUs, the actors' 3D).
+	void UpdateHold(RE::TESObjectCELL* a_cell, RE::TESObjectCELL* a_playerCell, std::uint32_t a_stage, std::uint32_t a_state, std::int64_t a_now)
+	{
+		ActorHold::SetWatchedCell(a_cell ? a_cell->GetFormID() : 0);
+		if (g_heldCell && !ActorHold::HoldsCell(g_heldCell)) {
+			g_heldCell = 0;  // ActorHold::Clear (a game was loaded)
+		}
+
+		std::string_view why;
+		std::string      notHeld;
+		if (!Settings::Get().interiorSimHoldActors) {
+			notHeld = "bHoldPortalActors=0";
+		} else if (a_stage != kStagePortal) {
+			notHeld = "stage off";
+		} else if (!a_cell) {
+			notHeld = "no interior";
+		} else if (a_state < kUnattached) {
+			notHeld = std::format("interior {}", Trace::CellStateName(a_state));
+		} else if (a_playerCell == a_cell) {
+			why = "player inside";
+		} else if (Portal::Active()) {
+			why = "portal";
+		} else if (g_transition.load()) {
+			why = "loading screen";
+		} else if (a_now < g_transitionEndUs.load() + kHoldGraceUs) {
+			why = "after a transition";
+		} else {
+			notHeld = "player outside, no portal";
+		}
+
+		const auto cell = why.empty() ? RE::FormID{ 0 } : a_cell->GetFormID();
+		if (cell != g_heldCell) {
+			if (g_heldCell) {
+				ActorHold::Hold(kHoldOwner, g_heldCell, false, notHeld.empty() ? "another interior" : notHeld);
+			}
+			if (cell) {
+				ActorHold::Hold(kHoldOwner, cell, true, why);
+				g_nextHoldNoteUs = 0;
+			}
+			g_heldCell = cell;
+		}
+		if (cell && a_now >= g_nextHoldNoteUs) {
+			g_nextHoldNoteUs = a_now + kPromoteIntervalUs;
+			NoteHeldActors(a_cell);
 		}
 	}
 
@@ -793,6 +871,9 @@ namespace
 										 .Int("actors", static_cast<std::int64_t>(g_actors))
 										 .Int("highActors", static_cast<std::int64_t>(g_highActors))
 										 .Int("promotedTotal", static_cast<std::int64_t>(g_promoted))
+										 .Int("heldActors", static_cast<std::int64_t>(g_heldActors))
+										 .Int("heldHigh", static_cast<std::int64_t>(g_heldHigh))
+										 .Raw("hold", ActorHold::StatusJson())
 										 .Int("blockedUnloadsTotal", static_cast<std::int64_t>(Preload::BlockedUnloads()))
 										 .Bool("attached", g_attached.load() != nullptr)
 										 .Int("gameInteriorStepsTotal", static_cast<std::int64_t>(g_gameInteriorSteps.load()))
@@ -832,6 +913,7 @@ namespace InteriorSim
 		} else if (g_loadedSinceUs == 0) {
 			g_loadedSinceUs = now;
 		}
+		UpdateHold(cell, playerCell, stage, cellState, now);
 		const auto blocker = stage > 0 ? Blocker(cell, playerCell) : std::string{ "off" };
 		const bool ready = blocker.empty();
 		g_playerWorld = ready ? playerCell->GetbhkWorld() : nullptr;
@@ -896,6 +978,7 @@ namespace InteriorSim
 
 	void SetTransition(bool a_active)
 	{
+		ActorHold::NoteTransition(a_active);
 		g_transition = a_active;
 		if (a_active) {
 			g_playerWorld = nullptr;

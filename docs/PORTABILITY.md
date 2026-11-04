@@ -36,10 +36,13 @@
 | Индекс группы | `PortalRender.cpp`, `kRefractionNormalsGroup`, `kGeometryGroups` | `5`, `16` | В разборе мода зеркал так на SE и AE, на VR групп 19 |
 | Безымянные поля | `PortalActors.cpp`, `PortalEffects.cpp` | `BSAnimationUpdateData::unk2A`, `unk2C`; `BSFadeNode::unk144`; `NiParticleSystem::unk180`, `unk188` | Назвать в NG, сверить на SE |
 | Звук у слушателя | `Hooks.cpp`, `SoundEmitterPosition::kAtListener` | Бит 10 в `BSGameSound::soundType` | Назвать в NG, сверить на SE |
+| Перестановка в точку пакета (0.8.27) | `ActorHold.cpp`, `MoveToHighSnap` | `AE#37621 + 0x348` (вызов `AE#37618`) | Сигнатура внутри `MoveToHigh` (vfunc `0xF1`) или detour `AE#37618` с проверкой вызывающего |
+| Актёр в очереди движения (0.8.27) | `ActorHold.cpp`, `kMessageInterfaceActor` | `IMovementMessageInterface + 0x98` = `MovementControllerNPC + 0x1B8` | Описать `MovementControllerNPC` в NG |
+| Строка сцены начата (0.8.27) | `Scenes.cpp`, `kLineSaid` | Бит `0x4000` в `BGSSceneAction::flags` | Назвать в NG, сверить на SE |
 
 ### Индексы виртуальных функций
 
-Все в `Hooks.cpp`, `Hooks::Install`. Для VR значения могут отличаться, для SE нужна сверка.
+В `Hooks.cpp` (`Hooks::Install`), с 0.8.27 ещё `ActorHold.cpp` и `Scenes.cpp`. Для VR значения могут отличаться, для SE нужна сверка.
 
 | Класс | Индексы |
 |---|---|
@@ -50,7 +53,9 @@
 | `NiNode`, `BSFadeNode`, `BSMultiBoundNode`, `BSMultiBoundRoom`, `BSTriShape`, `BSDynamicTriShape`, `BSSubIndexTriShape` | `0x34` |
 | `BSEffectShader` | `2` |
 | `BSEffectShaderProperty` | `0x2A` |
-| `Character` | `0x79`, `0xAD` |
+| `Character` | `0x79`, `0xAD`; `0xF1`–`0xF4` (`ActorHold`) |
+| `MovementControllerNPC`, таблица `[1]` (`IMovementMessageInterface`) | `1` (`ActorHold`) |
+| `BGSSceneActionDialogue` | `0x11` (`Scenes`) |
 | `HighActorCuller` | `1` |
 | `BSXAudio2GameSound` | `0x0F` |
 
@@ -68,7 +73,7 @@ SE и AE нумеруются отдельно. Без SE-номера код н
 
 `RELOCATION_ID` уже стоит у `AE#106600` (SE 99955), `AE#77463` (SE 75657, упаковщик частиц) и `AE#19823` (SE 19396, `GetDistance`).
 
-**SE-номер неизвестен (37 штук):**
+**SE-номер неизвестен (37 штук до 0.8.27, ещё 5 с 0.8.27):**
 
 | Модуль | AE-номера |
 |---|---|
@@ -76,6 +81,8 @@ SE и AE нумеруются отдельно. Без SE-номера код н
 | `InteriorSim.cpp` | 18890, 18900, 18976, 19046, 19063, 19130, 77905, 77906, 400333 |
 | `Portal*.cpp` | 18966 и 105643 (`PortalImage`), 41496 (`PortalActors`), 106342 (`PortalLights`), 388630, 400333, 411270 (`PortalEffects`) |
 | `Preload.cpp` | 18540 |
+| `ActorHold.cpp` (0.8.27) | 37503 (detour), 37618, 37621 (вызов на `+0x348`) |
+| `Scenes.cpp` (0.8.27) | 24140, 55321 (detour) |
 
 **Как получить SE-номера.** Нужны `SkyrimSE.exe` 1.5.97 и `version-1-5-97-0.bin`. На диске пользователя их нет. Дальше функции сопоставляются инструментами из `tools/`: по таблицам виртуальных функций, строкам и вызывающим. Часть номеров есть в NG и в исходниках мода зеркал: это пары `RELOCATION_ID(se, ae)` и `VariantID(se, ae, vr)`.
 

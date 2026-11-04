@@ -43,6 +43,7 @@ struct Settings
 	float         interiorSimStatusSeconds{ 10.0f };
 	bool          interiorSimForceWorldActive{ true };
 	bool          interiorSimAttachInterior{ true };  // the portal's interior attached like a grid cell next to the player's (TESObjectCELL::kAttached)
+	bool          interiorSimHoldActors{ true };      // T11: the portal interior's high actors are not lowered through transitions (ActorHold)
 
 	// [Portal] InteriorSim stage 6: the interior drawn by a second camera into the door's quad
 	bool          portalEnabled{ true };
@@ -83,6 +84,8 @@ struct Settings
 	float         probeIntervalSeconds{ 5.0f };
 	std::uint32_t probeMaxActors{ 400 };
 	bool          probeActorJumps{ true };  // actor.jump: steps longer than a sprint, cell changes, returns far away
+	bool          probeTraceActorLevels{ true };  // T11: actor.level, actor.snap, actor.warpQueued, actor.keptHigh (held cells, the Preload interior)
+	bool          probeTraceScenes{ true };       // T10: scene.start, scene.stop, scene.stop.papyrus; scene.line (held cells, the Preload interior)
 
 	[[nodiscard]] static Settings& Get();
 

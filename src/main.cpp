@@ -2,6 +2,7 @@
 // Output: <sLogDirectory>\CellLoadResearch.log (text) and CellLoadResearch.trace.jsonl (trace).
 
 #include "AccessWatch.h"
+#include "ActorHold.h"
 #include "Events.h"
 #include "Hooks.h"
 #include "InteriorSim.h"
@@ -216,6 +217,7 @@ namespace
 			// The world is torn down next; the Loading Menu's close ends the transition.
 			InteriorSim::SetTransition(true);
 			InteriorSim::Detach("kPreLoadGame");
+			ActorHold::Clear("kPreLoadGame");  // the loaded game has its own actors and levels
 			break;
 		default:
 			break;

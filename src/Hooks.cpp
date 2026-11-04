@@ -1,6 +1,7 @@
 #include "Hooks.h"
 
 #include "AccessWatch.h"
+#include "ActorHold.h"
 #include "ActorJumps.h"
 #include "Detectors.h"
 #include "Events.h"
@@ -11,6 +12,7 @@
 #include "Portal.h"
 #include "Preload.h"
 #include "Probe.h"
+#include "Scenes.h"
 #include "Settings.h"
 #include "Snapshot.h"
 #include "Trace.h"
@@ -1208,6 +1210,8 @@ namespace Hooks
 
 		InstallDetours();
 		InstallCalls();
+		ActorHold::Install();  // T11: the portal's actors stay high through transitions; level traces
+		Scenes::Install();     // T10: scene traces
 	}
 
 	bool Ready()
