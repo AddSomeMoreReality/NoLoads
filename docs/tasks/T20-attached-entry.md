@@ -1,6 +1,6 @@
 # T20. Вход в интерьер портала без его отключения
 
-Этап 2. Ветка `exp/T20-attached-entry`. Код: `InteriorSim`, перехваты. Прогон: да. Начинать после T28 (разрезание `Hooks.cpp`); T11 (`ActorHold`) уже слита. Бесшовный вход должен вызывать `PlayerCharacter::SetParentCell` игрока ровно один раз за переход (T15): на нём `CLOC`, `OnLocationChange` и фильтр T16.
+Этап 2. Ветка `exp/T20-attached-entry`, worktree `..\CLR-T20`. Код: `InteriorSim`, перехваты (свои — в своём модуле, правило T28 в `Hooks.h`). Прогон: да. Начинать после T28 (разрезание `Hooks.cpp`); T11 (`ActorHold`) уже слита. Бесшовный вход должен вызывать `PlayerCharacter::SetParentCell` игрока ровно один раз за переход (T15): на нём `CLOC`, `OnLocationChange` и фильтр T16.
 
 ## Что известно
 
