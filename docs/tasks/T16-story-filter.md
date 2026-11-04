@@ -1,6 +1,6 @@
 # T16. Реакции на вход через портал: фильтр Story Manager
 
-Ветка `task/T16-story-filter`. Код: новый `src/StoryFilter.*`, установка в `Hooks.cpp`, `Settings`, INI. Прогон: да. Начинать после слияния T12 и T15 (0.8.30).
+Этап 2. Ветка `task/T16-story-filter`. Код: новый `src/StoryFilter.*`, установка в `Hooks.cpp`, `Settings`, INI. Прогон: да. Начинать после T28 (разрезание `Hooks.cpp`). Прогон 0.8.30 подтвердил: на входе песня обрывается через 1–2 с.
 
 ## Что известно (T15, `docs/tasks/results/T15.md`, `docs/LOCATION_TRIGGERS.md`)
 
