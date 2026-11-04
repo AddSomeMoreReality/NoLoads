@@ -29,7 +29,9 @@
 | Размер `AE#40845` | `Hooks.cpp`, `FromLinkedPreload` | `0x18E` | Размер из `.pdata` или сигнатура |
 | Тип накопителя | `Portal.cpp`, `kAccumulatorType` | `0x63` | Проверить на SE |
 | Техника эффектов | `PortalRender.cpp`, `kEffectTechniqueBase`, `kSoftEffectBit` | `0x4000002C`, бит 18 | Проверить на SE, вынести в NG |
-| Флаги света | `PortalLights.cpp`, `kLightInFrustum`, `kLightOutOfFrustum` | `0`, `0xFF` | Проверить на SE |
+| Флаги света | `PortalLights.cpp`, `kLightInFrustum` | `0` | Проверить на SE |
+| Цели адаптации глаза (T12, 0.8.28) | `PortalGrade.cpp`, `FindAdaptTargets`, `AdaptFlag` | Цели рендера не больше 2 × 2; текущая = `base + 2 * флаг`, флаг `AE#415054` (`AE#107183 + 0x296`) | SE-номер флага; проверить раскладку цепочки HDR на SE и 1.7 |
+| Поля BSFogProperty (T12, T13) | `PortalImage.cpp`, `FogJson` | Сырые float с `+0x58` по `+0x83` (в NG `unk58…unk80`) | Назвать в NG по `AE#107524 + 0xE7…+0x181` |
 | Режим глубины | `PortalRender.cpp`, `kDepthTestWrite` | `3` | Перечисление NG, если появится |
 | Сброс проходов | `PortalEffects.cpp`, `kRebuildPasses` | `0x7FFFFFFF` | Проверить на SE |
 | Ячейки рендера | `[Portal] iColorSlot`, `iDepthSlot` | `17`, `9` | Свой выбор свободной ячейки или вообще без подмены ячеек |
@@ -68,13 +70,13 @@ SE и AE нумеруются отдельно. Без SE-номера код н
 
 `RELOCATION_ID` уже стоит у `AE#106600` (SE 99955), `AE#77463` (SE 75657, упаковщик частиц) и `AE#19823` (SE 19396, `GetDistance`).
 
-**SE-номер неизвестен (37 штук):**
+**SE-номер неизвестен (38 штук):**
 
 | Модуль | AE-номера |
 |---|---|
 | `Hooks.cpp` | 13291, 13325, 13370, 13419, 13434, 13721, 18547, 19130, 19384, 19784, 19824, 36558, 36609, 37277, 37348, 37350, 40845, 41466, 43690, 52638, 61410, 74651, 77851, 78274, 105486 |
 | `InteriorSim.cpp` | 18890, 18900, 18976, 19046, 19063, 19130, 77905, 77906, 400333 |
-| `Portal*.cpp` | 18966 и 105643 (`PortalImage`), 41496 (`PortalActors`), 106342 (`PortalLights`), 388630, 400333, 411270 (`PortalEffects`) |
+| `Portal*.cpp` | 18966 и 105643 (`PortalImage`), 41496 (`PortalActors`), 106342 (`PortalLights`), 388630, 400333, 411270 (`PortalEffects`), 415054 (`PortalGrade`) |
 | `Preload.cpp` | 18540 |
 
 **Как получить SE-номера.** Нужны `SkyrimSE.exe` 1.5.97 и `version-1-5-97-0.bin`. На диске пользователя их нет. Дальше функции сопоставляются инструментами из `tools/`: по таблицам виртуальных функций, строкам и вызывающим. Часть номеров есть в NG и в исходниках мода зеркал: это пары `RELOCATION_ID(se, ae)` и `VariantID(se, ae, vr)`.

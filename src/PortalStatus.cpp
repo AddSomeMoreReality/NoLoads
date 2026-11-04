@@ -1,5 +1,17 @@
 #include "PortalState.h"
 
+namespace Portal::detail
+{
+	std::string RefractionShapesJson()
+	{
+		std::string json;
+		for (const auto& name : g_refractionShapes) {
+			json += std::format("{}\"{}\"", json.empty() ? "" : ",", name);
+		}
+		return "[" + json + "]";
+	}
+}
+
 namespace Portal
 {
 	std::string StatusJson()
@@ -27,8 +39,6 @@ namespace Portal
 							  .Int("effectSetups", static_cast<std::int64_t>(g_effectSetups))
 							  .Int("softEffectSetups", static_cast<std::int64_t>(g_softEffectSetups))
 							  .Int("depthCopies", static_cast<std::int64_t>(g_depthCopies))
-							  .Bool("effectsLit", g_effectsLit)
-							  .Int("effectLightsHeld", static_cast<std::int64_t>(g_effectLightsHeld))
 							  .Raw("effects", g_door.scene ? EffectsJson() : "null")
 							  .Int("animated", static_cast<std::int64_t>(g_animated))
 							  .Int("animatedByGame", static_cast<std::int64_t>(g_animatedByGame))
@@ -44,7 +54,6 @@ namespace Portal
 							  .Int("pointsCarried", static_cast<std::int64_t>(g_pointsCarried[std::to_underlying(Carried::kControllerLod)].exchange(0, std::memory_order_relaxed)))
 							  .Int("fadesCarried", static_cast<std::int64_t>(g_pointsCarried[std::to_underlying(Carried::kFade)].exchange(0, std::memory_order_relaxed)))
 							  .Int("maxPassesPerFrame", static_cast<std::int64_t>(g_maxPassesPerFrame))
-							  .Int("particleFacing", Settings::Get().portalParticleFacing)
 							  .Int("packCalls", static_cast<std::int64_t>(g_packCalls))
 							  .Int("packHeldPortal", static_cast<std::int64_t>(g_packHeldPortal))
 							  .Int("packHeldMain", static_cast<std::int64_t>(g_packHeldMain))
@@ -60,6 +69,10 @@ namespace Portal
 							  .Pos("lastSound", g_lastSound)
 							  .Int("subtitlesCarried", static_cast<std::int64_t>(std::exchange(g_subtitlesCarried, 0)))
 							  .Raw("imageSpace", ImageSpaceJson())
+							  .Raw("grade", GradeJson())
+							  .Raw("fog", FogJson(g_door.cell))
+							  .Int("refractionPasses", static_cast<std::int64_t>(g_refractionPasses))
+							  .Raw("refractionShapes", RefractionShapesJson())
 							  .Str("leftoverGroups", std::format("0x{:05X}", g_leftoverGroups))
 							  .Str("fault", g_fault)
 							  .Bool("quadMaterialOurs", QuadMaterialNow() == g_quadMaterial)
@@ -92,7 +105,8 @@ namespace Portal
 		g_effectSetups = 0;
 		g_softEffectSetups = 0;
 		g_depthCopies = 0;
-		g_effectLightsHeld = 0;
+		g_refractionPasses = 0;
+		g_refractionShapes.clear();
 		g_animated = 0;
 		g_animatedByGame = 0;
 		g_poseChecks = 0;

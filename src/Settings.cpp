@@ -118,7 +118,7 @@ void Settings::Load()
 	ini.Read(L"Hotkeys", L"iDetectorsReport", detectorsKey);
 	ini.Read(L"Hotkeys", L"iInteriorSimStage", interiorSimKey);
 	ini.Read(L"Hotkeys", L"iToggleTemporalAA", toggleTemporalAAKey);
-	ini.Read(L"Hotkeys", L"iInteriorImageSpace", interiorImageSpaceKey);
+	ini.Read(L"Hotkeys", L"iPortalGrading", portalGradingKey);
 	ini.Read(L"Hotkeys", L"iAccessWatch", accessWatchKey);
 
 	overrideSets.clear();
@@ -154,20 +154,19 @@ void Settings::Load()
 	ini.Read(L"Portal", L"bInteriorLights", portalInteriorLights);
 	ini.Read(L"Portal", L"bMirrorPlayerLights", portalMirrorPlayerLights);
 	ini.Read(L"Portal", L"bInteriorAmbient", portalInteriorAmbient);
-	ini.Read(L"Portal", L"bLightEffects", portalLightEffects);
 	ini.Read(L"Portal", L"bAnimateActors", portalAnimateActors);
 	ini.Read(L"Portal", L"bSyncActorPositions", portalSyncActorPositions);
-	ini.Read(L"Portal", L"iControllerUpdate", portalControllerMode);
 	ini.Read(L"Portal", L"bFullActorProcessing", portalFullActorProcessing);
 	ini.Read(L"Portal", L"bGameAnimatesActors", portalGameAnimatesActors);
 	ini.Read(L"Portal", L"bIgnoreParticleBudget", portalIgnoreParticleBudget);
 	ini.Read(L"Portal", L"bMasterParticles", portalMasterParticles);
-	ini.Read(L"Portal", L"iParticleFacing", portalParticleFacing);
 	ini.Read(L"Portal", L"bActorsSeen", portalActorsSeen);
 	ini.Read(L"Portal", L"bVirtualCamera", portalVirtualCamera);
 	ini.Read(L"Portal", L"bSoundThroughDoor", portalSoundThroughDoor);
 	ini.Read(L"Portal", L"bDistanceThroughDoor", portalDistanceThroughDoor);
 	ini.Read(L"Portal", L"bSubtitlesThroughDoor", portalSubtitlesThroughDoor);
+	ini.Read(L"Portal", L"iGradeStages", portalGradeStages);
+	ini.Read(L"Portal", L"iQuadFogModel", portalQuadFogModel);
 
 	ini.Read(L"Watchdog", L"bEnabled", watchdogEnabled);
 	ini.Read(L"Watchdog", L"fHangSeconds", watchdogHangSeconds);

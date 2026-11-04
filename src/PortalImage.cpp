@@ -2,9 +2,82 @@
 
 namespace Portal::detail
 {
-	bool                                        g_mainDumpRequested{ false };
-	std::uint32_t                               g_mainDumps{ 0 };
-	std::uint64_t               g_imageSpaceHeld{ 0 };  // swaps still in place after RenderPlayerView
+	bool          g_mainDumpRequested{ false };
+	std::uint32_t g_mainDumps{ 0 };
+
+	RE::BSFogProperty* WorldFog()
+	{
+		auto* scene = WorldScene();
+		return scene ? scene->GetRuntimeData().fogProperty.get() : nullptr;
+	}
+
+	FogValues ReadFog(const RE::BSFogProperty& a_fog)
+	{
+		return { .nearColor = a_fog.nearColor,
+			.farColor = a_fog.farColor,
+			.nearDistance = a_fog.nearDistance,
+			.farDistance = a_fog.farDistance,
+			.power = a_fog.power,
+			.clamp = a_fog.clamp,
+			.source = "fog property" };
+	}
+
+	void WriteFog(RE::BSFogProperty& a_fog, const FogValues& a_values)
+	{
+		a_fog.nearColor = a_values.nearColor;
+		a_fog.farColor = a_values.farColor;
+		a_fog.nearDistance = a_values.nearDistance;
+		a_fog.farDistance = a_values.farDistance;
+		a_fog.power = a_values.power;
+		a_fog.clamp = a_values.clamp;
+	}
+
+	std::string FogValuesJson(const FogValues& a_fog)
+	{
+		const auto color = [](const RE::NiColor& a_color) { return std::format("[{:.3f},{:.3f},{:.3f}]", a_color.red, a_color.green, a_color.blue); };
+		return Trace::Args{}
+			.Str("source", a_fog.source)
+			.Raw("nearColor", color(a_fog.nearColor))
+			.Raw("farColor", color(a_fog.farColor))
+			.Num("near", a_fog.nearDistance)
+			.Num("far", a_fog.farDistance)
+			.Num("power", a_fog.power)
+			.Num("clamp", a_fog.clamp)
+			.Json();
+	}
+
+	// The interior's fog: the fog property as the game set it while the player stood in that cell, or else the
+	// cell's lighting data (XCLL) with what it inherits from its lighting template.
+	std::optional<FogValues> InteriorFogOf(const RE::TESObjectCELL* a_cell)
+	{
+		if (!a_cell) {
+			return std::nullopt;
+		}
+		if (g_interiorFog && g_interiorFog->cell == a_cell->GetFormID()) {
+			auto fog = g_interiorFog->fog;
+			fog.source = "captured inside";
+			return fog;
+		}
+		auto*       cell = const_cast<RE::TESObjectCELL*>(a_cell);
+		const auto* own = cell->GetLighting();
+		if (!own) {
+			return std::nullopt;
+		}
+		const auto* lightingTemplate = cell->GetRuntimeData().lightingTemplate;
+		const auto  inherit = [&](RE::INTERIOR_DATA::Inherit a_what) -> const RE::INTERIOR_DATA& {
+            return lightingTemplate && own->lightingTemplateInheritanceFlags.any(a_what) ? lightingTemplate->data : *own;
+		};
+		const auto  color = [](const RE::Color& a_color) { return RE::NiColor{ a_color.red / 255.0f, a_color.green / 255.0f, a_color.blue / 255.0f }; };
+		const auto& colors = inherit(RE::INTERIOR_DATA::Inherit::kFogColor);
+		const auto  clamp = inherit(RE::INTERIOR_DATA::Inherit::kFogMax).fogClamp;
+		return FogValues{ .nearColor = color(colors.fogColorNear),
+			.farColor = color(colors.fogColorFar),
+			.nearDistance = inherit(RE::INTERIOR_DATA::Inherit::kFogNear).fogNear,
+			.farDistance = inherit(RE::INTERIOR_DATA::Inherit::kFogFar).fogFar,
+			.power = inherit(RE::INTERIOR_DATA::Inherit::kFogPower).fogPower,
+			.clamp = clamp > 0.0f ? clamp : 1.0f,
+			.source = lightingTemplate ? "cell lighting and template" : "cell lighting" };
+	}
 
 	void UseInteriorLook(SavedLook& a_saved)
 	{
@@ -30,6 +103,17 @@ namespace Portal::detail
 			a_saved.sunChanged = true;
 			data.diffuse = { lighting->directional.red / 255.0f, lighting->directional.green / 255.0f, lighting->directional.blue / 255.0f };
 		}
+
+		// T12, layer 1: the effects of the pass (fire, smoke, candles) take their fog from the world scene's fog
+		// property (AE#107524 calls AE#105637: State.shadowSceneNode[sceneGraph] + 0x220), the street's.
+		auto* fog = WorldFog();
+		if (g_gradeStages >= 1 && fog) {
+			if (const auto interior = InteriorFogOf(g_door.cell)) {
+				a_saved.fog = ReadFog(*fog);
+				a_saved.fogChanged = true;
+				WriteFog(*fog, *interior);
+			}
+		}
 	}
 
 	void RestoreLook(const SavedLook& a_saved)
@@ -40,6 +124,9 @@ namespace Portal::detail
 		auto* sun = scene ? scene->GetRuntimeData().sunLight : nullptr;
 		if (a_saved.sunChanged && sun && sun->light) {
 			sun->light->GetLightRuntimeData().diffuse = a_saved.sun;
+		}
+		if (auto* fog = WorldFog(); a_saved.fogChanged && fog) {
+			WriteFog(*fog, a_saved.fog);
 		}
 	}
 
@@ -126,6 +213,7 @@ namespace Portal::detail
 										.Int("format", format)
 										.Cell("playerCell", player ? player->GetParentCell() : nullptr)
 										.Bool("portal", g_active)
+										.Int("gradeStages", g_gradeStages)
 										.Raw("imageSpace", Portal::ImageSpaceJson()),
 			nullptr, true);
 	}
@@ -146,27 +234,24 @@ namespace Portal::detail
 			.Json();
 	}
 
-	// Every frame, before the passes: the swap of the last frame goes back unless the game wrote its own
-	// values since, and inside an interior its image space is kept for the swap.
+	// Every frame (PlayerCharacter::Update): inside an interior, without the portal and no transition on, keep
+	// its image space and its fog as the game set them, for the portal of that cell. Until 0.8.26 the tick also
+	// put back the image space F2 had written for the whole frame; that switch is gone (T12).
 	void LookTick()
 	{
 		auto* manager = RE::ImageSpaceManager::GetSingleton();
 		if (!manager) {
 			return;
 		}
-		auto& data = manager->GetImageSpaceData();
-		if (g_gameImageSpace) {
-			if (g_interiorLook && std::memcmp(&data, &g_interiorLook->data, sizeof(data)) == 0) {
-				data = *g_gameImageSpace;
-			}
-			g_gameImageSpace.reset();
-		}
 		auto*      player = RE::PlayerCharacter::GetSingleton();
 		auto*      cell = player ? player->GetParentCell() : nullptr;
 		auto*      ui = RE::UI::GetSingleton();
 		const bool transition = !ui || ui->IsMenuOpen(RE::FaderMenu::MENU_NAME) || ui->IsMenuOpen(RE::LoadingMenu::MENU_NAME);
 		if (cell && cell->IsInteriorCell() && !g_active && !transition) {
-			g_interiorLook = InteriorLook{ cell->GetFormID(), data };
+			g_interiorLook = InteriorLook{ cell->GetFormID(), manager->GetImageSpaceData() };
+			if (const auto* fog = WorldFog()) {
+				g_interiorFog = InteriorFog{ cell->GetFormID(), ReadFog(*fog) };
+			}
 		}
 	}
 }
@@ -189,18 +274,14 @@ namespace Portal
 		Hud::Show("portal", std::format("CLR: temporal antialiasing (TAA) {}", taa->taaEnabled ? "on" : "off"));
 	}
 
-	void ToggleInteriorImageSpace()
+	void TogglePortalGrading()
 	{
-		g_interiorImageSpace = !g_interiorImageSpace;
-		Trace::Write("portal.imageSpace", Trace::Args{}
-											   .Bool("on", g_interiorImageSpace)
-											   .Bool("portal", g_active)
-											   .FormID("captured", g_interiorLook ? g_interiorLook->cell : 0)
-											   .Raw("game", ImageSpaceJson()),
-			nullptr, true);
-		Hud::Show("portal", g_interiorImageSpace && !g_interiorLook ?
-		                        "CLR: interior image space through the portal on, but not captured yet: step inside once" :
-		                        std::format("CLR: interior image space through the portal {}", g_interiorImageSpace ? "on" : "off"));
+		constexpr std::array<std::string_view, 3> kNames{ "off", "interior composite", "interior composite and look" };
+		ReadGradeStages();
+		g_gradeStages = (g_gradeStages + 1) % 3;
+		Trace::Write("portal.grade", Trace::Args{}.Str("event", "toggle").Int("stages", g_gradeStages).Bool("portal", g_active), nullptr, true);
+		RequestGradeTrace("toggle");
+		Hud::Show("portal", std::format("CLR: portal grading {} ({})", g_gradeStages, kNames[g_gradeStages]));
 	}
 
 	std::string ImageSpaceJson()
@@ -215,9 +296,27 @@ namespace Portal
 			.Raw("now", ImageSpaceDataJson(manager->GetImageSpaceData()))
 			.Raw("interior", g_interiorLook ? ImageSpaceDataJson(g_interiorLook->data) : "null")
 			.FormID("interiorCell", g_interiorLook ? g_interiorLook->cell : 0)
-			.Bool("swapOn", g_interiorImageSpace)
-			.Int("swaps", static_cast<std::int64_t>(g_imageSpaceSwaps))
-			.Int("held", static_cast<std::int64_t>(g_imageSpaceHeld))
+			.Json();
+	}
+
+	std::string FogJson(const RE::TESObjectCELL* a_cell)
+	{
+		const auto* fog = WorldFog();
+		const auto  interior = InteriorFogOf(a_cell);
+		std::string unnamed;
+		if (fog) {
+			// BSFogProperty + 0x58 ... 0x83: fields NG leaves unnamed (T13 looked for colours there)
+			const auto* words = reinterpret_cast<const float*>(reinterpret_cast<const std::byte*>(fog) + 0x58);
+			for (int i = 0; i < 11; ++i) {
+				unnamed += std::format("{}{:.3f}", i ? "," : "", words[i]);
+			}
+		}
+		return Trace::Args{}
+			.Raw("world", fog ? FogValuesJson(ReadFog(*fog)) : "null")
+			.Raw("worldUnnamed58", fog ? "[" + unnamed + "]" : "null")
+			.Num("invFrameBufferRange", RE::BSShaderManager::State::GetSingleton().invFrameBufferRange)
+			.FormID("cell", a_cell ? a_cell->GetFormID() : 0)
+			.Raw("cellFog", interior ? FogValuesJson(*interior) : "null")
 			.Json();
 	}
 
@@ -225,16 +324,12 @@ namespace Portal
 	{
 		g_dumpRequested = g_active;
 		g_mainDumpRequested = true;
+		RequestHdrDumps();
+		RequestGradeTrace("snapshot");
 	}
 
 	void AfterPlayerView()
 	{
-		if (g_gameImageSpace && g_interiorLook) {
-			auto* imageSpaces = RE::ImageSpaceManager::GetSingleton();
-			if (imageSpaces && std::memcmp(&imageSpaces->GetImageSpaceData(), &g_interiorLook->data, sizeof(RE::ImageSpaceData)) == 0) {
-				++g_imageSpaceHeld;  // the game did not write its own values between our pass and the image space
-			}
-		}
 		if (!g_mainDumpRequested) {
 			return;
 		}

@@ -4,7 +4,8 @@
 // as it was). The state the files share, and the functions one file calls in another:
 //   Portal.cpp        - Start / Stop / Tick, the quad, the door's rectangle on screen and the camera through it;
 //   PortalRender.cpp  - the pass: render targets, lent engine slots, culling, submit, drain, faults;
-//   PortalImage.cpp   - the interior's look (ambient, image space), TAA, texture dumps;
+//   PortalImage.cpp   - the interior's look (ambient, fog, image space), TAA, texture dumps;
+//   PortalGrade.cpp   - the portal's own grading (T12): the interior's composite and its look under the street's;
 //   PortalLights.cpp  - copies of the interior's lights, the player's lights, lights for actors and effects;
 //   PortalActors.cpp  - the interior's actors: shown, animated, seen, the world camera and distances;
 //   PortalEffects.cpp - particles, controllers, particle budget, master particle systems, watched effects;
@@ -25,7 +26,6 @@ namespace Portal::detail
 	using RenderTarget = RE::RENDER_TARGET;
 
 	constexpr std::size_t   kMaxAnimatedActors = 32;            // interior actors whose animation updates are made full
-	constexpr std::uint32_t kUpdateControllers = 1u << 0;       // NiUpdateData::flags: NiNode::UpdateDownwardPass (AE#70301) runs the controllers (NG: kDirty)
 	constexpr std::size_t   kAmbientOffset = 0xC8;  // BSShaderManager::State: directional ambient matrix and ambient specular ...
 	constexpr std::size_t   kAmbientBytes = 0x44;   // ... the bytes AE#105643 writes (0x142033128..0x14203316C)
 
@@ -41,20 +41,13 @@ namespace Portal::detail
 		ID3D11ShaderResourceView* depthSrv{ nullptr };
 		ID3D11Texture2D*          depthCopy{ nullptr };  // what soft particles read: our depth, copied at the pass's first effect
 		ID3D11ShaderResourceView* depthCopySrv{ nullptr };
+		ID3D11Texture2D*          scratch{ nullptr };     // T12: the colour before the composite, which reads it while writing the colour
+		ID3D11ShaderResourceView* scratchSrv{ nullptr };
+		ID3D11Texture2D*          graded{ nullptr };      // T12: what the quad shows with grading stage 2
+		ID3D11RenderTargetView*   gradedRtv{ nullptr };
+		ID3D11ShaderResourceView* gradedSrv{ nullptr };
 		std::uint32_t             width{ 0 };
 		std::uint32_t             height{ 0 };
-	};
-
-	// How the pass advances the interior's controllers (fire and smoke particles, candle flames, animated
-	// textures): the game does it through the scene graph, which a cell without the player is not part
-	// of. 0.8.12: no particles before the player's first visit, and the smoke stood still after it.
-	// [Portal] iControllerUpdate.
-	enum class ControllerMode : std::uint32_t
-	{
-		kOff = 0,
-		kSelective = 1,  // NiAVObject::UpdateSelectedDownwardPass (vfunc 0x2D): only the nodes flagged kSelectiveUpdate
-		kWholeTree = 2,  // NiAVObject::Update with kUpdateControllers: every node, its transform and controllers
-		kTotal
 	};
 
 	// The camera the particle packer reads from RendererShadowState.
@@ -96,16 +89,37 @@ namespace Portal::detail
 	inline std::uint32_t                               g_leftoverGroups{ 0 };    // ... and since the last status
 	inline bool                                        g_dumpRequested{ false };
 
-	// The interior's image space as the game blended it while the player stood inside (0.8.25, F2).
+	// The interior's image space as the game blended it while the player stood inside (0.8.25).
 	struct InteriorLook
 	{
 		RE::FormID         cell{ 0 };
 		RE::ImageSpaceData data{};
 	};
 	inline std::optional<InteriorLook> g_interiorLook;
-	inline bool                        g_interiorImageSpace{ false };  // F2
-	inline std::optional<RE::ImageSpaceData> g_gameImageSpace;          // what the manager held before we wrote the interior's
-	inline std::uint64_t               g_imageSpaceSwaps{ 0 };
+
+	// A fog as the game's fog property holds it (ShadowSceneNode + 0x220; BSEffectShader::SetupTechnique,
+	// AE#107524 + 0xE7: FogParam = near/(far - near), 1/(far - near), power, clamp).
+	struct FogValues
+	{
+		RE::NiColor   nearColor{};
+		RE::NiColor   farColor{};
+		float         nearDistance{ 0.0f };
+		float         farDistance{ 0.0f };
+		float         power{ 1.0f };
+		float         clamp{ 0.0f };
+		std::string_view source{ "none" };
+	};
+	struct InteriorFog
+	{
+		RE::FormID cell{ 0 };
+		FogValues  fog;
+	};
+	inline std::optional<InteriorFog> g_interiorFog;  // the fog property while the player stood inside
+
+	// T12: [Portal] iGradeStages, F2 cycles it: 0 the picture as the pass draws it, 1 + the interior's composite
+	// (inverse frame buffer range, the interior's fog, the opaque clamp), 2 + the interior's look under the street's.
+	inline std::uint32_t g_gradeStages{ 2 };
+	inline bool          g_composited{ false };  // this pass's composite is done
 	inline std::vector<AddedLight>                     g_lights;
 	inline std::vector<RE::NiPointer<RE::NiAVObject>>  g_actorRoots;  // the interior's actors' 3D, hidden by the game while the cell is unattached
 	inline std::vector<RE::NiPointer<RE::Actor>>       g_interiorActors;  // the same actors, in the same order
@@ -114,10 +128,8 @@ namespace Portal::detail
 	inline bool                                        g_rebuildPasses{ false };  // the interior's render passes are built again on the next pass
 	inline thread_local bool                           t_inPass{ false };         // SubmitAccumulator of our pass runs on this thread
 	inline thread_local bool                           t_culling{ false };        // our culling runs on this thread; the game's own culls on its jobs at the same time
-	inline bool                                        g_effectsLit{ false };     // effects get our lights (0.8.10-0.8.11: no fire at all)
 	inline bool                                        g_rebuildEffects{ false };  // the interior's effect passes are built again on the next pass
 	inline std::int64_t                                g_lastAnimateUs{ 0 };
-	inline ControllerMode                              g_controllerMode{ ControllerMode::kSelective };
 
 	// Read by AdjustAnimationUpdate on whatever thread updates the actors: the interior's actors, in the
 	// order of g_interiorActors (compared, never dereferenced), and the updates the game made of them.
@@ -180,7 +192,6 @@ namespace Portal::detail
 	inline std::uint64_t g_effectSetups{ 0 };      // BSEffectShader techniques set up during our passes
 	inline std::uint64_t g_softEffectSetups{ 0 };  // ... of them with soft particles
 	inline std::uint64_t g_depthCopies{ 0 };
-	inline std::uint64_t g_effectLightsHeld{ 0 };  // effect shapes registered with our lights asleep
 	inline std::uint64_t g_animated{ 0 };          // actor animation updates made by the portal
 	inline std::uint64_t g_animatedByGame{ 0 };    // passes for which the game had updated the actor itself
 	inline std::uint64_t g_poseChecks{ 0 };
@@ -200,6 +211,11 @@ namespace Portal::detail
 	inline std::uint64_t g_packHeldMain{ 0 };
 	inline std::uint64_t g_packHeldOther{ 0 };
 	inline float         g_packOriginDrift{ 0.0f };  // units between the held origin and the portal camera
+
+	// T13 diagnostics: the shapes in the refraction normals group (5) of our accumulator before DrainPasses
+	// clears it, since the last status.
+	inline std::uint64_t            g_refractionPasses{ 0 };
+	inline std::vector<std::string> g_refractionShapes;
 
 	template <class T>
 	T* AsRex(void* a_object)
@@ -237,6 +253,7 @@ namespace Portal::detail
 	{
 		RE::NiPointer<RE::BSGeometry> shape;
 		const RE::NiAVObject*         parent{ nullptr };
+		bool                          refraction{ false };  // T13: a lit shape with kRefraction (heat haze), not an effect
 		std::uint32_t                 visits{ 0 };
 		std::uint32_t                 parentVisits{ 0 };
 		std::uint32_t                 passCalls{ 0 };
@@ -256,6 +273,8 @@ namespace Portal::detail
 		std::array<std::byte, kAmbientBytes> ambient{};
 		RE::NiColor                          sun{};
 		bool                                 sunChanged{ false };
+		FogValues                            fog{};  // T12: the street's fog, put back after the pass
+		bool                                 fogChanged{ false };
 	};
 
 	// The actors' 3D, made visible for the culling only: AppCulled nodes near the root shown, fade raised.
@@ -286,6 +305,28 @@ namespace Portal::detail
 	void RestoreLook(const SavedLook& a_saved);
 	void WriteDump(ID3D11Texture2D* a_texture, std::uint32_t a_width, std::uint32_t a_height, std::string_view a_name, std::uint32_t a_number);
 	void LookTick();
+	RE::BSFogProperty* WorldFog();
+	FogValues ReadFog(const RE::BSFogProperty& a_fog);
+	void WriteFog(RE::BSFogProperty& a_fog, const FogValues& a_values);
+	std::optional<FogValues> InteriorFogOf(const RE::TESObjectCELL* a_cell);
+	std::string FogValuesJson(const FogValues& a_fog);
+
+	// PortalGrade.cpp
+	void ReadGradeStages();  // [Portal] iGradeStages, once
+	bool CreateGradeTargets(std::string& a_why);
+	void GradeStart();
+	void Composite(std::uint32_t a_width, std::uint32_t a_height);
+	void Grade(std::uint32_t a_width, std::uint32_t a_height);
+	ID3D11ShaderResourceView* QuadView();
+	std::string GradeJson();
+	void RequestGradeTrace(std::string_view a_why);
+	void RequestHdrDumps();
+
+	// PortalStatus.cpp
+	std::string RefractionShapesJson();
+
+	// PortalEffects.cpp (T13)
+	std::string BillboardsJson(RE::NiAVObject* a_owner, const RE::NiPoint3& a_eye);
 
 	// PortalLights.cpp
 	std::string LightJson(const AddedLight& a_added);

@@ -24,13 +24,15 @@ namespace Portal::detail
 		kCullMasterParticles,
 		kSetTargets,
 		kSubmit,
+		kComposite,
 		kDrain,
 		kRestore,
+		kGrade,
 		kTotal
 	};
 
 	constexpr std::array<std::string_view, std::to_underlying(PassPhase::kTotal)> kPassPhaseNames{
-		"idle", "lend slots", "animate actors", "update controllers", "cull interior", "cull master particles", "set targets", "submit", "drain", "restore"
+		"idle", "lend slots", "animate actors", "update controllers", "cull interior", "cull master particles", "set targets", "submit", "composite", "drain", "restore", "grade"
 	};
 
 	std::string                                 g_targetFailure;  // creation failed once: do not retry
@@ -152,6 +154,10 @@ namespace Portal::detail
 		}
 		g_target.width = color.Width;
 		g_target.height = color.Height;
+		std::string gradeWhy;
+		if (!CreateGradeTargets(gradeWhy)) {
+			logs::warn("portal: no grading ({})", gradeWhy);  // the portal works without it, as at stage 0
+		}
 		Trace::Write("portal.init", Trace::Args{}
 										.Int("width", g_target.width)
 										.Int("height", g_target.height)
@@ -289,12 +295,47 @@ namespace Portal::detail
 		}
 	}
 
+	// SEH only, no objects with destructors: the shapes of a geometry group's pass list (BSRenderPass::passGroupNext).
+	std::uint32_t ReadGroupShapes(const RE::BSBatchRenderer* a_batches, std::uint32_t a_group, const char** a_names, std::uint32_t a_max)
+	{
+		__try {
+			const auto*   group = a_batches->geometryGroups[a_group];
+			std::uint32_t count = 0;
+			for (const auto* pass = group ? group->passList.head : nullptr; pass && count < kMaxInspectedTechniques; pass = pass->passGroupNext) {
+				if (count < a_max) {
+					a_names[count] = pass->geometry ? pass->geometry->name.c_str() : nullptr;
+				}
+				++count;
+			}
+			return count;
+		} __except (1 /* EXCEPTION_EXECUTE_HANDLER */) {
+			return 0;
+		}
+	}
+
+	// T13: what our culling put into the refraction normals group (heat haze over the hearth, run 0.8.26: never drawn).
+	void NoteRefractionGroup(RE::BSShaderAccumulator* a_accumulator)
+	{
+		constexpr std::uint32_t kNames = 8;
+		constexpr std::size_t   kKept = 16;
+		const char*             names[kNames]{};
+		const auto              count = ReadGroupShapes(a_accumulator->GetRuntimeData().batchRenderer, kRefractionNormalsGroup, names, kNames);
+		g_refractionPasses += count;
+		for (std::uint32_t i = 0; i < (std::min)(count, kNames); ++i) {
+			const std::string name = names[i] ? names[i] : "(no geometry)";
+			if (g_refractionShapes.size() < kKept && std::ranges::find(g_refractionShapes, name) == g_refractionShapes.end()) {
+				g_refractionShapes.push_back(name);
+			}
+		}
+	}
+
 	// SubmitAccumulator (AE#106436) drains the technique buckets but never draws the refraction normals
 	// group: only the frame renderer does, so the game clears it after its own off-screen pass (AE#52727).
 	void DrainPasses(RE::BSShaderAccumulator* a_accumulator)
 	{
 		using ClearGroup = void (*)(RE::BSShaderAccumulator*, std::int32_t);
 		static REL::Relocation<ClearGroup> clearGroup{ RELOCATION_ID(99955, 106600) };
+		NoteRefractionGroup(a_accumulator);
 		clearGroup(a_accumulator, kRefractionNormalsGroup);
 
 		PassInventory left;
@@ -440,9 +481,22 @@ namespace Portal::detail
 		AimParticles(main);
 		t_inPass = true;
 		g_depthCopied = false;
+		g_composited = false;
 		Mark(PassPhase::kSubmit);
 		RE::BSGraphics::Renderer::SubmitAccumulator(g_camera.get(), accumulator, 0);
 		t_inPass = false;
+		// T12, layer 1: a pass without effects composites here; otherwise it did at the first effect.
+		if (g_gradeStages >= 1 && !g_composited) {
+			if (!g_depthCopied) {
+				g_depthCopied = true;
+				if (auto* context = Context()) {
+					context->CopyResource(g_target.depthCopy, g_target.depth);
+					++g_depthCopies;
+				}
+			}
+			Mark(PassPhase::kComposite);
+			Composite(width, height);
+		}
 		Mark(PassPhase::kDrain);
 		DrainPasses(accumulator);
 		Mark(PassPhase::kRestore);
@@ -452,20 +506,18 @@ namespace Portal::detail
 		if (interiorLook) {
 			RestoreLook(look);
 		}
+		// T12, layer 2: after RestoreLook, so the street's fog is what the quad gets.
+		if (g_gradeStages >= 2) {
+			Mark(PassPhase::kGrade);
+			Grade(width, height);
+		}
 
 		if (g_dumpRequested) {
 			g_dumpRequested = false;
-			WriteDump(g_target.color, g_viewportWidth, g_viewportHeight, "portal", ++g_dumps);
-		}
-
-		if (g_interiorImageSpace && g_interiorLook && g_door.cell && g_interiorLook->cell == g_door.cell->GetFormID()) {
-			if (auto* imageSpaces = RE::ImageSpaceManager::GetSingleton()) {
-				auto& data = imageSpaces->GetImageSpaceData();
-				if (!g_gameImageSpace) {
-					g_gameImageSpace = data;
-				}
-				data = g_interiorLook->data;
-				++g_imageSpaceSwaps;
+			++g_dumps;
+			WriteDump(g_target.color, g_viewportWidth, g_viewportHeight, "portal", g_dumps);
+			if (g_gradeStages >= 2 && g_target.gradedSrv && QuadView() == g_target.gradedSrv) {
+				WriteDump(g_target.graded, g_viewportWidth, g_viewportHeight, "graded", g_dumps);
 			}
 		}
 
@@ -548,6 +600,9 @@ namespace Portal
 			if (auto* context = Context()) {
 				context->CopyResource(g_target.depthCopy, g_target.depth);
 				++g_depthCopies;
+			}
+			if (g_gradeStages >= 1) {
+				Composite(g_viewportWidth, g_viewportHeight);  // T12: where the game composites its frame
 			}
 		}
 		return a_technique;
