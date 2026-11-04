@@ -108,12 +108,16 @@ namespace Portal::detail
 		}
 
 		// T12, layer 1: the effects of the pass (fire, smoke, candles) take their fog from the world scene's fog
-		// property (AE#107524 calls AE#105637: State.shadowSceneNode[sceneGraph] + 0x220), the street's.
+		// property (AE#107524 calls AE#105637: State.shadowSceneNode[sceneGraph] + 0x220), the street's. The fog
+		// starts at the door plane, as the composite's: from the eye, 10 m from the door the interior's fog
+		// (128 - 2000) hid the whole room (0.8.29).
 		auto* fog = WorldFog();
 		if (g_gradeStages >= 1 && fog) {
-			if (const auto interior = InteriorFogOf(g_door.cell)) {
+			if (auto interior = InteriorFogOf(g_door.cell)) {
 				a_saved.fog = ReadFog(*fog);
 				a_saved.fogChanged = true;
+				interior->nearDistance += g_eyeDistance;
+				interior->farDistance += g_eyeDistance;
 				WriteFog(*fog, *interior);
 			}
 		}

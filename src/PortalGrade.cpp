@@ -21,7 +21,7 @@ namespace Portal::detail
 		float fogNear[4];       // composite: the interior's fog near colour; w: inverse frame buffer range
 		float fogFar[4];        // composite: far colour; w: 1 = fog on
 		float fogParam[4];      // composite: near/(far-near), 1/(far-near), power, clamp
-		float depthRange[4];    // composite: the pass camera's near and far plane
+		float depthRange[4];    // composite: the pass camera's near and far plane, the eye's distance to the door plane
 		float srcParam[4];      // grade: the interior's p, average luminance, exposure
 		float srcCine[4];       // saturation, brightness, contrast, tint amount
 		float srcTint[4];       // tint colour
@@ -91,8 +91,10 @@ float4 PSComposite(float4 pos : SV_Position) : SV_Target
 	}
 	float3 rgb = c.rgb;
 	if (fogFar.w > 0.5) {
+		// the interior's fog over the way inside only: the camera looks along the door's normal, so the depth
+		// behind the door plane is z minus the eye's distance to it (the street fogs the rest, on the quad)
 		float z = depthRange.x * depthRange.y / max(depthRange.y - d * (depthRange.y - depthRange.x), 0.001);
-		float f = FogFactor(z, fogParam);
+		float f = FogFactor(max(z - depthRange.z, 0), fogParam);
 		rgb = lerp(rgb, lerp(fogNear.rgb, fogFar.rgb, f), f);
 	}
 	return float4(saturate(fogNear.w * rgb), c.a);
@@ -955,7 +957,7 @@ namespace Portal::detail
 		Copy4(constants.fogNear, fog ? fog->nearColor.red : 0.0f, fog ? fog->nearColor.green : 0.0f, fog ? fog->nearColor.blue : 0.0f, inverseRange);
 		Copy4(constants.fogFar, fog ? fog->farColor.red : 0.0f, fog ? fog->farColor.green : 0.0f, fog ? fog->farColor.blue : 0.0f, fog ? 1.0f : 0.0f);
 		FogParam(constants.fogParam, fog ? *fog : FogValues{});
-		Copy4(constants.depthRange, g_frustum.fNear, g_frustum.fFar, 0.0f, 0.0f);
+		Copy4(constants.depthRange, g_frustum.fNear, g_frustum.fFar, g_eyeDistance, 0.0f);
 		Copy4(constants.viewport, static_cast<float>(a_width), static_cast<float>(a_height), 0.0f, 0.0f);
 		if (!Upload(context, constants)) {
 			return;
