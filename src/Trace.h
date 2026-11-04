@@ -61,6 +61,10 @@ namespace Trace
 	// SkyrimSE.exe code: "AE#<nearest lower Address Library ID>[+offset]"; other modules: "<module>[+offset]".
 	[[nodiscard]] std::string DescribeAddress(std::uintptr_t a_address, bool a_withOffset);
 
+	// JSON array of up to 16 return addresses (DescribeAddress) on the calling thread's stack: the first
+	// is in the function that calls StackJson, a_skip more frames are skipped above it. Any thread.
+	[[nodiscard]] std::string StackJson(std::size_t a_skip, std::size_t a_count);
+
 	// TESObjectCELL::CellState as text: kUnloaded .. kAttached.
 	[[nodiscard]] std::string_view CellStateName(std::uint32_t a_state);
 	[[nodiscard]] std::uint32_t    CellState(const RE::TESObjectCELL* a_cell);  // kUnloaded for null

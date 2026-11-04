@@ -353,6 +353,18 @@ namespace Trace
 		return a_withOffset ? std::format("{:#x}", a_address) : "<unknown>";
 	}
 
+	std::string StackJson(std::size_t a_skip, std::size_t a_count)
+	{
+		std::array<void*, 16> frames{};
+		const auto            wanted = static_cast<DWORD>((std::min)(a_count, frames.size()));
+		const auto            count = ::RtlCaptureStackBackTrace(static_cast<DWORD>(a_skip + 1), wanted, frames.data(), nullptr);
+		std::string           stack;
+		for (std::size_t i = 0; i < count; ++i) {
+			stack += (stack.empty() ? "" : ",") + JsonString(DescribeAddress(reinterpret_cast<std::uintptr_t>(frames[i]), true));
+		}
+		return "[" + stack + "]";
+	}
+
 	std::string_view CellStateName(std::uint32_t a_state)
 	{
 		constexpr std::array names{ "kUnloaded"sv, "kUnloading"sv, "kDataLoaded"sv, "kBuilding3D"sv,

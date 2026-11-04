@@ -1,5 +1,6 @@
 #include "ActorJumps.h"
 
+#include "ActorHold.h"
 #include "Settings.h"
 #include "Trace.h"
 
@@ -97,7 +98,8 @@ namespace
 				.Int("frames", static_cast<std::int64_t>(gap))
 				.FormID("fromCell", last.cell)
 				.Cell("toCell", cell)
-				.FormID("package", package ? package->GetFormID() : 0);
+				.FormID("package", package ? package->GetFormID() : 0)
+				.Bool("held", ActorHold::HoldsActor(actor));
 			if (const auto move = TakeMove(actor->GetFormID(), a_now)) {
 				args.Pos("setFrom", move->from).Pos("setTo", move->to).Bool("setOnMain", move->mainThread).Raw("stack", move->stack);
 			}
