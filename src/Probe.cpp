@@ -251,7 +251,8 @@ namespace
 		// 0.8.20: the flames of the interior the player stands in, to compare with the portal's status
 		if (playerCell && playerCell->IsInteriorCell() && playerCell->GetRuntimeData().loadedData) {
 			args.Raw("fires", Portal::FireSampleJson(playerCell->GetRuntimeData().loadedData->cell3D.get()))
-				.Raw("masters", Portal::MasterParticlesJson(playerCell->GetRuntimeData().loadedData->cell3D.get()));
+				.Raw("masters", Portal::MasterParticlesJson(playerCell->GetRuntimeData().loadedData->cell3D.get()))
+				.Raw("fog", Portal::FogJson(playerCell));  // T13: the interior's own fog, to compare with the portal's
 		}
 
 		args.Raw("sounds", SoundsJson());

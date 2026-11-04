@@ -19,7 +19,7 @@ struct Settings
 	std::uint32_t detectorsKey{ 64 };         // F6: doors summary on the HUD
 	std::uint32_t interiorSimKey{ 66 };       // F8: InteriorSim off / portal
 	std::uint32_t toggleTemporalAAKey{ 62 };  // F4: the game's TAA on or off in memory (0.8.20; until 0.8.19 soft particles in the portal)
-	std::uint32_t interiorImageSpaceKey{ 60 }; // F2: the interior's image space while the portal is drawn (0.8.25; 0.8.24 soft particles)
+	std::uint32_t portalGradingKey{ 60 };     // F2: the portal's grading stage, 2 -> 0 -> 1 (0.8.28; 0.8.25 the interior's image space on the whole screen)
 	std::uint32_t accessWatchKey{ 61 };       // F3: capture who reads the player's and the camera's position
 
 	// [Overrides] sSet1..sSet9: "name:Section=value | ..." applied in memory by the hotkey
@@ -54,22 +54,24 @@ struct Settings
 	bool          portalInteriorLights{ true };      // copies of the interior's lights, lighting only the interior
 	bool          portalMirrorPlayerLights{ true };  // the player's dynamic lights near the door carried into the interior
 	bool          portalInteriorAmbient{ true };     // the interior's ambient and directional light for the pass
-	bool          portalLightEffects{ false };       // effects (fire, candles) get the interior's lights
 	bool          portalAnimateActors{ true };       // the interior's actors' animation advanced before each pass
 	bool          portalSyncActorPositions{ true };  // ... their 3D moved to where the actors are first
-	std::uint32_t portalControllerMode{ 1 };         // the interior's controllers: 0 off, 1 selective update, 2 whole tree
 	bool          portalFullActorProcessing{ true }; // the interior's actors get the game's full high-process update (AI, movement)
 	bool          portalGameAnimatesActors{ true };  // ... and the game's own animation jobs (AE#41466)
 	bool          portalIgnoreParticleBudget{ true };  // the interior's emitters ignore the game's particle budget
 	bool          portalMasterParticles{ true };       // the pass also culls the master particle systems (candle flames); froze 0.8.21 before RenderWorld
-	std::uint32_t portalParticleFacing{ 2 };           // what particle quads face: 0 the game's choice, 1 the portal camera, 2 the player's view through the door
 	bool          portalActorsSeen{ true };            // the interior's actors count as seen: no kNotVisible (their height follows the controller)
 	bool          portalVirtualCamera{ true };         // the world camera, for the interior's actors, is the portal's camera
 	bool          portalSoundThroughDoor{ true };      // the interior's sounds are heard in the street
 	bool          portalDistanceThroughDoor{ true };   // GetDistance between the player and the interior's references goes through the door
 	bool          portalSubtitlesThroughDoor{ true };  // subtitles of the interior's speakers are shown in the street
+	std::uint32_t portalGradeStages{ 2 };   // T12: 0 the pass's picture, 1 + the interior's composite, 2 + the interior's look under the street's
+	std::uint32_t portalQuadFogModel{ 2 };  // T12: what grading undoes on the quad: 0 nothing, 1 the effect shader's fog, 2 and the street's composite
+	bool          portalDumpLdr{ true };           // F11 also writes the frame after the HDR image space (ldr-N.dds)
+	bool          portalDumpAdaptTargets{ true };  // ... the 1x1 eye adaptation targets (portal.adapt; 0.8.28 froze there)
+	bool          portalDumpGraded{ true };        // ... and at grading stage 2 the graded picture (graded-N.dds)
 
-	// [Watchdog] sees a frozen game from outside while the portal runs
+	// [Watchdog] sees a frozen game from outside while the portal runs and for a while after F11
 	bool  watchdogEnabled{ true };
 	float watchdogHangSeconds{ 6.0f };
 	bool  watchdogTerminate{ true };  // end the process after writing the stacks

@@ -9,8 +9,6 @@ namespace Portal::detail
 
 	RE::NiPointer<RE::NiAVObject>               g_quad;
 	std::vector<ID3D11ShaderResourceView*>      g_replacedViews;  // the placeholder texture's views we swapped out (kept)
-	bool                                        g_effectsLitRead{ false };
-	bool                                        g_controllerModeRead{ false };
 
 	// The quad model, loaded once and cloned: its own NiSourceTexture (a path no other model uses).
 	bool LoadQuad(std::string& a_why)
@@ -58,19 +56,24 @@ namespace Portal::detail
 		return material;
 	}
 
-	// Every pass: the texture may be (re)loaded after the model, so check the view each time.
+	// Every pass: the texture may be (re)loaded after the model, so check the view each time. The quad shows the
+	// pass's target, or with grading stage 2 the graded copy (T12).
 	void SwapQuadTexture()
 	{
 		auto* texture = g_quadMaterial && g_quadMaterial->sourceTexture ? g_quadMaterial->sourceTexture->rendererTexture : nullptr;
-		auto* ours = AsRex<REX::W32::ID3D11ShaderResourceView>(g_target.srv);
-		if (!texture || texture->resourceView == ours) {
+		auto* wanted = QuadView();
+		auto* ours = AsRex<REX::W32::ID3D11ShaderResourceView>(wanted);
+		if (!texture || !wanted || texture->resourceView == ours) {
 			g_textureSwapped = texture != nullptr;
 			return;
 		}
-		if (texture->resourceView) {
-			g_replacedViews.push_back(reinterpret_cast<ID3D11ShaderResourceView*>(texture->resourceView));
+		auto* current = reinterpret_cast<ID3D11ShaderResourceView*>(texture->resourceView);
+		if (current == g_target.srv || (current && current == g_target.gradedSrv)) {
+			current->Release();  // the reference we added when we put it there; the target keeps its own
+		} else if (current) {
+			g_replacedViews.push_back(current);
 		}
-		g_target.srv->AddRef();  // the game releases the view with the texture
+		wanted->AddRef();  // the game releases the view with the texture
 		texture->resourceView = ours;
 		g_textureSwapped = true;
 	}
@@ -331,14 +334,6 @@ namespace Portal
 		if (!CreateTarget(a_why) || !LoadQuad(a_why)) {
 			return false;
 		}
-		if (!g_effectsLitRead) {
-			g_effectsLitRead = true;
-			g_effectsLit = settings.portalLightEffects;
-		}
-		if (!g_controllerModeRead) {
-			g_controllerModeRead = true;
-			g_controllerMode = static_cast<ControllerMode>((std::min)(settings.portalControllerMode, std::to_underlying(ControllerMode::kTotal) - 1));
-		}
 		if (!g_camera) {
 			auto* main = RE::Main::WorldRootCamera();
 			auto* clone = main ? netimmerse_cast<RE::NiCamera*>(main->Clone()) : nullptr;
@@ -385,6 +380,7 @@ namespace Portal
 		g_door.scene->UpdateWorldBound();
 
 		PlaceQuad();
+		GradeStart();
 		SwapQuadTexture();
 		std::size_t alreadyInScene = 0;
 		AddInteriorLights(alreadyInScene);

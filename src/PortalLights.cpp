@@ -8,7 +8,6 @@ namespace Portal::detail
 	constexpr std::size_t   kSampledShapes = 4;  // interior shapes whose light lists go to the trace
 	constexpr float         kRegatherDistance = 16.0f;  // units a carried light moves before its lit shapes are collected again
 	constexpr std::uint32_t kLightInFrustum = 0;        // BSLight::frustrumCull after AE#108278 found it in the camera's frustum (0xFF: outside)
-	constexpr std::uint32_t kLightOutOfFrustum = 0xFF;          // BSLight::frustrumCull: AE#107784 skips such lights
 
 	// ------------------------------------------------------------------
 	// Lights
@@ -474,39 +473,21 @@ namespace Portal::detail
 
 namespace Portal
 {
-	bool BeforeEffectPasses(const RE::BSGeometry* a_geometry)
+	void BeforeEffectPasses(const RE::BSGeometry* a_geometry)
 	{
 		if (!t_culling) {
-			return false;
+			return;
 		}
 		if (const auto it = g_watchedShapes.find(a_geometry); it != g_watchedShapes.end()) {
 			++g_watchedEffects[it->second].passCalls;
 		}
-		if (g_effectsLit) {
-			return false;
-		}
-		for (auto& added : g_lights) {
-			if (added.light) {
-				added.light->frustrumCull = kLightOutOfFrustum;
-			}
-		}
-		++g_effectLightsHeld;
-		return true;
 	}
 
-	void AfterEffectPasses(bool a_held, const RE::BSGeometry* a_geometry, bool a_gotPasses)
+	void AfterEffectPasses(const RE::BSGeometry* a_geometry, bool a_gotPasses)
 	{
 		if (t_culling && !a_gotPasses) {
 			if (const auto it = g_watchedShapes.find(a_geometry); it != g_watchedShapes.end()) {
 				++g_watchedEffects[it->second].noPasses;
-			}
-		}
-		if (!a_held) {
-			return;
-		}
-		for (auto& added : g_lights) {
-			if (added.light) {
-				added.light->frustrumCull = kLightInFrustum;
 			}
 		}
 	}

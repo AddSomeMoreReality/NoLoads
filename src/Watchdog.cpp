@@ -147,7 +147,7 @@ namespace
 			std::this_thread::sleep_for(kPoll);
 			const auto frame = Trace::Frame();
 			const auto now = Clock::now();
-			if (frame != lastFrame || !Portal::Active()) {
+			if (frame != lastFrame || (!Portal::Active() && !Portal::SnapshotWatched())) {
 				lastFrame = frame;
 				lastAdvance = now;
 			} else if (now - lastAdvance >= limit) {

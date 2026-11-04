@@ -667,16 +667,16 @@ namespace
 	};
 
 	// BSEffectShaderProperty::GetRenderPasses (vfunc 0x2A, AE#106876): an effect with kEffectLighting
-	// picks up to 5 lights here (AE#107784). The portal keeps its lights away from effects (0.8.10-0.8.11:
-	// with them, no fire through the portal at all).
+	// picks up to 5 lights here (AE#107784). The portal counts its calls for the watched effects; until
+	// 0.8.28 it kept its lights away from effects ([Portal] bLightEffects=0).
 	struct EffectGetRenderPasses
 	{
 		static RE::BSShaderProperty::RenderPassArray* thunk(RE::BSShaderProperty* a_this, RE::BSGeometry* a_geometry, std::uint32_t a_renderMode,
 			RE::BSShaderAccumulator* a_accumulator)
 		{
-			const bool held = Portal::BeforeEffectPasses(a_geometry);
-			auto*      passes = func(a_this, a_geometry, a_renderMode, a_accumulator);
-			Portal::AfterEffectPasses(held, a_geometry, passes && passes->head);
+			Portal::BeforeEffectPasses(a_geometry);
+			auto* passes = func(a_this, a_geometry, a_renderMode, a_accumulator);
+			Portal::AfterEffectPasses(a_geometry, passes && passes->head);
 			return passes;
 		}
 
@@ -989,6 +989,19 @@ namespace
 		static inline decltype(&thunk) func;
 	};
 
+	// ImageSpaceEffectHDR::Render (vfunc 1, AE#107183): eye adaptation, tone mapping, bloom, cinematic. After
+	// it the bound render target holds the frame in LDR, and the adaptation targets this frame's (T12).
+	struct ImageSpaceHdrRender
+	{
+		static void thunk(RE::ImageSpaceEffect* a_this, RE::BSTriShape* a_shape, RE::ImageSpaceEffectParam* a_param)
+		{
+			func(a_this, a_shape, a_param);
+			Portal::AfterImageSpaceHdr();
+		}
+
+		static inline REL::Relocation<decltype(thunk)> func;
+	};
+
 	// AE#36558 + 0x11D calls RenderPlayerView (AE#36559: this, int, bool). After it kMAIN holds the frame
 	// before the image space (F11 writes it, 0.8.25).
 	struct PlayerView
@@ -1205,6 +1218,8 @@ namespace Hooks
 		WriteVfunc<HighActorCulled>(highActorCuller, 0x1);
 		REL::Relocation<std::uintptr_t> gameSound{ RE::VTABLE_BSXAudio2GameSound[0] };
 		WriteVfunc<SoundEmitterPosition>(gameSound, 0x0F);
+		REL::Relocation<std::uintptr_t> imageSpaceHdr{ RE::VTABLE_ImageSpaceEffectHDR[0] };
+		WriteVfunc<ImageSpaceHdrRender>(imageSpaceHdr, 0x1);
 
 		logs::info("vfunc hooks installed");
 

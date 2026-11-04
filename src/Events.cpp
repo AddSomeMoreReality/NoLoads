@@ -442,9 +442,9 @@ namespace
 					Trace::Write("input.hotkey", Trace::Args{}.Str("action", "toggleTemporalAA"));
 					MainThread::Post(Portal::ToggleTemporalAA);
 				}
-				if (button && button->IsDown() && button->GetIDCode() == Settings::Get().interiorImageSpaceKey) {
-					Trace::Write("input.hotkey", Trace::Args{}.Str("action", "interiorImageSpace"));
-					MainThread::Post(Portal::ToggleInteriorImageSpace);
+				if (button && button->IsDown() && button->GetIDCode() == Settings::Get().portalGradingKey) {
+					Trace::Write("input.hotkey", Trace::Args{}.Str("action", "portalGrading"));
+					MainThread::Post(Portal::TogglePortalGrading);
 				}
 				if (button && button->IsDown() && button->GetIDCode() == Settings::Get().accessWatchKey) {
 					Trace::Write("input.hotkey", Trace::Args{}.Str("action", "accessWatch"));

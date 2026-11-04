@@ -5,17 +5,7 @@ namespace Portal::detail
 	constexpr std::int32_t  kRebuildPasses = 0x7FFFFFFF;        // BSShaderProperty::lastRenderPassState: GetRenderPasses builds them again
 	constexpr std::size_t   kTracedEffects = 8;
 	constexpr std::size_t   kWatchedEffects = 64;           // effect shapes whose way through our culling the trace follows
-
-	constexpr std::array<const char*, 3> kControllerModeNames{ "off", "selective update", "whole tree" };
-
-	// What the CPU quads of NiParticles face in the pass ([Portal] iParticleFacing).
-	enum class ParticleFacing : std::uint32_t
-	{
-		kGame = 0,    // whatever RendererShadowState holds when the packer runs
-		kPortal = 1,  // the portal camera: across the door plane
-		kView = 2,    // the player's view carried through the door: what they would see standing inside
-		kTotal
-	};
+	constexpr std::size_t   kWatchedRefraction = 8;         // T13: lit shapes with kRefraction (heat haze) watched as well
 
 	// The game's manager of master particle systems (mov rcx, [AE#411270] in AE#19206): candle flames and
 	// other addon nodes. Child 5 of the world's root, no part of any cell.
@@ -120,9 +110,15 @@ namespace Portal::detail
 		g_watchedEffects.clear();
 		g_watchedShapes.clear();
 		g_watchedParents.clear();
+		std::size_t effects = 0;
+		std::size_t refraction = 0;
 		RE::BSVisit::TraverseScenegraphGeometries(g_door.scene.get(), [&](RE::BSGeometry* a_geometry) {
-			if (g_watchedEffects.size() >= kWatchedEffects ||
-				!netimmerse_cast<RE::BSEffectShaderProperty*>(a_geometry->GetGeometryRuntimeData().shaderProperty.get())) {
+			auto*      shader = a_geometry->GetGeometryRuntimeData().shaderProperty.get();
+			const bool effect = netimmerse_cast<RE::BSEffectShaderProperty*>(shader) != nullptr;
+			// T13: the heat haze over the hearth (Plane05:0) is a lit shape with kRefraction: group 5, never drawn by us
+			const bool haze = !effect && netimmerse_cast<RE::BSLightingShaderProperty*>(shader) &&
+			                  shader->flags.any(RE::BSShaderProperty::EShaderPropertyFlag::kRefraction, RE::BSShaderProperty::EShaderPropertyFlag::kTempRefraction);
+			if ((!effect && !haze) || (effect && effects >= kWatchedEffects) || (haze && refraction >= kWatchedRefraction)) {
 				return RE::BSVisit::BSVisitControl::kContinue;
 			}
 			for (const RE::NiAVObject* object = a_geometry; object && object != g_door.scene.get(); object = object->parent) {
@@ -130,9 +126,11 @@ namespace Portal::detail
 					return RE::BSVisit::BSVisitControl::kContinue;  // editor markers, blood on weapons: hidden on purpose
 				}
 			}
+			effects += effect ? 1 : 0;
+			refraction += haze ? 1 : 0;
 			g_watchedShapes.emplace(a_geometry, g_watchedEffects.size());
 			g_watchedParents.emplace(a_geometry->parent, g_watchedEffects.size());
-			g_watchedEffects.push_back({ RE::NiPointer<RE::BSGeometry>(a_geometry), a_geometry->parent });
+			g_watchedEffects.push_back({ RE::NiPointer<RE::BSGeometry>(a_geometry), a_geometry->parent, haze });
 			return RE::BSVisit::BSVisitControl::kContinue;
 		});
 	}
@@ -142,7 +140,7 @@ namespace Portal::detail
 		std::string json;
 		for (const auto& watched : g_watchedEffects) {
 			auto*                 shape = watched.shape.get();
-			auto*                 property = static_cast<RE::BSEffectShaderProperty*>(shape->GetGeometryRuntimeData().shaderProperty.get());
+			auto*                 property = shape->GetGeometryRuntimeData().shaderProperty.get();  // an effect's, or a lit haze shape's (T13)
 			const RE::NiAVObject* owner = nullptr;  // the reference's root: its model's name
 			std::string           chain;
 			for (RE::NiAVObject* parent = shape->parent; parent && parent != g_door.scene.get(); parent = parent->parent) {
@@ -156,11 +154,17 @@ namespace Portal::detail
 				}
 			}
 			const auto* rtti = shape->GetRTTI();
+			auto*       shader = shape->GetGeometryRuntimeData().shaderProperty.get();
+			const auto* first = shader ? shader->renderPassList.head : nullptr;  // T13: where the culling sent its pass
 			Trace::Args args;
 			args.Str("shape", shape->name.c_str())
 				.Str("type", rtti && rtti->name ? rtti->name : "?")
 				.Str("model", owner ? owner->name.c_str() : "")
 				.Str("flags", std::format("0x{:08X}", shape->GetFlags().underlying()))
+				.Bool("refraction", watched.refraction)
+				.Str("shaderFlags", shader ? std::format("0x{:016X}", shader->flags.underlying()) : "")
+				.Str("passEnum", first ? std::format("0x{:08X}", first->passEnum) : "")
+				.Int("accumulationHint", first ? first->accumulationHint : -1)
 				.Num("radius", shape->worldBound.radius)
 				.Int("visits", watched.visits)
 				.Int("parentVisits", watched.parentVisits)
@@ -243,8 +247,6 @@ namespace Portal::detail
 		auto*      cell = player ? player->GetParentCell() : nullptr;
 		const auto exterior = CountParticles(cell ? cell->GetRuntimeData().loadedData ? cell->GetRuntimeData().loadedData->cell3D.get() : nullptr : nullptr);
 		return Trace::Args{}
-			.Int("mode", std::to_underlying(g_controllerMode))
-			.Str("modeName", kControllerModeNames[std::to_underlying(g_controllerMode)])
 			.Int("selectiveNodes", selective)
 			.Int("selectiveControllerNodes", selectiveControllers)
 			.Int("withControllers", withControllers)
@@ -258,22 +260,18 @@ namespace Portal::detail
 			.Json();
 	}
 
-	// One step of the interior's controllers, before the culling (the particles it registers are the new ones).
+	// One step of the interior's controllers (fire and smoke particles, candle flames, animated textures), before
+	// the culling (the particles it registers are the new ones). The game does it through the scene graph, which a
+	// cell without the player is not part of (0.8.12: no particles before the first visit, the smoke stood still
+	// after it). NiAVObject::UpdateSelectedDownwardPass (vfunc 0x2D): only the nodes flagged kSelectiveUpdate, as
+	// the game; [Portal] iControllerUpdate=2 (the whole tree) changed nothing in 0.8.13 and is gone since 0.8.28.
 	void UpdateControllers()
 	{
-		if (g_controllerMode == ControllerMode::kOff) {
-			return;
-		}
 		const auto     t0 = std::chrono::steady_clock::now();
 		RE::NiUpdateData data{};
 		data.time = ControllerTime();
 		data.flags.set(RE::NiUpdateData::Flag::kDisableCollision);  // the interior's Havok world is stepped on the physics thread
-		if (g_controllerMode == ControllerMode::kSelective) {
-			g_door.scene->UpdateSelectedDownwardPass(data, 0);
-		} else {
-			data.flags.set(static_cast<RE::NiUpdateData::Flag>(kUpdateControllers));
-			g_door.scene->Update(data);
-		}
+		g_door.scene->UpdateSelectedDownwardPass(data, 0);
 		g_controllerMsSum += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
 		++g_controllerUpdates;
 	}
@@ -318,6 +316,39 @@ namespace Portal::detail
 	{
 		constexpr float kSameDirection = 0.999f;
 		return a_up.Dot(a_camera.up) > kSameDirection && a_right.Dot(a_camera.right) > kSameDirection;
+	}
+
+	// T13: the billboard nodes under a burning model: their face mode, and the angle (degrees) between each of
+	// their world axes and the direction to a_eye. A node that faces the eye has one axis at 0 or 180.
+	std::string BillboardsJson(RE::NiAVObject* a_owner, const RE::NiPoint3& a_eye)
+	{
+		constexpr std::size_t kBillboards = 6;
+		std::string           json;
+		std::size_t           count = 0;
+		RE::BSVisit::TraverseScenegraphObjects(a_owner, [&](RE::NiAVObject* a_object) {
+			auto* billboard = netimmerse_cast<RE::NiBillboardNode*>(a_object);
+			if (!billboard || count++ >= kBillboards) {
+				return RE::BSVisit::BSVisitControl::kContinue;
+			}
+			auto toEye = a_eye - billboard->world.translate;
+			toEye.Unitize();
+			std::string angles;
+			for (int axis = 0; axis < 3; ++axis) {
+				auto column = Column(billboard->world.rotate, axis);
+				column.Unitize();
+				const float cosine = std::clamp(column.Dot(toEye), -1.0f, 1.0f);
+				angles += std::format("{}{:.1f}", axis ? "," : "", std::acos(cosine) * 57.29578f);
+			}
+			json += (json.empty() ? "" : ",") + Trace::Args{}
+													.Str("node", billboard->name.c_str())
+													.Int("mode", std::to_underlying(billboard->GetMode()))
+													.Str("userFlags", std::format("0x{:04X}", billboard->userFlags))
+													.Raw("axisToEyeDegrees", "[" + angles + "]")
+													.Bool("hidden", billboard->GetAppCulled())
+													.Json();
+			return RE::BSVisit::BSVisitControl::kContinue;
+		});
+		return "[" + json + "]";
 	}
 }
 
@@ -416,6 +447,9 @@ namespace Portal
 		if (!a_scene) {
 			return "null";
 		}
+		// The eye that sees these flames: the portal camera for the portal's interior, else the world camera.
+		auto*      world = RE::Main::WorldRootCamera();
+		const auto eye = g_active && a_scene == g_door.scene.get() && g_camera ? g_camera->world.translate : (world ? world->world.translate : RE::NiPoint3{});
 		std::vector<RE::NiAVObject*> owners;
 		std::size_t                  fires = 0;
 		std::size_t                  candles = 0;
@@ -486,6 +520,10 @@ namespace Portal
 						particle.Num("radius", arrays->radii ? arrays->radii[i] : -1.0f)
 							.Num("size", arrays->sizes ? arrays->sizes[i] : -1.0f)
 							.Num("alpha", arrays->color ? arrays->color[i].alpha : -1.0f);
+						if (arrays->color) {
+							const auto& color = arrays->color[i];
+							particle.Raw("rgb", std::format("[{:.3f},{:.3f},{:.3f}]", color.red, color.green, color.blue));  // T13
+						}
 						if (info) {
 							particle.Num("age", info[i].age).Num("lifespan", info[i].lifespan);
 						}
@@ -501,6 +539,7 @@ namespace Portal
 													.Bool("hidden", owner->GetAppCulled())
 													.Pos("at", owner->world.translate)
 													.Raw("shapes", "[" + shapes + "]")
+													.Raw("billboards", BillboardsJson(owner, eye))
 													.Json();
 		}
 		return "[" + json + "]";
@@ -536,12 +575,9 @@ namespace Portal
 		g_packHeldOther += !Faces(heldUp, heldRight, g_packPortal) && !Faces(heldUp, heldRight, g_packMain) ? 1 : 0;
 		g_packOriginDrift = (std::max)(g_packOriginDrift, origin->GetDistance(g_packPortal.origin));
 
-		const auto facing = static_cast<ParticleFacing>(Settings::Get().portalParticleFacing);
-		if (facing != ParticleFacing::kPortal && facing != ParticleFacing::kView) {
-			return;
-		}
+		// The player's view carried through the door: what they would see standing inside (0.8.23).
 		a_saved = { .origin = *origin, .up = heldUp, .right = heldRight, .forward = ReadVector(&view->viewForward), .replaced = true };
-		const auto& camera = facing == ParticleFacing::kView ? g_packView : g_packPortal;
+		const auto& camera = g_packView;
 		*origin = camera.origin;
 		WriteVector(&view->viewUp, camera.up);
 		WriteVector(&view->viewRight, camera.right);

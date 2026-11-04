@@ -70,6 +70,10 @@ namespace Portal
 	// in the same units).
 	void RequestDump();
 
+	// Any thread: F11's snapshots were asked for less than 10 s ago. The watchdog watches the game then too (0.8.28
+	// froze in them with the portal off, and the watchdog only watched the portal).
+	[[nodiscard]] bool SnapshotWatched();
+
 	// AE#36558 + 0x11D calls RenderPlayerView (AE#36559): main thread, after it.
 	void AfterPlayerView();
 
@@ -77,12 +81,23 @@ namespace Portal
 	// the portal's picture doubled while its texture was clean; is it TAA mixing frames?
 	void ToggleTemporalAA();
 
-	// Main thread (hotkey, 0.8.25). Run 0.8.24: through the door the whole interior is brighter and greyer than
-	// inside and the hearth's flames are dim and brown, while the particles are the same. The street's image
-	// space (eye adaptation, bloom, saturation, tint) grades the portal's picture. While on, the interior's
-	// image space, as the game blended it the last time the player stood inside, replaces the street's in
-	// every frame the portal is drawn: the whole screen is graded as inside.
-	void ToggleInteriorImageSpace();
+	// Main thread (hotkey F2, T12): the next grading stage of the portal's picture, 2 -> 0 -> 1 -> 2 ([Portal]
+	// iGradeStages at start). 0: as the pass draws it. 1: + the interior's composite, which the game applies to a
+	// frame after its opaque shapes (ISSAOComposite: x invFrameBufferRange, the interior's fog, clamp to 1) and the
+	// interior's fog for the pass's effects. 2: + the interior's look (its image space's tone curve, saturation,
+	// tint, brightness, contrast) carried under the street's, which grades the quad afterwards, and what the
+	// street's fog and composite do to the quad undone. Until 0.8.26 F2 put the interior's image space on the
+	// whole screen (0.8.25).
+	void TogglePortalGrading();
+
+	// Main thread: the world scene's fog property, the inverse frame buffer range and a_cell's own fog, as JSON
+	// (T13: is the portal's fire fogged by the street?).
+	[[nodiscard]] std::string FogJson(const RE::TESObjectCELL* a_cell);
+
+	// ImageSpaceEffectHDR::Render (vfunc 1, AE#107183), after the original, on the thread that renders: F11
+	// writes its output (ldr-N.dds) and the 1x1 eye adaptation targets; inside an interior the adaptation is
+	// read back now and then for the portal of that cell (T12).
+	void AfterImageSpaceHdr();
 
 	// Main thread: the image space the game applies now (ImageSpaceManager data), as JSON.
 	[[nodiscard]] std::string ImageSpaceJson();
@@ -190,11 +205,11 @@ namespace Portal
 	// NiAVObject::OnVisible hooks, any thread: counts our culling's visits of the watched effect shapes.
 	void NoteVisible(const RE::NiAVObject* a_object);
 
-	// BSEffectShaderProperty::GetRenderPasses hook, around the original: while our culling registers an
-	// effect shape, our lights are asleep unless effects get them ([Portal] bLightEffects). True: put
-	// them back after the call.
-	[[nodiscard]] bool BeforeEffectPasses(const RE::BSGeometry* a_geometry);
-	void               AfterEffectPasses(bool a_held, const RE::BSGeometry* a_geometry, bool a_gotPasses);
+	// BSEffectShaderProperty::GetRenderPasses hook, around the original: counts our culling's calls for the
+	// watched effect shapes and the calls that gave no pass. Since 0.8.28 effects get our lights, as in the
+	// game ([Portal] bLightEffects=0 kept them asleep until then).
+	void BeforeEffectPasses(const RE::BSGeometry* a_geometry);
+	void AfterEffectPasses(const RE::BSGeometry* a_geometry, bool a_gotPasses);
 
 	// What BeforeParticlePack replaced in RendererShadowState.
 	struct PackedCamera
@@ -208,12 +223,15 @@ namespace Portal
 
 	// AE#107637 + 0xC4 calls AE#77463, which builds the quads of NiParticles (flames, embers, smoke) on the
 	// CPU, facing the camera RendererShadowState holds. BeforeParticlePack counts what it holds during our
-	// pass and replaces it ([Portal] iParticleFacing); AfterParticlePack puts it back.
+	// pass and replaces it with the player's view carried through the door (0.8.23; [Portal] iParticleFacing
+	// chose until 0.8.28, 0 and 1 drew the same); AfterParticlePack puts it back.
 	void BeforeParticlePack(PackedCamera& a_saved);
 	void AfterParticlePack(const PackedCamera& a_saved);
 
 	// BSEffectShader::SetupTechnique hook, before the original: counts the effects our pass draws and
-	// copies the depth buffer at the first of them. Returns the technique to set up, unchanged since T02
-	// (until then [Portal] bSoftEffects=0 took the soft particle bit off; run 0.8.24: no difference).
+	// copies the depth buffer at the first of them, where the opaque shapes are drawn: there the interior's
+	// composite runs (T12, grading stage 1 and up), as the game's runs before its effects. Returns the
+	// technique to set up, unchanged since T02 (until then [Portal] bSoftEffects=0 took the soft particle bit
+	// off; run 0.8.24: no difference).
 	[[nodiscard]] std::uint32_t BeforeEffectTechnique(std::uint32_t a_technique);
 }

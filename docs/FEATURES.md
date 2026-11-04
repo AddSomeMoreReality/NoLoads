@@ -48,7 +48,7 @@ iCycleOverrides=65        ; F7: перебор наборов [Overrides]. Не 
 iDetectorsReport=64       ; F6: сводка детекторов дверей (5.10; окна удалены в 0.8.26)
 iInteriorSimStage=66      ; F8: InteriorSim выключено / портал (5.11)
 iToggleTemporalAA=62      ; F4: TAA игры включено / выключено в памяти (5.12, с 0.8.20; до того мягкие частицы портала)
-iInteriorImageSpace=60    ; F2: ImageSpace интерьера на всём экране, пока виден портал (0.8.25; в 0.8.24 мягкие частицы)
+iPortalGrading=60         ; F2: стадия своей цветокоррекции портала по кругу 2 -> 0 -> 1 (0.8.28, T12; в 0.8.25 ImageSpace интерьера на всём экране)
 iAccessWatch=61           ; F3: захват обращений к позиции игрока и камер (0.8.24, docs/DISTANCE_CHECKS.md)
 
 [Preload]                 ; дополнительно к 5.5
@@ -75,20 +75,22 @@ iDepthSlot=9
 bInteriorLights=1
 bMirrorPlayerLights=1
 bInteriorAmbient=1
-bLightEffects=0           ; эффекты со светом ламп интерьера
 bAnimateActors=1
 bSyncActorPositions=1
-iControllerUpdate=1       ; контроллеры интерьера (огонь, дым, свечи): 0 выключено, 1 выборочно, 2 всё дерево
 bFullActorProcessing=1    ; NPC интерьера получают полное обновление high (ИИ, передвижение)
 bGameAnimatesActors=1     ; NPC интерьера в заданиях анимации игры
 bIgnoreParticleBudget=1   ; эмиттеры интерьера не подчиняются бюджету частиц игры
 bMasterParticles=1        ; проход портала рисует и общие системы частиц (огоньки свечей)
-iParticleFacing=2         ; куда смотрят квады частиц: 0 как решит игра, 1 камера портала, 2 взгляд игрока через дверь (5.12, 0.8.23)
 bActorsSeen=1             ; NPC интерьера без kNotVisible: высота идёт за контроллером (0.8.24)
 bVirtualCamera=1          ; камера мира для NPC интерьера - камера портала (0.8.24)
 bDistanceThroughDoor=1    ; GetDistance между игроком и ссылками интерьера через дверь (0.8.24)
 bSoundThroughDoor=1       ; звуки интерьера слышны на улице (0.8.24)
 bSubtitlesThroughDoor=1   ; субтитры говорящих в интерьере видны на улице (0.8.25)
+iGradeStages=2            ; T12: 0 как рисует проход, 1 + композит интерьера, 2 + вид интерьера под уличным (docs/tasks/results/T12.md)
+iQuadFogModel=2           ; T12: что стадия 2 снимает с квада: 0 ничего, 1 туман эффекта, 2 и композит улицы
+bDumpLdr=1                ; 0.8.29: F11 пишет кадр после HDR (ldr-N.dds)
+bDumpAdaptTargets=1       ; 0.8.29: F11 пишет цели адаптации 1x1 (portal.adapt); здесь повис 0.8.28
+bDumpGraded=1             ; 0.8.29: F11 при стадии 2 пишет картинку после цветокоррекции (graded-N.dds)
 
 [Probe]                   ; 5.7
 bActorJumps=1             ; запись actor.jump: прыжки NPC, смена ячейки, со стеком SetPosition (0.8.25)

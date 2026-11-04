@@ -1,7 +1,12 @@
-"""Converts the portal render target dumps (F11 at InteriorSim stage 6: logs/portal-<n>.dds, DX10 header,
-R16G16B16A16_FLOAT, HDR) to PNG for viewing. Standard library only.
+"""Converts the plugin's texture dumps (F11: logs/portal-<n>.dds, main-<n>.dds, graded-<n>.dds, ldr-<n>.dds;
+DX10 header) to PNG for viewing. Standard library only.
 
-Tone mapping: c / (1 + c) per channel times --exposure, then gamma 2.2. Alpha is ignored.
+Formats:
+  10 R16G16B16A16_FLOAT (HDR: portal, main, graded) - tone mapped: c / (1 + c) per channel times --exposure,
+     then gamma 2.2;
+  24 R10G10B10A2_UNORM, 28 R8G8B8A8_UNORM, 29 R8G8B8A8_UNORM_SRGB (LDR: ldr) - written as stored (the game's
+     output is already display encoded); --exposure scales it.
+Alpha is ignored.
 
 Usage: python tools/portal_dump_to_png.py logs/portal-1.dds [more.dds ...] [--exposure 1.0]
 """
@@ -9,7 +14,11 @@ import argparse
 import struct
 import zlib
 
-DXGI_FORMAT_R16G16B16A16_FLOAT = 10
+R16G16B16A16_FLOAT = 10
+R10G10B10A2_UNORM = 24
+R8G8B8A8_UNORM = 28
+R8G8B8A8_UNORM_SRGB = 29
+FORMATS = {R16G16B16A16_FLOAT: 8, R10G10B10A2_UNORM: 4, R8G8B8A8_UNORM: 4, R8G8B8A8_UNORM_SRGB: 4}
 
 
 def read_dds(path):
@@ -21,31 +30,48 @@ def read_dds(path):
     if fourcc != b"DX10":
         raise SystemExit(f"{path}: expected a DX10 header, got {fourcc!r}")
     fmt = struct.unpack_from("<I", data, 128)[0]
-    if fmt != DXGI_FORMAT_R16G16B16A16_FLOAT:
-        raise SystemExit(f"{path}: DXGI format {fmt}, only R16G16B16A16_FLOAT (10) is supported")
-    pixels = data[148:148 + width * height * 8]
-    return width, height, pixels
+    if fmt not in FORMATS:
+        raise SystemExit(f"{path}: DXGI format {fmt}, supported: {sorted(FORMATS)}")
+    pixels = data[148:148 + width * height * FORMATS[fmt]]
+    return width, height, fmt, pixels
 
 
-def to_png(width, height, pixels, exposure):
-    halves = struct.unpack(f"<{width * height * 4}e", pixels)
+def channels(fmt, pixels, count):
+    """RGB of every pixel as floats: HDR values, or 0..1 for the UNORM formats."""
+    if fmt == R16G16B16A16_FLOAT:
+        halves = struct.unpack(f"<{count * 4}e", pixels)
+        for i in range(count):
+            yield halves[i * 4:i * 4 + 3]
+    elif fmt == R10G10B10A2_UNORM:
+        for (word,) in struct.iter_unpack("<I", pixels):
+            yield ((word & 0x3FF) / 1023.0, ((word >> 10) & 0x3FF) / 1023.0, ((word >> 20) & 0x3FF) / 1023.0)
+    else:
+        for i in range(count):
+            yield (pixels[i * 4] / 255.0, pixels[i * 4 + 1] / 255.0, pixels[i * 4 + 2] / 255.0)
+
+
+def to_png(width, height, fmt, pixels, exposure):
+    hdr = fmt == R16G16B16A16_FLOAT
     rows = []
-    stats = [0.0, 0.0, 0]  # max, sum of luminance, non-finite count
-    for y in range(height):
-        row = bytearray([0])  # filter: none
-        for x in range(width):
-            i = (y * width + x) * 4
-            out = []
-            for c in halves[i:i + 3]:
-                if c != c or c in (float("inf"), float("-inf")):
-                    stats[2] += 1
-                    c = 0.0
-                c = max(c, 0.0) * exposure
-                stats[0] = max(stats[0], c)
-                out.append(int(round(255.0 * (c / (1.0 + c)) ** (1.0 / 2.2))))
-            stats[1] += sum(halves[i:i + 3]) / 3.0 if all(v == v for v in halves[i:i + 3]) else 0.0
-            row += bytes(out)
-        rows.append(bytes(row))
+    stats = [0.0, 0.0, 0]  # max, sum of the channel mean, non-finite count
+    row = bytearray([0])  # filter: none
+    for index, rgb in enumerate(channels(fmt, pixels, width * height)):
+        out = []
+        finite = True
+        for c in rgb:
+            if c != c or c in (float("inf"), float("-inf")):
+                stats[2] += 1
+                finite = False
+                c = 0.0
+            c = max(c, 0.0) * exposure
+            stats[0] = max(stats[0], c)
+            v = (c / (1.0 + c)) ** (1.0 / 2.2) if hdr else min(c, 1.0)
+            out.append(int(round(255.0 * v)))
+        stats[1] += sum(rgb) / 3.0 if finite else 0.0
+        row += bytes(out)
+        if (index + 1) % width == 0:
+            rows.append(bytes(row))
+            row = bytearray([0])
 
     def chunk(kind, body):
         return struct.pack(">I", len(body)) + kind + body + struct.pack(">I", zlib.crc32(kind + body) & 0xFFFFFFFF)
@@ -63,12 +89,12 @@ def main():
     parser.add_argument("--exposure", type=float, default=1.0)
     options = parser.parse_args()
     for path in options.dds:
-        width, height, pixels = read_dds(path)
-        png, (peak, total, bad) = to_png(width, height, pixels, options.exposure)
+        width, height, fmt, pixels = read_dds(path)
+        png, (peak, total, bad) = to_png(width, height, fmt, pixels, options.exposure)
         out = path[:-4] + ".png"
         with open(out, "wb") as f:
             f.write(png)
-        print(f"{out}: {width}x{height}, peak {peak:.3f}, mean {total / (width * height):.4f}, non-finite {bad}")
+        print(f"{out}: {width}x{height}, format {fmt}, peak {peak:.3f}, mean {total / (width * height):.4f}, non-finite {bad}")
 
 
 if __name__ == "__main__":
