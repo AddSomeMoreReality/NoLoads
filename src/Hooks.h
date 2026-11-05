@@ -2,9 +2,13 @@
 
 namespace Hooks
 {
-	// vfunc hooks: TESObjectDOOR::Activate, GridCellArray, CellLoaderTask, PlayerCharacter::Update.
-	// Detours: TES::SetCurrentCell, TES::PurgeBufferedCells, ExteriorCellLoader::QueueCellLoad,
-	// PlayerCharacter::CenterOnCell_Impl, TESObjectREFR::MoveTo_Impl.
+	// Puts in the hooks of HooksCells.cpp, HooksTes.cpp, HooksInteriorSim.cpp and HooksPortal.cpp (vfuncs,
+	// the detours in one transaction, call hooks; helpers in HooksCommon.h) and PlayerCharacter::Update here,
+	// then calls the modules that install their own hooks (ActorHold, Scenes).
+	//
+	// A new module (StoryFilter, ...) keeps its hooks in its own .cpp, in an anonymous namespace, and puts
+	// them in from its Module::Install() with HooksCommon.h (DetourTransaction, WriteCall, WriteVfunc), in a
+	// transaction of its own. Install gets one line: the call of Module::Install().
 	void Install();
 
 	// Every hook the portal relies on is in. Without AE#19130's detour an attached interior crashes the

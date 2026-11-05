@@ -1,9 +1,8 @@
 #include "ActorHold.h"
 
+#include "HooksCommon.h"
 #include "Settings.h"
 #include "Trace.h"
-
-#include <detours.h>
 
 namespace
 {
@@ -211,21 +210,6 @@ namespace
 
 		static inline REL::Relocation<decltype(thunk)> func;
 	};
-
-	// The call at a_function + a_offset redirected to Hook::thunk, after checking that it calls a_target.
-	template <class Hook>
-	bool WriteCall(REL::ID a_function, std::ptrdiff_t a_offset, REL::ID a_target)
-	{
-		const auto  site = REL::Relocation<std::uintptr_t>{ a_function }.address() + a_offset;
-		const auto  target = REL::Relocation<std::uintptr_t>{ a_target }.address();
-		const auto* bytes = reinterpret_cast<const std::uint8_t*>(site);
-		const auto  called = site + 5 + *reinterpret_cast<const std::int32_t*>(site + 1);
-		if (bytes[0] != 0xE8 || called != target) {
-			return false;
-		}
-		Hook::func = SKSE::GetTrampoline().write_call<5>(site, Hook::thunk);
-		return true;
-	}
 }
 
 namespace ActorHold
@@ -385,23 +369,12 @@ namespace ActorHold
 		}
 
 		if (g_holdEnabled) {
-			DetourTransactionBegin();
-			DetourUpdateThread(GetCurrentThread());
-			DesiredProcessLevel::func = reinterpret_cast<decltype(DesiredProcessLevel::func)>(REL::Relocation<std::uintptr_t>{ REL::ID(37503) }.address());
-			if (const auto error = DetourAttach(reinterpret_cast<PVOID*>(&DesiredProcessLevel::func), reinterpret_cast<PVOID>(&DesiredProcessLevel::thunk)); error != NO_ERROR) {
-				DetourTransactionAbort();
-				logs::error("actor hold: detour AE#37503 failed: {}", error);
-			} else if (const auto commit = DetourTransactionCommit(); commit != NO_ERROR) {
-				logs::error("actor hold: detour commit failed: {}", commit);
-			} else {
-				g_desiredHook = true;
-			}
+			Hooks::DetourTransaction transaction{ "actor hold: " };
+			transaction.Attach<DesiredProcessLevel>("AE#37503", REL::Relocation<std::uintptr_t>{ REL::ID(37503) }.address());
+			g_desiredHook = transaction.Commit();
 		}
 
-		g_snapHook = WriteCall<MoveToHighSnap>(REL::ID(37621), 0x348, REL::ID(37618));
-		if (!g_snapHook) {
-			logs::error("actor hold: no call to AE#37618 at AE#37621+0x348");
-		}
+		g_snapHook = Hooks::WriteCall<MoveToHighSnap>("actor hold: MoveToHigh -> snap to package location", REL::ID(37621), 0x348, REL::ID(37618));
 
 		if (g_traceLevels) {
 			REL::Relocation<std::uintptr_t> character{ RE::VTABLE_Character[0] };
