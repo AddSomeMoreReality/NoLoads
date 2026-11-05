@@ -108,6 +108,7 @@ git -C ..\CLR-T10 submodule update --init --recursive
 | [T16](T16-story-filter.md) | Фильтр Story Manager на входе через портал: теги и политика T30, R8 для сравнения | `StoryFilter`, перехваты | да | T28, T30 | T20 |
 | [T30](T30-location-tags.md) | Теги реакций на смену локации и политика «гасить или нет» | нет | нет | — | — (`LOCATION_TRIGGERS.md`) |
 | [T31](T31-virtual-player.md) | Виртуальный игрок за порталом вместо виртуальной камеры (исследование) | нет | нет | прогон 0.8.32 | — (готово: полного виртуального игрока не будет, `VIRTUAL_PLAYER.md`) |
+| [T33](T33-ghidra-base.md) | База Ghidra для `SkyrimSE.exe`: проект, имена из NG и документов, инструменты псевдокода для исполнителей; чат остаётся куратором базы | `tools/ghidra/` | нет | — | — |
 | [T32](T32-player-reads.md) | Перепись чтений игрока (2 843 места) и место игрока в рамке дальней стороны | `PlayerReads`, `ActorScope` | да, по шагам | T31; T20 слить раньше | T29 (`ActorScope`), T20 (`InteriorSim`) |
 | [T22](T22-distance-rest.md) | Оставшиеся проверки расстояния (`docs/DISTANCE_CHECKS.md`, раздел 9), уровень NPC по расстоянию через дверь | перехваты, `PortalActors` | да | T28 | T20 (`InteriorSim`, `ActorHold`), T29 |
 | [T29](T29-portal-registry.md) | Реестр порталов: состояние портала — класс, порталов много (5.14, п. 1; `docs/ARCHITECTURE.md`, 8.3) | `Portal*`, `InteriorSim` | контрольный | T20, T16, T22 слиты | всё в `Portal*`: **одна, как T28** |
