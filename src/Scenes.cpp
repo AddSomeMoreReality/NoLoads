@@ -1,10 +1,9 @@
 #include "Scenes.h"
 
 #include "ActorHold.h"
+#include "HooksCommon.h"
 #include "Settings.h"
 #include "Trace.h"
-
-#include <detours.h>
 
 namespace
 {
@@ -118,21 +117,10 @@ namespace Scenes
 			return;
 		}
 
-		DetourTransactionBegin();
-		DetourUpdateThread(GetCurrentThread());
-		SetActive::func = reinterpret_cast<decltype(SetActive::func)>(REL::Relocation<std::uintptr_t>{ REL::ID(24140) }.address());
-		PapyrusStop::func = reinterpret_cast<decltype(PapyrusStop::func)>(REL::Relocation<std::uintptr_t>{ REL::ID(55321) }.address());
-		const auto setActive = DetourAttach(reinterpret_cast<PVOID*>(&SetActive::func), reinterpret_cast<PVOID>(&SetActive::thunk));
-		const auto papyrusStop = DetourAttach(reinterpret_cast<PVOID*>(&PapyrusStop::func), reinterpret_cast<PVOID>(&PapyrusStop::thunk));
-		bool       detours = false;
-		if (setActive != NO_ERROR || papyrusStop != NO_ERROR) {
-			DetourTransactionAbort();
-			logs::error("scene trace: detours failed: AE#24140 {}, AE#55321 {}", setActive, papyrusStop);
-		} else if (const auto commit = DetourTransactionCommit(); commit != NO_ERROR) {
-			logs::error("scene trace: detour commit failed: {}", commit);
-		} else {
-			detours = true;
-		}
+		Hooks::DetourTransaction transaction{ "scene trace: " };
+		transaction.Attach<SetActive>("AE#24140", REL::Relocation<std::uintptr_t>{ REL::ID(24140) }.address());
+		transaction.Attach<PapyrusStop>("AE#55321", REL::Relocation<std::uintptr_t>{ REL::ID(55321) }.address());
+		const bool detours = transaction.Commit();
 
 		REL::Relocation<std::uintptr_t> dialogue{ RE::VTABLE_BGSSceneActionDialogue[0] };
 		LineEnd::func = dialogue.write_vfunc(0x11, LineEnd::thunk);
