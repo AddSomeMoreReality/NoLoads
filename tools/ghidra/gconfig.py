@@ -22,6 +22,7 @@ SERVER_HOST = "127.0.0.1"
 SERVER_PORT = int(_env("CLR_GHIDRA_PORT", "47333"))
 SERVER_HEAP = _env("CLR_GHIDRA_HEAP", "4G")
 SERVER_IDLE_MINUTES = float(_env("CLR_GHIDRA_IDLE_MINUTES", "20"))
+SERVER_DECOMPILERS = int(_env("CLR_GHIDRA_DECOMPILERS", "3"))  # decompile.exe processes for parallel requests
 STATE_DIR = pathlib.Path(_env("CLR_GHIDRA_STATE", os.path.join(tempfile.gettempdir(), "clr-ghidra")))
 
 # One entry per game build. "runtime" picks the SE or AE half of RELOCATION_ID(se, ae) and the label prefix.

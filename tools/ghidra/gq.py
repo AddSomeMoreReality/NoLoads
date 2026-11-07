@@ -12,10 +12,15 @@ Output files go to --out (your scratchpad); the console gets a short summary.
   python tools/ghidra/gq.py fieldrefs 0x1D0 --users-of AE#403521 --out <scratchpad> # [reg+0x1D0] in functions using the player
   python tools/ghidra/gq.py fieldrefs 0x1D0 --in AE#13316 AE#40466 --access W --out <scratchpad>
   python tools/ghidra/gq.py fieldrefs 0x6AA --all --out <scratchpad>               # whole code, offsets >= 0x80
+  python tools/ghidra/gq.py search --name "SetParentCell" --string "^sLoad" [--kinds Function]
+  python tools/ghidra/gq.py callgraph AE#13316 --callers --depth 2 [--max-nodes 150]
+  python tools/ghidra/gq.py vtable PlayerCharacter [--offset 0x0]                    # slots: own / inherited
+  python tools/ghidra/gq.py struct TESObjectCELL                                    # data types (NG types: T36)
   python tools/ghidra/gq.py status | stop
 
-The first call starts the server (about a minute); it exits after 20 idle minutes. Run `stop` before the game
-if memory is short. Requests from several chats are queued, one at a time.
+The first call starts the server (about 10 s); it exits after 20 idle minutes. Run `stop` before the game
+if memory is short. Requests run in parallel; decompilation uses a pool of 3 decompilers and a cache.
+The same tools are MCP tools ghidra_* (tools/ghidra/mcp_server.py, docs/GHIDRA.md).
 """
 import argparse
 import json
@@ -43,11 +48,31 @@ def call(req, timeout=1800):
     return json.loads(buf.decode("utf-8"))
 
 
+PROTOCOL = 2  # gserver.PROTOCOL this client needs
+
+
+class ServerError(RuntimeError):
+    pass
+
+
 def running():
     try:
         return call({"cmd": "ping"}, timeout=5)
-    except OSError:
+    except (OSError, ValueError):
         return None
+
+
+def stop_server(wait=60):
+    """Ask the server to stop (it finishes running requests) and wait until the port is free."""
+    if running() is None:
+        return False
+    call({"cmd": "stop"})
+    for _ in range(wait):
+        if running() is None:
+            break
+        time.sleep(1)
+    time.sleep(1)
+    return True
 
 
 def spawn(version):
@@ -68,22 +93,36 @@ def spawn(version):
                          creationflags=flags, close_fds=True, cwd=HERE)
 
 
-def ensure(version):
+def ensure_server(version=None, log=None):
+    """Start the server if needed (or replace one older than PROTOCOL) and wait until it is ready."""
+    log = log or (lambda m: print(m, file=sys.stderr, flush=True))
     st = running()
+    if st is not None and st.get("ready") and st.get("protocol", 1) < PROTOCOL:
+        log(f"server protocol {st.get('protocol', 1)} < {PROTOCOL} (started by older tools): restarting it")
+        stop_server()
+        st = running()
     if st is None:
-        print("starting Ghidra server (about a minute)...", file=sys.stderr, flush=True)
+        log("starting Ghidra server (about 10 s)...")
         spawn(version)
         deadline = time.time() + 300
         while st is None and time.time() < deadline:
-            time.sleep(1)
+            time.sleep(0.5)
             st = running()
         if st is None:
-            sys.exit(f"server did not start; see {gconfig.STATE_DIR / 'server.log'} and server.console.txt")
+            raise ServerError(f"server did not start; see {gconfig.STATE_DIR / 'server.log'} and server.console.txt")
     if not st.get("ready"):
-        print("waiting for the server to load the program...", file=sys.stderr, flush=True)
+        log("waiting for the server to load the program...")
         st = call({"cmd": "ping", "wait": True}, timeout=600)
     if st.get("error") or not st.get("ok", True):
-        sys.exit(f"server error: {st.get('error')}")
+        raise ServerError(f"server error: {st.get('error')}")
+    return st
+
+
+def ensure(version):
+    try:
+        ensure_server(version)
+    except ServerError as e:
+        sys.exit(str(e))
 
 
 def main():
@@ -109,17 +148,41 @@ def main():
     p.add_argument("--all", action="store_true", help="whole code by disp32 bytes (offset >= 0x80)")
     p.add_argument("--access", default=None, help="R, W, A (lea) or a combination")
     p.add_argument("--out", default=None)
+    p = sub.add_parser("search", help="symbols by name and defined strings, with referencing places")
+    p.add_argument("--name", dest="name_regex", default=None, help="regex over full names (Class::Method)")
+    p.add_argument("--string", dest="string_regex", default=None, help="regex over defined strings")
+    p.add_argument("--kinds", nargs="+", default=None, help="Function, Label, Class, ...")
+    p.add_argument("--max", dest="max_results", type=int, default=40)
+    p.add_argument("--refs", type=int, default=5, help="referencing places per hit")
+    p.add_argument("--case", action="store_true", help="case-sensitive")
+    p.add_argument("--out", default=None)
+    p = sub.add_parser("callgraph")
+    p.add_argument("target")
+    g = p.add_mutually_exclusive_group()
+    g.add_argument("--callers", dest="direction", action="store_const", const="callers")
+    g.add_argument("--callees", dest="direction", action="store_const", const="callees")
+    p.add_argument("--depth", type=int, default=2)
+    p.add_argument("--max-nodes", type=int, default=150)
+    p.add_argument("--out", default=None)
+    p = sub.add_parser("vtable")
+    p.add_argument("name", help="class, e.g. PlayerCharacter")
+    p.add_argument("--offset", default=None, help="only the vftable of this subobject offset")
+    p.add_argument("--out", default=None)
+    p = sub.add_parser("struct")
+    p.add_argument("name")
+    p.add_argument("--out", default=None)
     sub.add_parser("status")
     sub.add_parser("stop")
     a = ap.parse_args()
 
     if a.cmd == "status":
         st = running()
-        print(json.dumps(st) if st else "server not running")
+        if st and st.get("ready") and not st.get("error"):
+            st["detail"] = call({"cmd": "status"}).get("text")
+        print(json.dumps(st, indent=1) if st else "server not running")
         return
     if a.cmd == "stop":
-        st = running()
-        print(json.dumps(call({"cmd": "stop"})) if st else "server not running")
+        print("stopped" if stop_server() else "server not running")
         return
 
     ensure(a.version)
@@ -131,6 +194,16 @@ def main():
         req = dict(cmd="xrefs", target=a.target, out=out)
     elif a.cmd == "info":
         req = dict(cmd="info", targets=a.targets)
+    elif a.cmd == "search":
+        req = dict(cmd="search", name_regex=a.name_regex, string_regex=a.string_regex, kinds=a.kinds,
+                   max_results=a.max_results, refs=a.refs, case=a.case, out=out)
+    elif a.cmd == "callgraph":
+        req = dict(cmd="callgraph", target=a.target, direction=a.direction or "callers", depth=a.depth,
+                   max_nodes=a.max_nodes, out=out)
+    elif a.cmd == "vtable":
+        req = dict(cmd="vtable", name=a.name, offset=a.offset, out=out)
+    elif a.cmd == "struct":
+        req = dict(cmd="struct", name=a.name, out=out)
     else:
         if not (a.within or a.users_of or a.all):
             sys.exit("fieldrefs needs --in, --users-of or --all")
@@ -147,7 +220,7 @@ def main():
         print(f)
     if res.get("text"):
         print(res["text"])
-    if res.get("file") and a.cmd != "xrefs":
+    if res.get("file") and a.cmd == "fieldrefs":
         print(f"full list: {res['file']}")
     for e in res.get("errors", []):
         print(f"error: {e}")

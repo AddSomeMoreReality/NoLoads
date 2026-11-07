@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "ghidra": {
+      "type": "stdio",
+      "command": "python",
+      "args": ["tools/ghidra/mcp_server.py"]
+    }
+  }
+}
