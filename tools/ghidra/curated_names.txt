@@ -1,0 +1,4 @@
+# Names the curator established (docs/GHIDRA.md). Highest priority in collect_names.py; kept in git.
+# Only conclusions: an address, a name, a short reason with its source. No pseudocode.
+# Format: AE#<id> | 0x<rva> <name with ::>  ; <reason, source>
+AE#40411  PlayerCharacter::PlayerCharacter  ; constructor: AE#36629 allocates 0xBE8 bytes and calls it, result goes to PlayerCharacter::singleton (T31, checked in Ghidra 05.11.2026)
