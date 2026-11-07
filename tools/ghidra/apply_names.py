@@ -141,8 +141,8 @@ def apply(prog, data):
     report.append(create_functions(prog, starts, stats))
 
     def source_plate(e):
-        if e["source"] in ("ng-reloc", "curated"):
-            plates[e["rva"]].append(f"{'ng' if e['source'] == 'ng-reloc' else 'curated'}: {e['origin']}")
+        if e["source"] in ("ng-reloc", "curated", "reviewed"):
+            plates[e["rva"]].append(f"{'ng' if e['source'] == 'ng-reloc' else e['source']}: {e['origin']}")
         elif e["source"] in ("addrlibdb", "addrlibdb-class", "po3"):
             plates[e["rva"]].append(f"name from {e['origin']}")
 
@@ -223,8 +223,7 @@ def apply(prog, data):
                     existing = st.createLabel(a, simple, ns, SourceType.IMPORTED)
                 existing.setPrimary()
                 stats[f"data named ({e['source']})"] += 1
-                if e["source"] in ("ng-reloc", "curated"):
-                    plates[e["rva"]].append(f"{'ng' if e['source'] == 'ng-reloc' else 'curated'}: {e['origin']}")
+                source_plate(e)
         except Exception as ex:  # noqa: BLE001
             errors.append(f"0x{e['rva']:X} {name}: {ex}")
 

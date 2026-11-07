@@ -558,28 +558,31 @@ def main():
         tp_lines, tp_cands = thirdparty.collect(ver, id2rva, pe, put, entries, a.update_thirdparty)
         report.extend(tp_lines)
 
-    # curated (tools/ghidra/curated_names.txt)
-    curated = 0
-    cur_path = pathlib.Path(__file__).with_name("curated_names.txt")
-    for n, line in enumerate(cur_path.read_text(encoding="utf-8").splitlines() if cur_path.exists() else [], 1):
-        text, _, why = line.partition(";")
-        parts = text.split()
-        if not parts or parts[0].startswith("#") or len(parts) < 2:
-            continue
-        key, name = parts[0], parts[1]
-        if key.upper().startswith(ver["prefix"] + "#"):
-            rva = id2rva.get(int(key[len(ver["prefix"]) + 1:]))
-        elif key.lower().startswith("0x"):
-            rva = int(key, 16)
-        else:
-            rva = None
-        if rva is None:
-            report.append(f"curated_names.txt:{n}: {key} does not resolve for {ver['name']}")
-            continue
-        kind = "func" if pe.is_code(rva) else "data"
-        put(rva, name, "curated", kind, f"curated_names.txt:{n}: {why.strip()}", rva2ids[rva], 9)
-        curated += 1
-    report.append(f"curated: {curated}")
+    # curated (tools/ghidra/curated_names.txt): the curator's established names, `this` for methods;
+    # reviewed (reviewed_names.txt): names the curator checked against the code (often proposed by re-reader-fast),
+    # below curated, no `this` (the calling convention is not proven)
+    for fname, source, prio in (("reviewed_names.txt", "reviewed", 8), ("curated_names.txt", "curated", 9)):
+        count = 0
+        cur_path = pathlib.Path(__file__).with_name(fname)
+        for n, line in enumerate(cur_path.read_text(encoding="utf-8").splitlines() if cur_path.exists() else [], 1):
+            text, _, why = line.partition(";")
+            parts = text.split()
+            if not parts or parts[0].startswith("#") or len(parts) < 2:
+                continue
+            key, name = parts[0], parts[1]
+            if key.upper().startswith(ver["prefix"] + "#"):
+                rva = id2rva.get(int(key[len(ver["prefix"]) + 1:]))
+            elif key.lower().startswith("0x"):
+                rva = int(key, 16)
+            else:
+                rva = None
+            if rva is None:
+                report.append(f"{fname}:{n}: {key} does not resolve for {ver['name']}")
+                continue
+            kind = "func" if pe.is_code(rva) else "data"
+            put(rva, name, source, kind, f"{fname}:{n}: {why.strip()}", rva2ids[rva], prio)
+            count += 1
+        report.append(f"{source}: {count}")
 
     # docs
     ng_classes ={q.split("::")[-1] for q in parser.class_bases}
