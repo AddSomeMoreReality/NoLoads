@@ -40,7 +40,7 @@
 | Раскладка типа, таблица слотов | `ghidra_struct(name)` | `struct TES`, `struct PlayerCharacter_vftable` |
 | Состояние сервера | `ghidra_status` | `status`, `stop` |
 
-- **MCP** (`tools/ghidra/mcp_server.py`, stdio, stdlib): короткая функция возвращается текстом, длинная — файлом и выдержкой ±10 строк вокруг пометок с номерами строк файла (дочитывать Read с `offset`). Ответ печатает время в Ghidra и ожидание декомпилятора. Шаблоны подключения — `tools/ghidra/claude/` (`mcp.json`, навык `skills/ghidra`, агенты `re-reader` на Sonnet и `re-reader-fast` на Haiku); в `.mcp.json` и `.claude/` их ставит пользователь (см. ниже).
+- **MCP** (`tools/ghidra/mcp_server.py`, stdio, stdlib): короткая функция возвращается текстом, длинная — файлом и выдержкой ±10 строк вокруг пометок с номерами строк файла (дочитывать Read с `offset`). Ответ печатает время в Ghidra и ожидание декомпилятора. Подключение лежит в git: `.mcp.json` (сервер `ghidra`), `.claude/skills/ghidra` (навык), `.claude/agents/` (`re-reader` на Sonnet, `re-reader-fast` на Haiku); см. ниже.
 - **CLI** — тот же сервер; `--out` — свой scratchpad.
 - Первый вызов поднимает сервер (`gserver.py`): 7–8 с. Запросы идут параллельно; декомпиляторов в пуле 3 (`CLR_GHIDRA_DECOMPILERS`), псевдокод кэшируется в памяти и на диске по адресу функции и снимку базы.
 - Время (T35, тёплый сервер): MCP добавляет 20–30 мс; `decomp` 0,1–0,7 с, из кэша 0,02–0,05 с; 48 функций без кэша — 3,5 с по одной, 1,5 с в 3 потока; `search` — 6 с на первый индекс имён или строк, дальше 0,1 с; `vtable PlayerCharacter` (14 таблиц) — 0,2 с; `xrefs` до 1 с; `fieldrefs --users-of AE#403521` — 9 с.
@@ -53,14 +53,13 @@
 - Безымянные функции названы `AE_<id>`.
 - **Типы NG (T36):** классы этой сборки лежат в `/NG/RE` (5 433 структуры `RE::`, смещения — раскладка MSVC сборки «только AE»). У методов с именами NG `this` типизирован, поля названы (`this->interiorCell`), вызов через типизированный объект — `this->vfptr->SetParentCell`. Поля `unkXXX` — пробелы самого NG. Через нетипизированный указатель вызов остаётся `(**(code **)(*p + 0x4c0))`: слот = смещение / 8, смотри `vtable`.
 
-### Подключение MCP (пользователь)
+### Подключение MCP
 
-Сейчас файлы не установлены: `.mcp.json` действует на все чаты проекта, ставит его пользователь.
+С 08.11.2026 `.mcp.json` и `.claude/` (навык, агенты) лежат в git и действуют в каждом чате, открытом в корне репозитория или worktree. Источник правды — эти файлы, отдельных шаблонов нет. `.claude/settings.local.json` личный и в git не идёт.
 
-- Только для одной папки, без git: `claude mcp add --scope local ghidra -- python tools/ghidra/mcp_server.py` в корне worktree.
-- Для всех чатов (после слияния в общую ветку) — в корне репозитория:
-  `Copy-Item tools\ghidra\claude\mcp.json .mcp.json; New-Item -ItemType Directory -Force .claude | Out-Null; Copy-Item -Recurse -Force tools\ghidra\claude\skills, tools\ghidra\claude\agents .claude\`
-- Claude Code спросит одобрение сервера `ghidra` при первом запуске; список и состояние — `/mcp`. Новый `.mcp.json` подхватывает только новый чат.
+- Claude Code спрашивает одобрение сервера `ghidra` при первом запуске чата; список и состояние — `/mcp`. Новый или изменённый `.mcp.json` подхватывает только новый чат.
+- Субагенты получают инструменты `mcp__ghidra__*`, только если сервер подключён в главном чате. Без них агенты `re-reader*` ничего не прочтут (07.11.2026 так и было): тогда запускай `general-purpose` с `python tools/ghidra/gq.py` через Bash.
+- Только для одной папки без git: `claude mcp add --scope local ghidra -- python tools/ghidra/mcp_server.py`.
 - Проверка: `python tools/ghidra/mcp_server.py --selftest` — запускает MCP-сервер дочерним процессом, вызывает инструменты и 3 декомпиляции параллельно.
 
 ### Как добавить инструмент

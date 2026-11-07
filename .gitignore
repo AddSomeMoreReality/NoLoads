@@ -25,3 +25,6 @@ src/BuildInfo.h
 *.gbf
 *.gzf
 ghidra_out/
+
+# personal Claude Code settings (the rest of .claude/ is shared)
+.claude/settings.local.json
