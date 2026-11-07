@@ -29,7 +29,7 @@ Read-only base of `SkyrimSE.exe` 1.6.1170 with names from CommonLibSSE-NG, the c
 | Find a function by name or a string | `ghidra_search(name_regex / string_regex)` | `search --name/--string` |
 | Slots of a class: own, inherited, overridden | `ghidra_vtable(class)` | `vtable` |
 | Who reads/writes `[reg+0x1D0]` | `ghidra_fieldrefs(offset, users_of / within / all)` | `fieldrefs` |
-| Layout of a type | `ghidra_struct(name)` (NG types after T36) | `struct` |
+| Layout of a type | `ghidra_struct(name)` (NG classes, `<Class>_vftable`) | `struct` |
 
 - Long answers are files: the tool prints the path and an excerpt; read more with Read (`offset`/`limit`). With the CLI, pass `--out` = your scratchpad.
 - In the MCP tools the output goes to `%TEMP%\clr-ghidra\out\mcp-…` unless you pass `out`.
@@ -38,7 +38,8 @@ Read-only base of `SkyrimSE.exe` 1.6.1170 with names from CommonLibSSE-NG, the c
 ## Reading the answers
 
 - Name sources: NG names, `curated` and `AE_<id>` (= unnamed) are reliable. Names from Ghidra analysis (Function ID) are right for STL/CRT, sometimes false on Bethesda code; `FID_conflict:` is ambiguous. The source is in the header of the pseudocode file and in `ghidra_info`.
-- Virtual calls stay `(**(code **)(*p + 0x4c0))`: slot = offset / 8 (`0x4C0` → slot `0x98`); look the slot up with `ghidra_vtable`.
+- Types (T36): NG classes of this build are in the base (`/NG/RE`), methods with NG names have a typed `this`, fields have NG names (`this->interiorCell`), and calls through a typed object read `this->vfptr->SetParentCell`. Field offsets are exact (MSVC layout of the AE build); `unkXXX` names are NG's own gaps.
+- Calls on untyped pointers stay `(**(code **)(*p + 0x4c0))`: slot = offset / 8 (`0x4C0` → slot `0x98`); look the slot up with `ghidra_vtable`.
 - `fieldrefs` matches `[reg + offset]` without types: candidates, confirm with pseudocode.
 - `callgraph` callees follow direct calls only; indirect calls are counted. Callers include vftable slots that hold the function.
 - Fallback without the server: `dumpbin /disasm` and `tools/name_functions.py` (`CLAUDE.md`, section 7).

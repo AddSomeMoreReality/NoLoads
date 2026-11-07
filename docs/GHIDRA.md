@@ -35,7 +35,7 @@
 | Символы по regex имени, строки, места ссылок | `ghidra_search(name_regex / string_regex, kinds?)` | `search --name SetParentCell --string "^sLoad"` |
 | Дерево вызовов вверх или вниз | `ghidra_callgraph(target, callers/callees, depth, max_nodes)` | `callgraph AE#13316 --callers --depth 2` |
 | Слоты класса: свой, унаследованный, переопределённый | `ghidra_vtable(class, offset?)` | `vtable PlayerCharacter` |
-| Раскладка типа | `ghidra_struct(name)` — типы NG после T36 | `struct RTTICompleteObjectLocator` |
+| Раскладка типа, таблица слотов | `ghidra_struct(name)` | `struct TES`, `struct PlayerCharacter_vftable` |
 | Состояние сервера | `ghidra_status` | `status`, `stop` |
 
 - **MCP** (`tools/ghidra/mcp_server.py`, stdio, stdlib): короткая функция возвращается текстом, длинная — файлом и выдержкой ±10 строк вокруг пометок с номерами строк файла (дочитывать Read с `offset`). Ответ печатает время в Ghidra и ожидание декомпилятора. Шаблоны подключения — `tools/ghidra/claude/` (`mcp.json`, навык `skills/ghidra`, агенты `re-reader` на Sonnet и `re-reader-fast` на Haiku); в `.mcp.json` и `.claude/` их ставит пользователь (см. ниже).
@@ -48,7 +48,8 @@
 - `callgraph`: вниз — только прямые вызовы и хвостовые `jmp`, косвенные (vtable) считаются; вверх — вызовы, `jmp` и слоты vftable, где лежит функция. `search` не ищет метки `AE_<id>` (для них есть `AE#id`); ссылки из таблиц исключений (`.pdata`, `UNWIND_INFO`) не считает.
 - `vtable` читает RTTI MSVC: `CompleteObjectLocator` → смещение подобъекта, `ClassHierarchyDescriptor` → базы. Слот сравнивается с первичной таблицей базы на том же смещении: `inherited`, `override of …`, `new in …`.
 - Источник имени — в `info` и заголовке. Надёжны имена NG, `curated` и `AE_<id>`. Имена анализа Ghidra (66 723: Function ID, разбор исключений) верны для STL/CRT/XAudio2, но на коде Bethesda бывают ложными; `FID_conflict:…` — неоднозначные.
-- Безымянные функции названы `AE_<id>`; вызовы через vtable в псевдокоде остаются `(**(code **)(*p + 0x4c0))`: слот = смещение / 8, смотри `vtable`.
+- Безымянные функции названы `AE_<id>`.
+- **Типы NG (T36):** классы этой сборки лежат в `/NG/RE` (5 433 структуры `RE::`, смещения — раскладка MSVC сборки «только AE»). У методов с именами NG `this` типизирован, поля названы (`this->interiorCell`), вызов через типизированный объект — `this->vfptr->SetParentCell`. Поля `unkXXX` — пробелы самого NG. Через нетипизированный указатель вызов остаётся `(**(code **)(*p + 0x4c0))`: слот = смещение / 8, смотри `vtable`.
 
 ### Подключение MCP (пользователь)
 
@@ -74,10 +75,29 @@
    - импорт `-noanalysis` с `scripts\ClrAnalysisOptions.java`: компилятор `visualstudio:unknown` (загрузчик PE оставляет `unknown`, и тогда анализаторы RTTI и исключений MSVC не запускаются) и выключенный **Create Address Tables** (в окне с кучей 8 ГБ он упал с `OutOfMemoryError`, 05.11.2026);
    - `-process` в новом процессе: набор анализаторов выбирается при открытии программы, уже с MSVC.
 2. Имена: `python tools/ghidra/collect_names.py` (20 с), затем `E:\Ghidra\pyghidra-venv\Scripts\python.exe tools/ghidra/apply_names.py` (окно закрыто; 10–40 с).
-3. Копия для чтения: `python tools/ghidra/snapshot.py` (останавливает сервер, секунды). Кэш псевдокода и индексы старой копии остаются в `%TEMP%\clr-ghidra\cache\` под старым снимком; их можно удалить.
+3. Типы NG (T36): `python tools/ghidra/collect_types.py` (MSVC, 30 с), затем `E:\Ghidra\pyghidra-venv\Scripts\python.exe tools/ghidra/apply_types.py` (окно закрыто; 35 с). Подробно — ниже.
+4. Копия для чтения: `python tools/ghidra/snapshot.py` (останавливает сервер, секунды). Кэш псевдокода и индексы старой копии остаются в `%TEMP%\clr-ghidra\cache\` под старым снимком; их можно удалить.
 
-- **Свои выводы** (имя по разбору) — строкой в `tools/ghidra/curated_names.txt` (в git), затем шаги 2–3. Ручное имя в окне Ghidra (`USER_DEFINED`) `apply_names.py` не трогает, но `analyze.ps1` его сотрёт.
+- **Свои выводы** (имя по разбору) — строкой в `tools/ghidra/curated_names.txt` (в git), затем `apply_names.py --project-dir <проект>-pre-types`, `apply_types.py --restore`, `snapshot.py`: копия без типов должна знать новые имена, иначе `--restore` их потеряет. Ручное имя в окне Ghidra (`USER_DEFINED`) `apply_names.py` не трогает, но `analyze.ps1` его сотрёт.
 - Окно Ghidra: открыть основной проект, после правок сохранить и закрыть, затем шаг 3.
+
+## Типы NG (T36)
+
+Компилятор — парсер: заголовки NG собираются MSVC **для одного runtime** (`ENABLE_SKYRIM_AE` для 1.6.x, `ENABLE_SKYRIM_SE` для 1.5.97). Тогда NG раскладывает классы ровно под него (`TES` = 0x2C0 с полями, которые сборка SE+AE прячет за `GetRuntimeData()`), и каждый `STATIC_ASSERT_SIZE` проверяет размер этого runtime. Флаги и пути — из `build/.deps` сборки плагина основной папки (собрать плагин хотя бы раз), MSVC — `gconfig.VCVARS`.
+
+- `collect_types.py` → `%TEMP%\clr-ghidra\types\<версия>\`:
+  - проход 1 — `/d1reportAllClassLayout`: размеры, базы, vftable с именами методов (16 087 классов, 3 005 таблиц);
+  - проход 2 — DLL с функцией на каждый класс `RE::` (3 228) → `NG.pdb` с полными типами полей;
+  - из заголовков (парсер `collect_names.py`) — статические методы (548) и синглтоны (80: где указатель, где сам объект).
+- `apply_types.py` (основной проект; первый запуск копирует его в `<проект>-pre-types`, повтор — `--restore`, потому что Ghidra не удаляет `/NG`, когда типы уже используются):
+  1. загрузчик PDB Ghidra, «только типы», раскладка с иерархией классов → `/NG`; предпочтительный корень пространств имён программы — `/NG/RE`, поэтому класс `TES` находит структуру для `this`;
+  2. безымянные базы → `super_<База>`; заглушка NG `_padPlayerRuntimeData` (0x3E0, 0x808) → `PLAYER_RUNTIME_DATA` того же размера;
+  3. `/NG/vftables/<Класс>_vftable` (1 793 таблицы, 31 495 слотов, имена — из отчёта MSVC); у классов со своей первичной таблицей (1 435) цепочка первичных баз развёрнута в плоские поля, и `vfptr` на +0 указывает на таблицу класса;
+  4. `__thiscall` — функциям в пространстве имён класса со структурой в `/NG/RE`: виртуальным (6 910) и с именем NG/curated, кроме статических (479);
+  5. синглтоны — 79 (`TES` → `TES*`, `PlayerCharacter` → `PlayerCharacter*`, `BSTimer` — сам объект); `RenderTargetManager` — объект, вопреки NG (`SINGLETON_DEPTH_FIX`, `CLAUDE.md`, раздел 7);
+  6. сверка: все 5 433 структуры `RE::` равны размерам MSVC.
+- Раскладка AE в NG — для 1.6.629–1.6.1170: у `PlayerCharacter` нет базы 1.7.99 (`BSTEventSink<BSSystemEvent>`), у `TES` — блок 1.6.1130+ (`AE_RUNTIME_DATA`). Для 1.7.x нужна своя запись в `gconfig.VERSIONS` и проверка.
+- Не сделано: `SkyrimVM::_padVMRuntimeData` (0x554) не равна `VM_RUNTIME_DATA` (0x558) — оставлена заглушкой; сигнатуры из `decltype` NG (типы параметров) не применяются.
 
 ## Имена: источники и приоритет
 

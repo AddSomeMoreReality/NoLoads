@@ -813,12 +813,15 @@ class Ghidra:
         dtm = self.prog.getDataTypeManager()
         found = ArrayList()
         dtm.findDataTypes(name.split("::")[-1] if "/" not in name else name.rsplit("/", 1)[-1], found)
-        found = [d for d in found if name in (d.getName(), d.getPathName(), d.getDisplayName())] or list(found)
+        want = name.replace("::", "/")
+        found = [d for d in found if name in (d.getName(), d.getPathName(), d.getDisplayName())
+                 or d.getPathName().endswith("/" + want)] or list(found)
+        found.sort(key=lambda d: (not d.getPathName().startswith("/NG/"), d.getPathName()))
         if not found:
             low = name.lower()
             near = sorted({d.getPathName() for d in dtm.getAllDataTypes() if low in d.getName().lower()})[:30]
             raise ValueError(f"{name}: no data type; similar: {', '.join(near) or '-'} "
-                             f"({dtm.getDataTypeCount(True)} types in the base; NG structures come with T36)")
+                             f"({dtm.getDataTypeCount(True)} types in the base; NG classes are in /NG/RE)")
         lines = []
         for d in found[:5]:
             while isinstance(d, TypeDef) and isinstance(d.getBaseDataType(), (Structure, Union, Enum)):

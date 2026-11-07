@@ -255,8 +255,9 @@ TOOLS = [
              "offset": {"type": ["string", "integer"]}, "out": S_OUT}, ["class"]),
      t_text("vtable", name="class", offset="offset")),
     ("ghidra_struct",
-     "Data type layout from the Ghidra base (fields with offsets, enums, typedefs). NG structures (TES, "
-     "PlayerCharacter, TESObjectCELL) arrive with task T36; until then mostly Windows/RTTI types.",
+     "Data type layout from the Ghidra base: NG classes of this game build (/NG/RE/..., e.g. TES, PlayerCharacter, "
+     "TESObjectCELL; nested as BSScript::Internal::VirtualMachine), their slot tables (PlayerCharacter_vftable), "
+     "enums, typedefs. Fields with offsets and types.",
      schema({"name": {"type": "string"}, "out": S_OUT}, ["name"]),
      t_text("struct", name="name")),
     ("ghidra_status",

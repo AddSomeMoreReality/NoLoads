@@ -16,6 +16,7 @@ def _env(name, default):
 GHIDRA_DIR = _env("CLR_GHIDRA_DIR", r"E:\Ghidra\ghidra_12.2_PUBLIC")
 JAVA_HOME = _env("CLR_GHIDRA_JAVA", r"D:\Java")  # JDK 21+; Ghidra itself remembers it in java_home.save
 VENV_PYTHON = _env("CLR_GHIDRA_PYTHON", r"E:\Ghidra\pyghidra-venv\Scripts\python.exe")
+VCVARS = _env("CLR_VCVARS", r"D:\VS\BuildTools\VC\Auxiliary\Build\vcvars64.bat")  # MSVC for collect_types.py
 GAME_DIR = _env("CLR_GAME_DIR", r"E:\Games\Skyrim\The Elder Scrolls V - Skyrim")
 PROJECTS_DIR = _env("CLR_GHIDRA_PROJECTS", r"E:\Games\Skyrim\ModCreation\My attempts")
 SERVER_HOST = "127.0.0.1"

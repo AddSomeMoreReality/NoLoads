@@ -15,7 +15,7 @@ Output files go to --out (your scratchpad); the console gets a short summary.
   python tools/ghidra/gq.py search --name "SetParentCell" --string "^sLoad" [--kinds Function]
   python tools/ghidra/gq.py callgraph AE#13316 --callers --depth 2 [--max-nodes 150]
   python tools/ghidra/gq.py vtable PlayerCharacter [--offset 0x0]                    # slots: own / inherited
-  python tools/ghidra/gq.py struct TESObjectCELL                                    # data types (NG types: T36)
+  python tools/ghidra/gq.py struct TESObjectCELL                                    # data types: NG classes /NG/RE, vftables
   python tools/ghidra/gq.py status | stop
 
 The first call starts the server (about 10 s); it exits after 20 idle minutes. Run `stop` before the game
