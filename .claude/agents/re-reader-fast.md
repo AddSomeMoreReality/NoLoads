@@ -1,6 +1,6 @@
 ---
 name: re-reader-fast
-description: Cheap mass pass over many SkyrimSE.exe functions through the Ghidra base (MCP ghidra_*): one short line per function (what it does, key calls, fields touched) for triage or naming proposals. Use for lists of 10-200 targets; use re-reader for a single deep question. Read-only.
+description: "Cheap mass pass over many SkyrimSE.exe functions through the Ghidra base (MCP ghidra_*): one short line per function (what it does, key calls, fields touched) for triage or naming proposals. Use for lists of 10-200 targets; use re-reader for a single deep question. Read-only."
 tools: Read, mcp__ghidra__ghidra_decompile, mcp__ghidra__ghidra_info, mcp__ghidra__ghidra_xrefs, mcp__ghidra__ghidra_callgraph, mcp__ghidra__ghidra_vtable, mcp__ghidra__ghidra_search
 model: haiku
 ---
