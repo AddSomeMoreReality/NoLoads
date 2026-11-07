@@ -32,6 +32,7 @@ SKSE-плагин для Skyrim AE: начинался как исследова
 | `docs/LOCATION_TRIGGERS.md` | Реакции игры и скриптов на смену локации игрока (T15) |
 | `docs/INTERIOR_SIM_STAGES.md`, `docs/archive/` | Убранные стадии InteriorSim 0.8.0–0.8.11 |
 | `docs/FAST_DOOR_TRANSITIONS.md` | Итоги экспериментов 0.7.x для отдельного мода |
+| `docs/GHIDRA.md` | База Ghidra, инструменты псевдокода, правила куратора |
 
 Ссылки вида «5.12» без пути: 3.x — `ENGINE_MAP.md`, 4 и 5.1–5.3 — `ORIGINAL_TASK.md`, 5.4–5.13 и 5.15 — `FEATURES.md`, 5.14 и 7 — этот файл, 9 — `HISTORY.md`.
 
@@ -78,7 +79,7 @@ SKSE-плагин для Skyrim AE: начинался как исследова
 - **`RE::BSGraphics::RenderTargetManager::GetSingleton()` в NG неверен:** разыменовывает `AE#411451`, где лежит сам менеджер (в 0.8.6 уронило игру). Бери `REL::Relocation<RenderTargetManager*>{ RELOCATION_ID(524970, 411451) }.get()`. Прежде чем верить синглтону NG, посмотри, как адрес передаёт игра: `lea` — объект, `mov` — указатель.
 - **`Renderer::GetRuntimeData().renderTargets` в сборке FLAT — 125 элементов (`kVRTOTAL`), настоящих целей 114 (SE) или 116 (1.6.1130+).** Дальше лежат `depthStencils`. Обходи по `RenderTargetCount` (`PortalGrade.cpp`), объекты D3D из чужих структур проверяй `QueryInterface`: в 0.8.28 SRV, принятый за текстуру, через чужой слот vtable писал по мусорному адресу и F11 повесил систему.
 - **`NiNode::DetachChild` (`AE#70292`) не проверяет родителя** (номер из `NiAVObject + 0x38`). Не вызывай его и функции игры, которые его зовут (например `AE#19130`), для узла с чужим родителем: в 0.8.17 так был снят и освобождён чужой узел.
-- **Машинный код игры:** `D:\VS\BuildTools\VC\Tools\MSVC\14.44.35207\bin\Hostx64\x64\dumpbin.exe /disasm:nobytes /range:<VA>,<VA> SkyrimSE.exe` (база `0x140000000`). RVA по ID и вызывающие — `tools/name_functions.py`, кто берёт адрес (vtable) — `--xref ID`.
+- **Машинный код игры:** псевдокод и ссылки — `tools/ghidra/gq.py` (`docs/GHIDRA.md`): `decomp AE#id[+off]`, `asm`, `xrefs`, `fieldrefs`, вывод только в scratchpad. Базу Ghidra меняет только куратор (чат T33, `..\CLR-GHIDRA`): запросы имён и типов — к нему. Псевдокод и проект — код Bethesda, в git и docs только выводы и адреса. Перед запуском игры — `python tools/ghidra/gq.py stop`; анализ Ghidra (до 10 ГБ) не одновременно с игрой. Запасной путь — `D:\VS\BuildTools\VC\Tools\MSVC\14.44.35207\bin\Hostx64\x64\dumpbin.exe /disasm:nobytes /range:<VA>,<VA> SkyrimSE.exe` (база `0x140000000`) и `tools/name_functions.py` (`--xref ID`).
 - **Хуки `CellLoaderTask::Run`** идут в IO-потоках: только поля задачи, трасса и оригинал. Никаких обращений к `TES`, игроку, UI.
 - **Никаких блокировок и тяжёлой работы в хуках.** Снимок сетки ограничен `length²`; `bLogCellAttachPerRef` выключен по умолчанию.
 - **Поля `TES` дальше 0x128 — только через `GetAERuntimeData()` / `GetRuntimeData2()`** (раскладка меняется с 1.6.1130). Поля игрока — через `GetPlayerRuntimeData()`. Поля `unkXXX` только логируй.
