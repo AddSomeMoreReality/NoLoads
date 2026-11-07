@@ -534,6 +534,18 @@ def main():
     # ng-vfunc
     vfunc_counts, vf_conflicts = _vfuncs(parser, pe, id2rva, vt_rva, rva2ids, put)
 
+    # T34 sources: RTTI vftable slots, Papyrus natives, console/script commands, Class::Method strings
+    import name_sources
+    t34_comments = {}
+    line, _ = name_sources.vslots(pe, put, t34_comments)
+    report.append(line)
+    report.append(name_sources.natives(pe, put))
+    report.append(name_sources.commands(pe, id2rva, ver["runtime"], put, t34_comments))
+    known = {q.split("::")[-1] for q in parser.class_bases} | {n.split("::")[0] for n in
+                                                                (e["name"] for e in entries.values())}
+    cm_strings = name_sources.class_method_strings(pe, known)
+    report.append(f"strings naming Class::Method: {len(cm_strings)} (comments where one function uses them)")
+
     # curated (tools/ghidra/curated_names.txt)
     curated = 0
     cur_path = pathlib.Path(__file__).with_name("curated_names.txt")
@@ -569,8 +581,24 @@ def main():
             continue
         text = "; ".join(f"{n} ({', '.join(sorted(fs))})" for n, fs in sorted(names.items()))
         comments.setdefault(rva, []).append(f"docs AE#{id_}: {text}")
+    for rva, lines in t34_comments.items():
+        comments.setdefault(rva, []).extend(lines)
+
+    # function starts Ghidra may miss: .pdata entries that are not chained fragments, and code addresses held in
+    # data (vtables, callback tables; leaf functions have no .pdata entry). apply_names.py creates them first.
+    code_ptrs = pe.code_pointers()
+    code_leas = pe.code_leas()
+    # Address Library IDs in code right after int3 padding or a ret: function starts nothing else points at
+    id_starts = sorted(r for r in rva2ids if pe.is_code(r) and r not in pe.func_starts
+                       and pe.data[pe.rva2off(r) - 1] in (0xCC, 0xC3))
+    starts = dict(pdata=sorted(pe.primary_starts), pointers=sorted(code_ptrs), ids=id_starts,
+                  leas={str(t): v[:3] for t, v in sorted(code_leas.items()) if t not in pe.func_starts})
+    report.append(f"function starts: {len(pe.primary_starts)} from .pdata ({len(pe.chained)} chained skipped), "
+                  f"{len(code_ptrs)} code addresses held in data, {len(code_leas)} taken by lea in code, "
+                  f"{len(id_starts)} Address Library IDs after padding or ret")
 
     result = dict(version=ver["name"], runtime=ver["runtime"], prefix=ver["prefix"], image_base=pe.image_base,
+                  starts=starts, cm_strings=cm_strings,
                   ids={str(k): v for k, v in id2rva.items()},
                   names=sorted(entries.values(), key=lambda e: e["rva"]),
                   comments={str(k): v for k, v in comments.items()},

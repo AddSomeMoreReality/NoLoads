@@ -71,6 +71,9 @@ def load_addrlib(path):
     return tuple(version), id2rva
 
 
+LEA_OP = bytes([0x8D])
+
+
 class PE:
     """Sections, image base and .pdata function starts of a PE32+ file."""
 
@@ -92,15 +95,53 @@ class PE:
             self.sections.append((name, va, max(vsize, rsize), raw, chars))
         self.func_begin = []
         self.func_end = []
+        self.chained = set()  # .pdata entries that continue a function starting elsewhere (UNW_FLAG_CHAININFO)
         off = self.rva2off(exc_rva)
         for i in range(exc_size // 12):
-            b, e, _ = struct.unpack_from("<III", d, off + 12 * i)
+            b, e, u = struct.unpack_from("<III", d, off + 12 * i)
             self.func_begin.append(b)
             self.func_end.append(e)
+            try:
+                if u & 1 or (d[self.rva2off(u)] >> 3) & 0x4:
+                    self.chained.add(b)
+            except ValueError:
+                pass
         order = sorted(range(len(self.func_begin)), key=self.func_begin.__getitem__)
         self.func_begin = [self.func_begin[i] for i in order]
         self.func_end = [self.func_end[i] for i in order]
         self.func_starts = set(self.func_begin)
+        self.primary_starts = self.func_starts - self.chained  # real function starts
+
+    def code_leas(self):
+        """{target rva: [site rva]} of `lea r64,[rip+disp32]` in code whose target is code (callbacks passed as
+        arguments). Byte scan: REX.W (48/4C) 8D ModRM mod=00 rm=101; targets inside functions are filtered later."""
+        out = {}
+        for name, va, size, raw, chars in self.sections:
+            if not chars & 0x20000000:
+                continue
+            code = self.data[raw:raw + size]
+            i = code.find(LEA_OP)
+            while 0 < i < len(code) - 5:
+                if code[i - 1] in (0x48, 0x4C) and (code[i + 1] & 0xC7) == 0x05:
+                    t = va + i + 6 + struct.unpack_from("<i", code, i + 2)[0]
+                    if self.is_code(t):
+                        out.setdefault(t, []).append(va + i - 1)  # site: the REX byte
+                i = code.find(LEA_OP, i + 1)
+        return out
+
+    def code_pointers(self):
+        """{target rva: [rva of the qword]} for 8-aligned qwords in non-executable sections pointing into code."""
+        out = {}
+        lo, hi = self.image_base, self.image_base + max(va + size for _, va, size, _, _ in self.sections)
+        for name, va, size, raw, chars in self.sections:
+            if chars & 0x20000000 or name in (".pdata", ".reloc", ".rsrc"):
+                continue
+            buf = self.data[raw:raw + min(size, len(self.data) - raw)]
+            for i in range(0, len(buf) - 7 - (va % 8), 8):
+                v = struct.unpack_from("<Q", buf, i)[0]
+                if lo <= v < hi and self.is_code(v - self.image_base):
+                    out.setdefault(v - self.image_base, []).append(va + i)
+        return out
 
     def section_of(self, rva):
         for name, va, size, raw, chars in self.sections:
