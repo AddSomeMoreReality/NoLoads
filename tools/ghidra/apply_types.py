@@ -16,8 +16,9 @@ Steps:
   3. Vtables: /NG/vftables/<Class>_vftable with one pointer per slot, named after MSVC's vftable report.
      Every class with its own primary vftable is flattened along its primary-base chain, so offset 0 is a
      `vfptr` typed <Class>_vftable* and calls through it get slot names in the pseudocode.
-  4. `this`: __thiscall for functions in a class namespace that has a /NG/RE structure, when the name is from
-     NG/curated (IMPORTED, USER_DEFINED) and not a static method of NG, or when a vftable holds the function.
+  4. `this`: __thiscall for functions in a class namespace that has a /NG/RE structure, when a vftable holds the
+     function, or when the name is from NG/curated (plate comment "[clr] ng:"/"[clr] curated:") and not a static
+     method of NG. Third-party names put functions into classes but give no `this`: they may be static.
   5. Singletons (data relocations of X::GetSingleton): X* or X at the address.
 Then run snapshot.py. Report: STATE_DIR/apply-types-<version>.report.txt.
 """
@@ -257,6 +258,12 @@ def apply(prog, ver, data, pdb_path):
             if v is not None:
                 virtual.add(v.getOffset())
     statics = set(data["statics"])
+    try:
+        from ghidra.program.model.listing import CommentType
+        plate_type = CommentType.PLATE
+    except ImportError:
+        from ghidra.program.model.listing import CodeUnit
+        plate_type = CodeUnit.PLATE_COMMENT
     counts = collections.Counter()
     for f in fm.getFunctions(True):
         ns = f.getParentNamespace()
@@ -268,6 +275,12 @@ def apply(prog, ver, data, pdb_path):
         if not is_virtual and (src not in (SourceType.IMPORTED, SourceType.USER_DEFINED) or qual in statics):
             counts["skipped: static or analysis name"] += 1
             continue
+        if not is_virtual:
+            # only NG/curated names are known to be non-static (third-party names may be static methods)
+            plate = str(listing.getComment(plate_type, f.getEntryPoint()) or "")
+            if "[clr] ng:" not in plate and "[clr] curated:" not in plate and src != SourceType.USER_DEFINED:
+                counts["skipped: name not from NG (static unknown)"] += 1
+                continue
         cs = VariableUtilities.findExistingClassStruct(ns, dtm)
         if cs is None or not str(cs.getCategoryPath()).startswith(f"/{ROOT}/RE"):
             counts["skipped: no NG structure for the class"] += 1

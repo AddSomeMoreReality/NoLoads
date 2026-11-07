@@ -140,6 +140,12 @@ def apply(prog, data):
     starts["named"] = [e["rva"] for e in data["names"] if e["kind"] in ("func", "code")]
     report.append(create_functions(prog, starts, stats))
 
+    def source_plate(e):
+        if e["source"] in ("ng-reloc", "curated"):
+            plates[e["rva"]].append(f"{'ng' if e['source'] == 'ng-reloc' else 'curated'}: {e['origin']}")
+        elif e["source"] in ("addrlibdb", "addrlibdb-class", "po3"):
+            plates[e["rva"]].append(f"name from {e['origin']}")
+
     # 1. NG names
     vt_check = collections.Counter()
     vt_mismatch = []
@@ -162,6 +168,7 @@ def apply(prog, data):
                     continue
                 if f.getName(True) == name:
                     stats[f"same name ({e['source']})"] += 1
+                    source_plate(e)
                     continue
                 sym = f.getSymbol()
                 src = sym.getSource()
@@ -177,6 +184,7 @@ def apply(prog, data):
                         name = vt_ns[0].getName(True) + "::" + name.rsplit("::", 1)[1]
                 if f.getName(True) == name:
                     stats[f"same name ({e['source']})"] += 1
+                    source_plate(e)
                     continue
                 if src == SourceType.ANALYSIS:
                     renamed.append(f"0x{e['rva']:X}: {f.getName(True)} [{src}] -> {name} [{e['source']}]")
@@ -188,8 +196,7 @@ def apply(prog, data):
                     ns, simple = split(name)
                     sym.setNameAndNamespace(simple, ns, SourceType.IMPORTED)
                 stats[f"function named ({e['source']})"] += 1
-                if e["source"] in ("ng-reloc", "curated"):
-                    plates[e["rva"]].append(f"{'ng' if e['source'] == 'ng-reloc' else 'curated'}: {e['origin']}")
+                source_plate(e)
             elif kind in ("vtable", "rtti"):
                 have = [s.getName(True) for s in st.getSymbols(a)]
                 key = "vftable" if kind == "vtable" else "RTTI"

@@ -239,8 +239,9 @@ def _int(s):
 
 
 class NGParser:
-    def __init__(self, runtime):
+    def __init__(self, runtime, single_id=False):
         self.idx = 0 if runtime == "se" else 1
+        self.single_id = single_id  # a fork for one runtime (po3 dev-1.6.1170): REL::ID(n) is that runtime's ID
         self.relocs = []        # dict(id, name, kind_hint, var, origin, how)
         self.skipped = collections.Counter()
         self.class_bases = {}   # qualname -> [bases]
@@ -319,10 +320,12 @@ class NGParser:
         args, end = _args(code, m.end())
         line = _line_of(line_starts, m.start()) + 1
         origin = f"{rel}:{line}"
-        if kind == "REL::ID":
+        if kind == "REL::ID" and not (self.single_id and len(args) == 1):
             self.skipped["REL::ID without SE/AE pair"] += 1
             return
         ids = [_int(a) for a in args]
+        if kind == "REL::ID":
+            ids = [ids[0], ids[0]]
         if len(ids) < 2 or ids[self.idx] in (None, 0):
             self.skipped["no ID for this runtime"] += 1
             return
@@ -448,6 +451,8 @@ def main():
     ap.add_argument("--ng", default=None, help="CommonLibSSE-NG checkout (default: main checkout lib/commonlibsse-ng)")
     ap.add_argument("--out", default=None, help="names JSON (default: state dir)")
     ap.add_argument("--report", default=None, help="text report (default: next to --out)")
+    ap.add_argument("--no-thirdparty", action="store_true", help="skip third-party name tables (thirdparty.py)")
+    ap.add_argument("--update-thirdparty", action="store_true", help="pull the third-party sources first")
     a = ap.parse_args()
 
     ver = gconfig.version(a.version)
@@ -546,6 +551,13 @@ def main():
     cm_strings = name_sources.class_method_strings(pe, known)
     report.append(f"strings naming Class::Method: {len(cm_strings)} (comments where one function uses them)")
 
+    # third-party ID -> name tables (thirdparty.py)
+    tp_cands = {}
+    if not a.no_thirdparty:
+        import thirdparty
+        tp_lines, tp_cands = thirdparty.collect(ver, id2rva, pe, put, entries, a.update_thirdparty)
+        report.extend(tp_lines)
+
     # curated (tools/ghidra/curated_names.txt)
     curated = 0
     cur_path = pathlib.Path(__file__).with_name("curated_names.txt")
@@ -583,6 +595,12 @@ def main():
         comments.setdefault(rva, []).append(f"docs AE#{id_}: {text}")
     for rva, lines in t34_comments.items():
         comments.setdefault(rva, []).extend(lines)
+    for rva, cs in tp_cands.items():
+        chosen = entries.get(rva, {}).get("name", "")
+        other = [f"{src} {n}" for src, n in cs if n.replace("<", "").replace(">", "") != chosen.replace("<", "").replace(">", "")
+                 and src != "addrlibdb-class"]
+        if other:
+            comments.setdefault(rva, []).append("elsewhere: " + "; ".join(other[:4]))
 
     # function starts Ghidra may miss: .pdata entries that are not chained fragments, and code addresses held in
     # data (vtables, callback tables; leaf functions have no .pdata entry). apply_names.py creates them first.
@@ -604,6 +622,14 @@ def main():
                   comments={str(k): v for k, v in comments.items()},
                   vtables={k: v for k, v in vt_rva.items()})
     out.write_text(json.dumps(result), encoding="utf-8")
+    # plain table for chats without the server: grep AE#id or a name
+    tsv = out.with_suffix(".tsv")
+    with open(tsv, "w", encoding="utf-8") as fh:
+        fh.write("\t".join(("id", "rva", "name", "source")) + "\n")
+        for e in sorted(entries.values(), key=lambda e: e["rva"]):
+            for i in rva2ids.get(e["rva"]) or ["-"]:
+                fh.write("\t".join((f"{ver['prefix']}#{i}", f"0x{e['rva']:X}", e["name"], e["source"])) + "\n")
+    report.append(f"table: {tsv}")
 
     by_src = collections.Counter(e["source"] for e in entries.values())
     report.append(f"version {ver['name']} runtime {ver['runtime']}: {len(id2rva)} Address Library IDs, "

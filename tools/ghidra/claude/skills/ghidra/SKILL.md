@@ -37,7 +37,8 @@ Read-only base of `SkyrimSE.exe` 1.6.1170 with names from CommonLibSSE-NG, the c
 
 ## Reading the answers
 
-- Name sources: NG names, `curated` and `AE_<id>` (= unnamed) are reliable. Names from Ghidra analysis (Function ID) are right for STL/CRT, sometimes false on Bethesda code; `FID_conflict:` is ambiguous. The source is in the header of the pseudocode file and in `ghidra_info`.
+- Without the server: `%TEMP%\clr-ghidra\names-1.6.1170.tsv` maps `AE#id` to name and source (grep it).
+- Name sources (plate comment `[clr] ng:` / `name from …`): NG, `curated`, Papyrus and command names are reliable; AddressLibraryDatabase names agree with NG in 90 % of shared IDs (the rest are synonyms); `Class::AE_<id>` means only the class is known; `vf_0xNN` = unnamed vtable slot; `AE_<id>` = unnamed. Names from Ghidra analysis (Function ID) are right for STL/CRT, sometimes false on Bethesda code; `FID_conflict:` is ambiguous. The source is in the header of the pseudocode file and in `ghidra_info`.
 - Types (T36): NG classes of this build are in the base (`/NG/RE`), methods with NG names have a typed `this`, fields have NG names (`this->interiorCell`), and calls through a typed object read `this->vfptr->SetParentCell`. Field offsets are exact (MSVC layout of the AE build); `unkXXX` names are NG's own gaps.
 - Calls on untyped pointers stay `(**(code **)(*p + 0x4c0))`: slot = offset / 8 (`0x4C0` → slot `0x98`); look the slot up with `ghidra_vtable`.
 - `fieldrefs` matches `[reg + offset]` without types: candidates, confirm with pseudocode.
