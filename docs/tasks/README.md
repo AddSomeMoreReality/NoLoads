@@ -114,6 +114,15 @@ git -C ..\CLR-T10 submodule update --init --recursive
 | [T22](T22-distance-rest.md) | Оставшиеся проверки расстояния (`docs/DISTANCE_CHECKS.md`, раздел 9), уровень NPC по расстоянию через дверь | перехваты, `PortalActors` | да | T28 | T20 (`InteriorSim`, `ActorHold`), T29 |
 | [T29](T29-portal-registry.md) | Реестр порталов: состояние портала — класс, порталов много (5.14, п. 1; `docs/ARCHITECTURE.md`, 8.3) | `Portal*`, `InteriorSim` | контрольный | T20, T16, T22 слиты | всё в `Portal*`: **одна, как T28** |
 | T21 | Живая улица, пока игрок внутри, и второй портал на внутренней двери (`docs/FEATURES.md`, 5.13, шаг 4) | `InteriorSim`, `Portal*` | да | T20, T29 | T29 |
+| **Этап 2, вспомогательные: база Ghidra и карты движка** (план — `PLAN-T34-T41.md`, координатор исследований — `PROMPT-research-coordinator.md`) |
+| [T35](T35-ghidra-interface.md) | Интерфейс к базе: MCP-сервер, навык `ghidra`, агенты `re-reader`, `re-reader-fast` | `tools/ghidra/`, `.mcp.json`, `.claude/` | нет | T33 | готово (куратор) |
+| [T36](T36-ghidra-types.md) | Типы NG в базе: структуры, vtable, `this`, синглтоны | `tools/ghidra/` | нет | T35 | готово (куратор) |
+| [T34](T34-ghidra-check-names.md) | Проверка расхождений, имена: NG, сторонние таблицы, RTTI, Papyrus, команды, `reviewed` | `tools/ghidra/` | нет | T35, T36 | готово (куратор); новые кандидаты — от T37–T41 |
+| [T37](T37-creation-kit.md) | Creation Kit: окупается ли ради имён | нет | нет | T35 | разведка: ради имён не окупается; привязка «функция → `.cpp`» — решение пользователя |
+| [T41](T41-multiplayer-mods.md) | Моды мультиплеера: несколько игроков в одном мире | нет | нет | — | — (`MULTIPLAYER_MODS.md`) |
+| [T38](T38-player-map.md) | Карта игрока: `PlayerCharacter`, поля, глобалы, подсистемы | нет | по желанию, T40 | T35, T36 | T32 по смыслу (`PLAYER_MAP.md`) |
+| [T39](T39-cell-loading-map.md) | Карта загрузки ячеек: от двери до `kAttached`, потоки, экран загрузки | нет | старые трассы; по желанию T40 | T35, T36 | T20 по смыслу (`CELL_LOADING_MAP.md`) |
+| [T40](T40-call-probe.md) | Сборка-зонд: счётчики вызовов, сэмплы всех потоков | `src/CallProbe.*`, `Profiler` | да, один на T38+T39 | списки ID от T38/T39; T32 слить раньше | T32 (заглушки, `Profiler`) |
 | **Этап 3, улучшения и дополнения** |
 | [T17](T17-portal-picture.md) | Картинка портала: пелена вдали, дым без очага в кадре, опора адаптации (остатки T12, T13) | рендер портала | да | — | T27 |
 | T23 | Звук через проём, а не сквозь стены (Audio Occlusion в `docs/RELATED_MODS.md`) | звук | да | T29 | — |

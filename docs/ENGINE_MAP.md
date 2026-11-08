@@ -2,6 +2,8 @@
 
 Источник — заголовки CommonLibSSE-NG v13.1.0. Текст перенесён без изменений; номера подразделов 3.x сохранены. Правила и окружение — `CLAUDE.md`.
 
+**С 08.11.2026 по машинному коду (база Ghidra):** путь от двери до `kAttached`, потоки, буферы, состояния ячейки, экран загрузки — `docs/CELL_LOADING_MAP.md` (T39); игрок, его поля, глобалы и подсистемы — `docs/PLAYER_MAP.md` (T38). Поток 3.6 там подтверждён и уточнён: очередь `AE#40442` → `AE#40438` → `AE#40744` → `SetCurrentCell`/`AE#13317` → `SetParentCell`. Длины буферов (3.2) — INI `uInterior/uExterior Cell Buffer`.
+
 ## 3. Что уже известно: карта движка
 
 Источник — заголовки CommonLibSSE-NG v13.1.0. IDs даны как SE / **AE**; для 1.6.1170 используются AE-ID через `RELOCATION_ID(se, ae)` или `REL::VariantID`.
@@ -83,7 +85,7 @@
 | `TESLoadGameEvent` | `ScriptEventSourceHolder` | |
 | `MenuOpenCloseEvent` | `RE::UI` | `menuName`, `opening` |
 
-### 3.6 Реконструированный поток перехода через дверь (НЕ подтверждён)
+### 3.6 Реконструированный поток перехода через дверь (подтверждён и уточнён по коду в `docs/CELL_LOADING_MAP.md`, разделы 2 и 13)
 
 ```
 TESObjectDOOR::Activate → ExtraTeleport → queuedTargetLoc (isValid=1)
