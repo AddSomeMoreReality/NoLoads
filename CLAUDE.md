@@ -2,8 +2,8 @@
 
 SKSE-плагин для Skyrim AE: начинался как исследование загрузки ячеек, теперь — эксперимент «интерьер виден и живёт через дверь» (портал), цель — мир без экранов загрузки. Выдаёт архив для Vortex.
 
-Общайся с пользователем по-русски. Идентификаторы, код и коммиты пиши по-английски.
-Рассуждения (thinking) веди по-английски: так быстрее и дешевле по токенам. Это правило и для субагентов и исполнителей задач; ответы пользователю — по-русски.
+Accept user prompts in Russian, but always respond to the user in English. Write identifiers, code, and commits in English.
+Do all reasoning (thinking) in English: it is faster and cheaper in tokens. This applies to subagents and task executors as well.
 
 **Git.** Читающие и диагностические команды разрешены. `commit`, `push`, `merge` и всё, что меняет историю или удалённый репозиторий, делает только пользователь. В конце каждой итерации с изменениями кода дай готовую команду коммита на английском. Если нужен merge или push, скажи об этом и приведи команды. Репозиторий: `origin` = `AddSomeMoreReality/NoLoads`, `template` = исходный шаблон.
 
