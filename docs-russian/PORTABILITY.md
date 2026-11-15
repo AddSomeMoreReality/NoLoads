@@ -1,0 +1,113 @@
+# Переносимость: всё, что привязывает мод к 1.6.1170
+
+Цель пользователя (01.11.2026): мод работает одинаково на всех версиях SE/AE, минимум начиная с 1.5.97. Жёстко заданные сдвиги, номера функций и слоты нужно заменить на Address Library, поля NG или проверяемые сигнатуры.
+
+Этот файл — список долгов. Он нужен, чтобы не замедлять эксперименты сейчас и подчистить всё потом.
+
+**Правила:**
+- Новый сдвиг или AE-номер, который нельзя сразу выразить переносимо, записывается сюда в том же коммите.
+- Сделанное убирается из таблиц и переносится в раздел 5.
+- Сначала ищем поле в NG, затем `RELOCATION_ID(se, ae)`, и только потом сигнатуру. Чистый сдвиг — последний вариант.
+
+## 1. Текущее состояние
+
+- `Portal::Prepare` разрешает портал только на 1.6.1170. На других версиях плагин загружается, но портал не запускается и пишет причину.
+- Перехваты вызовов (`WriteCall`) проверяют байты места и цель `call`. При несовпадении перехват не ставится, а `Hooks::Ready()` возвращает `false`.
+- AE 1.6.x и 1.7.x используют одно пространство номеров Address Library, но сдвиги внутри функций между ними могут отличаться. Так сказано в исходниках мода Realistic Reflections - Mirrors, сами мы это не проверяли.
+
+## 2. Сдвиги и константы
+
+| Что | Где | Значение | Чем заменить |
+|---|---|---|---|
+| Фоновый свет | `PortalState.h`, `kAmbientOffset`, `kAmbientBytes` | `BSShaderManager::State + 0xC8`, `0x44` байта | Именованные поля в NG или сохранение через функции игры |
+| Остаток выпуска частиц | `PortalEffects.cpp`, `Portal::BeforeEmission` | Первое поле после `NiPSysModifier` (`+0x30`) | Описать `NiPSysEmitter` в NG, класса там нет |
+| Место `lodDistance` | `Hooks.cpp`, `InstallCalls` | `AE#37348 + 0x1F3` | Поиск сигнатурой внутри функции |
+| Место затухания | `Hooks.cpp`, `InstallCalls` | `AE#19384 + 0xE4` | То же |
+| Граница списков сцены | `Hooks.cpp`, `InstallCalls` | `AE#36559 + 0x17E` | То же. По разбору мода зеркал смещение на SE такое же. С 0.8.26 единственное место прохода: если вызов не найден, портала нет |
+| Вызов `RenderPlayerView` | `Hooks.cpp`, `InstallCalls` (0.8.25) | `AE#36558 + 0x11D` | Detour `AE#36559` (SE 35560) вместо перехвата вызова |
+| Место говорящего для субтитров | `Hooks.cpp`, `InstallCalls` (0.8.25) | `AE#52638 + 0x122`, раскладка «мировой позиции» `AE#19784` (точка, `+0x10` пространство) | Сигнатура внутри функции; SE-номера `52638` и `19784` не найдены |
+| Размер `AE#40845` | `Hooks.cpp`, `FromLinkedPreload` | `0x18E` | Размер из `.pdata` или сигнатура |
+| Тип накопителя | `Portal.cpp`, `kAccumulatorType` | `0x63` | Проверить на SE |
+| Техника эффектов | `PortalRender.cpp`, `kEffectTechniqueBase`, `kSoftEffectBit` | `0x4000002C`, бит 18 | Проверить на SE, вынести в NG |
+| Флаги света | `PortalLights.cpp`, `kLightInFrustum` | `0` | Проверить на SE |
+| Цели адаптации глаза (T12, 0.8.28) | `PortalGrade.cpp`, `FindAdaptTargets`, `AdaptFlag` | Цели рендера не больше 2 × 2; текущая = `base + 2 * флаг`, флаг `AE#415054` (`AE#107183 + 0x296`) | SE-номер флага; проверить раскладку цепочки HDR на SE и 1.7 |
+| Число целей рендера (0.8.29) | `PortalGrade.cpp`, `RenderTargetCount` | 114 до 1.6.1130, 116 с неё. В сборке FLAT массив NG `renderTargets` — 125 (`kVRTOTAL`), за настоящими целями лежат `depthStencils`. Число считается по версионному смещению `GetDepthStencilData` | Не обходить `renderTargets` по `std::size` (0.8.28 повис на элементе 122 = `depthStencils[1].depthSRV`) |
+| Поля BSFogProperty (T12, T13) | `PortalImage.cpp`, `FogJson` | Сырые float с `+0x58` по `+0x83` (в NG `unk58…unk80`) | Назвать в NG по `AE#107524 + 0xE7…+0x181` |
+| Режим глубины | `PortalRender.cpp`, `kDepthTestWrite` | `3` | Перечисление NG, если появится |
+| Сброс проходов | `PortalEffects.cpp`, `kRebuildPasses` | `0x7FFFFFFF` | Проверить на SE |
+| Ячейки рендера | `[Portal] iColorSlot`, `iDepthSlot` | `17`, `9` | Свой выбор свободной ячейки или вообще без подмены ячеек |
+| Индекс группы | `PortalRender.cpp`, `kRefractionNormalsGroup`, `kGeometryGroups` | `5`, `16` | В разборе мода зеркал так на SE и AE, на VR групп 19 |
+| Безымянные поля | `PortalActors.cpp`, `PortalEffects.cpp` | `BSAnimationUpdateData::unk2A`, `unk2C`; `BSFadeNode::unk144`; `NiParticleSystem::unk180`, `unk188` | Назвать в NG, сверить на SE |
+| Звук у слушателя | `Hooks.cpp`, `SoundEmitterPosition::kAtListener` | Бит 10 в `BSGameSound::soundType` | Назвать в NG, сверить на SE |
+| Перестановка в точку пакета (0.8.27) | `ActorHold.cpp`, `MoveToHighSnap` | `AE#37621 + 0x348` (вызов `AE#37618`) | Сигнатура внутри `MoveToHigh` (vfunc `0xF1`) или detour `AE#37618` с проверкой вызывающего |
+| Актёр в очереди движения (0.8.27) | `ActorHold.cpp`, `kMessageInterfaceActor` | `IMovementMessageInterface + 0x98` = `MovementControllerNPC + 0x1B8` | Описать `MovementControllerNPC` в NG |
+| Строка сцены начата (0.8.27) | `Scenes.cpp`, `kLineSaid` | Бит `0x4000` в `BGSSceneAction::flags` | Назвать в NG, сверить на SE |
+
+### Индексы виртуальных функций
+
+В `Hooks.cpp` (`Hooks::Install`), с 0.8.27 ещё `ActorHold.cpp` и `Scenes.cpp`. Для VR значения могут отличаться, для SE нужна сверка.
+
+| Класс | Индексы |
+|---|---|
+| `TESObjectDOOR` | `0x37` |
+| `GridCellArray` | `1`–`8` |
+| `CellLoaderTask` | `1`, `2`, `3`, `4`, `6` |
+| `PlayerCharacter` | `0xAD` |
+| `NiNode`, `BSFadeNode`, `BSMultiBoundNode`, `BSMultiBoundRoom`, `BSTriShape`, `BSDynamicTriShape`, `BSSubIndexTriShape` | `0x34` |
+| `BSEffectShader` | `2` |
+| `BSEffectShaderProperty` | `0x2A` |
+| `Character` | `0x79`, `0xAD`; `0xF1`–`0xF4` (`ActorHold`) |
+| `MovementControllerNPC`, таблица `[1]` (`IMovementMessageInterface`) | `1` (`ActorHold`) |
+| `BGSSceneActionDialogue` | `0x11` (`Scenes`) |
+| `HighActorCuller` | `1` |
+| `BSXAudio2GameSound` | `0x0F` |
+| `ImageSpaceEffectHDR` | `1` (T12, `AE#107183`) |
+
+## 3. Номера Address Library
+
+SE и AE нумеруются отдельно. Без SE-номера код написан как `REL::ID(ae)`, и на SE он работать не может.
+
+**SE-номер известен, код ещё пишет `REL::ID`.** Нужно только заменить на `RELOCATION_ID(se, ae)`:
+
+| AE | SE | Что |
+|---|---|---|
+| 36559 | 35560 | `RenderPlayerView` |
+| 69353 | 67992 | `JobList::Finish` |
+| 106385 | 99741 | `ShadowSceneNode::SetPortalGraph` |
+
+`RELOCATION_ID` уже стоит у `AE#106600` (SE 99955), `AE#77463` (SE 75657, упаковщик частиц) и `AE#19823` (SE 19396, `GetDistance`).
+
+**SE-номер неизвестен (43 штуки: 37 до 0.8.27, 5 из T11 в 0.8.27, 1 из T12 в 0.8.28):**
+
+| Модуль | AE-номера |
+|---|---|
+| `Hooks.cpp` | 13291, 13325, 13370, 13419, 13434, 13721, 18547, 19130, 19384, 19784, 19824, 36558, 36609, 37277, 37348, 37350, 40845, 41466, 43690, 52638, 61410, 74651, 77851, 78274, 105486 |
+| `InteriorSim.cpp` | 18890, 18900, 18976, 19046, 19063, 19130, 77905, 77906, 400333 |
+| `Portal*.cpp` | 18966 и 105643 (`PortalImage`), 41496 (`PortalActors`), 106342 (`PortalLights`), 388630, 400333, 411270 (`PortalEffects`), 415054 (`PortalGrade`) |
+| `Preload.cpp` | 18540 |
+| `ActorHold.cpp` (0.8.27) | 37503 (detour), 37618, 37621 (вызов на `+0x348`) |
+| `Scenes.cpp` (0.8.27) | 24140, 55321 (detour) |
+
+**Как получить SE-номера.** Нужны `SkyrimSE.exe` 1.5.97 и `version-1-5-97-0.bin`. На диске пользователя их нет. Дальше функции сопоставляются инструментами из `tools/`: по таблицам виртуальных функций, строкам и вызывающим. Часть номеров есть в NG и в исходниках мода зеркал: это пары `RELOCATION_ID(se, ae)` и `VariantID(se, ae, vr)`.
+
+## 4. Что уже известно о других версиях
+
+Из исходников Realistic Reflections - Mirrors (факты о бинарниках, код не копируется, см. раздел 5.15 в `docs/FEATURES.md`):
+- мод работает на SE 1.5.97, AE 1.6.1170, GOG 1.6.1179, AE 1.7.104 и VR 1.4.15;
+- окно вокруг границы списков сцены стоит на `RenderPlayerView + 0x16F` на SE, 1.6.1170 и 1.7.104, на VR на `+0x197`;
+- `BSShaderAccumulator`: `batchRenderer` на `+0x130`, на VR на `+0x158`;
+- `BSBatchRenderer::renderPass` хранит записи `PassGroup` прямо в массиве, хотя NG объявляет указатели.
+
+Проверено на 1.6.1170 самостоятельно: `RendererShadowState` (`AE#388819`) + `0x35C` = `AE#388909`, `+0x380` = `AE#388915`, `+0x390` = `AE#388918`. Упаковщик частиц `AE#77463` читает именно эти поля.
+
+## 5. Уже убрано
+
+| Что | Версия | Как |
+|---|---|---|
+| `bhkWorld + 0xC5F9` | 0.8.22 | Поле NG `bhkWorld::toggleCollision` |
+| Ручной вызов `AE#18995` | 0.8.22 | `TESObjectCELL::GetbhkWorld()` |
+| Поля камеры упаковщика | 0.8.23 | Адреса полей NG `posAdjust` и `cameraData`, числовых сдвигов нет. Перехват — detour по ID, без смещения внутри `AE#107637` |
+
+## 6. Не зависит от версии
+
+- Пусто. Замена фрагмента квеста `BardSongStarter` (0.8.25) снята: мод не меняет данные игры (`CLAUDE.md`, 5.14, п. 7). Старая запись: замена `Scripts/QF_BardSongsDrinkingSong01_000BE159.pex`: скрипты Papyrus одинаковы на SE и AE. Если другой мод заменяет тот же фрагмент, победит тот, кто ниже в порядке модов.
