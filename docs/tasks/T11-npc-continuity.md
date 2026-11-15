@@ -1,41 +1,41 @@
-# T11. NPC перескакивают на переходе (Садия, Идолаф)
+# T11. NPCs jump during transition (Saadia, Idolaf)
 
-Ветка `exp/T11-npc-continuity`. Код: `InteriorSim`, перехваты. Нужен прогон. Исследование (пункт 1) можно начинать до T02.
+Branch `exp/T11-npc-continuity`. Code: `InteriorSim`, hooks. A game run is required. Research (item 1) can start before T02.
 
-## Что известно
+## What is known
 
-Данные прогона 0.8.25 (`logs/run-0.8.25/`): запись `actor.jump`, её пишет `src/ActorJumps.cpp`, со стеком `SetPosition` (`AE#19790`).
+Data from run 0.8.25 (`logs/run-0.8.25/`): the `actor.jump` record, written by `src/ActorJumps.cpp`, with the `SetPosition` (`AE#19790`) stack.
 
-- **Выход игрока из таверны.**
-  - Портал подключает интерьер и поднимает его NPC в high через ~1.7 с. В `src/InteriorSim.cpp` это `kSettleUs` = 1.5 с после экрана загрузки, затем `MoveToHigh`: запись `promote`, `levelsBefore` = 1.
-  - До этого NPC интерьера в middleHigh, и игра ведёт их по пути крупными шагами: `AE#37892+0xa3` → `AE#37877+0xda` → `AE#37313+0xa0` → `SetPosition`.
-  - Садия `000D7505`: 570 + 1413 единиц за два кадра (242.5 с), 458 + 1407 (270.4 с). Пользователь видел, что она пропала, а после входа стояла на кухне.
-- **Вход игрока.**
-  - NPC ячейки, в которую входит игрок, «догоняют» в high: `AE#37621+0x34d` → `AE#37618+0x9dc` → `AE#37309+0x31`.
-  - Олава `0001A699` — 1187 единиц (120.5 с), Садия — 346 (154.4 с), Идолаф `0001A689` — 1648 (120.9 с, сразу после двери `AE#19796`).
-  - То же у стражи на улице, когда игрок выходит (74.7 с, 225.8 с).
-- **Прыжки через двери (`tools/run_digest.py`, 0.8.25 и 0.8.26).** Прыжки `kind=cell` по 23–27 тыс. единиц — NPC проходят загрузочную дверь (`AE#19796`): из middleHigh через `AE#37878 < AE#37892 < AE#41717`, из high через `AE#39457 < AE#37360 < AE#41381`.
-  - Почти все — обычная жизнь города. Стражник и Нелкир входят в Драконий Предел через ~24 с после загрузки сохранения в обоих прогонах: в 0.8.25 это совпало со входом игрока в таверну, в 0.8.26 было до него. Олфрид входит в дом Сынов Битвы, Алем — в храм Кинарет, Олава выходит из таверны.
-  - К таверне относится только Идолаф: входит через 0.25–0.7 с после игрока (0.8.25 — 120.8 с, 0.8.26 — 60.8 с), выходит через 0.4 с после него (0.8.26, 98.3 с) и снова входит при работающем портале, уже из high (108.8 с).
-- **Прогон 0.8.24.** Идолаф получает пакет слушателя барда `00108ED6` и проходит дверь мгновенно, путём NPC не из high: `AE#41297` → `AE#41717` → `AE#37892` → `AE#37878` → `AE#19796`. `AE#37892` есть и в этом пути, и в крупных шагах.
-- **Подключение интерьера порталом** — `docs/FEATURES.md`, 5.11 («Подключение»). Портал отключает интерьер при открытии `Loading Menu`.
+- **Player exits the tavern.**
+  - The portal attaches the interior and raises its NPCs to high after ~1.7 s. In `src/InteriorSim.cpp`, this is `kSettleUs` = 1.5 s after the loading screen, then `MoveToHigh`: `promote` record, `levelsBefore` = 1.
+  - Until then, interior NPCs are in middleHigh, and the game moves them along their paths in large steps: `AE#37892+0xa3` → `AE#37877+0xda` → `AE#37313+0xa0` → `SetPosition`.
+  - Saadia `000D7505`: 570 + 1413 units in two frames (242.5 s), 458 + 1407 (270.4 s). The user saw her disappear and then found her standing in the kitchen after entering.
+- **Player enters.**
+  - NPCs in the cell the player enters “catch up” in high: `AE#37621+0x34d` → `AE#37618+0x9dc` → `AE#37309+0x31`.
+  - Olava `0001A699` — 1187 units (120.5 s), Saadia — 346 (154.4 s), Idolaf `0001A689` — 1648 (120.9 s, immediately after the door `AE#19796`).
+  - The same happens to guards outside when the player exits (74.7 s, 225.8 s).
+- **Jumps through doors (`tools/run_digest.py`, 0.8.25 and 0.8.26).** `kind=cell` jumps of 23–27 thousand units are NPCs passing through a loading door (`AE#19796`): from middleHigh via `AE#37878 < AE#37892 < AE#41717`, from high via `AE#39457 < AE#37360 < AE#41381`.
+  - Almost all are ordinary city activity. A guard and Nelkir enter Dragonsreach ~24 s after loading the save in both runs: in 0.8.25 this coincided with the player entering the tavern; in 0.8.26 it happened beforehand. Olfrid enters House Battle-Born, Ahlam enters the Temple of Kynareth, Olava exits the tavern.
+  - Only Idolaf concerns the tavern: he enters 0.25–0.7 s after the player (0.8.25 — 120.8 s, 0.8.26 — 60.8 s), exits 0.4 s after the player (0.8.26, 98.3 s), and enters again while the portal is active, this time from high (108.8 s).
+- **Run 0.8.24.** Idolaf receives bard-audience package `00108ED6` and passes through the door instantly, using the path for an NPC not in high: `AE#41297` → `AE#41717` → `AE#37892` → `AE#37878` → `AE#19796`. `AE#37892` appears both in this path and in the large steps.
+- **Portal attachment of the interior** — `docs/FEATURES.md`, 5.11 (“Attachment”). The portal detaches the interior when `Loading Menu` opens.
 
-## Сделать
+## Tasks
 
-1. **Исследование, без кода.** Что делают `AE#37618`/`AE#37621` (догон: при смене ячейки игрока? при переходе в high?) и `AE#37877`/`AE#37892` (движение middleHigh по пути). Условия, флаги, время, за которое догоняют. Инструменты: `tools/name_functions.py`, dumpbin (`CLAUDE.md`, раздел 7).
-2. **Исправление:**
-   - **выход:** NPC интерьера портала не выпадают из high. Варианты:
-     - поднимать их сразу при закрытии экрана загрузки, без `kSettleUs`, если интерьер уже загружен;
-     - не давать игре опускать их: перехват перевода в middleHigh для актёров интерьера портала;
-   - **вход:** не догонять тех, кто и так был в high через портал (перехват `AE#37618` для них).
+1. **Research, no code.** What `AE#37618`/`AE#37621` do (catch-up: on player cell change? on entering high?) and what `AE#37877`/`AE#37892` do (middleHigh path movement). Conditions, flags, and time over which catch-up occurs. Tools: `tools/name_functions.py`, dumpbin (`CLAUDE.md`, section 7).
+2. **Fix:**
+   - **exit:** portal-interior NPCs must not drop out of high. Options:
+     - raise them as soon as the loading screen closes, without `kSettleUs`, if the interior is already loaded;
+     - prevent the game from lowering them: hook the transition to middleHigh for portal-interior actors;
+   - **entry:** do not catch up those already in high through the portal (hook `AE#37618` for them).
 
-   Пакеты и данные NPC не менять (`CLAUDE.md`, 5.14, п. 7).
-3. **Контроль без портала** (F8 выключен): есть ли те же скачки. Правило — `CLAUDE.md`, раздел 7.
+   Do not change NPC packages or data (`CLAUDE.md`, 5.14, item 7).
+3. **Control without the portal** (F8 disabled): check whether the same jumps occur. Rule — `CLAUDE.md`, section 7.
 
-## Как проверить в игре
+## How to test in game
 
-F8 включён. Дождаться, когда Садия идёт из кухни к стойке. Выйти и смотреть через портал, войти обратно. Повторить 2–3 раза. Затем то же с выключенным F8.
+F8 enabled. Wait until Saadia walks from the kitchen to the counter. Exit and watch through the portal, then enter again. Repeat 2–3 times. Then repeat with F8 disabled.
 
-## Конфликты
+## Conflicts
 
-`InteriorSim.cpp`: подключение и подъём NPC. Будущая T20 (вход без отключения интерьера) идёт после этой задачи.
+`InteriorSim.cpp`: attachment and raising NPCs. Future T20 (entry without detaching the interior) comes after this task.

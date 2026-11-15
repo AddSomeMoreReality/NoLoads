@@ -1,41 +1,41 @@
-# T01. Сводка прогона, ветка в имени архива и в логе
+# T01. Run summary, branch in archive name and log
 
-Ветка `task/T01-run-digest`. Код: `tools/`, `scripts/build.ps1`, немного `src/`. Прогона нет: проверка на готовых логах.
+Branch `task/T01-run-digest`. Code: `tools/`, `scripts/build.ps1`, a small amount in `src/`. No game run: verify against existing logs.
 
-## Зачем
+## Why
 
-Сейчас каждый разбор трассы — одноразовые скрипты и их длинный вывод в контексте чата. Нужен один инструмент с короткой сводкой. Нужно и различать сборки разных веток: в Vortex и в логах.
+Currently every trace analysis uses one-off scripts and their lengthy output in the chat context. A single tool with a short summary is needed. Builds from different branches also need to be distinguishable in Vortex and in logs.
 
-## Сделать
+## Tasks
 
-1. **`tools/run_digest.py <папка прогона> [--full]`.**
-   - Только stdlib, Python 3.12.
-   - Пишет `<папка>/digest.md` в UTF-8, в консоль печатает только путь: кириллица в консоли ломается.
-   - Каждый раздел ≤ 40 строк, `--full` снимает ограничение.
-   - Имена в трассе — UTF-8, трасса — `CellLoadResearch.trace.jsonl`, одна запись JSON на строку.
+1. **`tools/run_digest.py <run folder> [--full]`.**
+   - Standard library only, Python 3.12.
+   - Writes `<folder>/digest.md` in UTF-8 and prints only the path to the console: Cyrillic breaks in the console.
+   - Each section ≤ 40 lines; `--full` removes the limit.
+   - Names in the trace are UTF-8; the trace is `CellLoadResearch.trace.jsonl`, one JSON record per line.
 
-   Разделы:
-   - **Переходы:** время, откуда → куда (`event.ActorCell`), длительности из `transition.visible` и `loading.summary`.
-   - **Клавиши:** `input.hotkey`.
-   - **Портал:** `portal.start`, снятие (`interior.sim` с `action` = `detach`), `portal.fault`. Для каждого перехода — последний `interior.sim` `status` перед ним. Из него ключевые счётчики:
+   Sections:
+   - **Transitions:** time, source → destination (`event.ActorCell`), durations from `transition.visible` and `loading.summary`.
+   - **Keys:** `input.hotkey`.
+   - **Portal:** `portal.start`, detach (`interior.sim` with `action` = `detach`), `portal.fault`. For each transition — the last `interior.sim` `status` before it. Key counters from that record:
      - `portal.passes`;
      - `soundsCarried`, `subtitlesCarried`, `distancesCarried`;
-     - `imageSpace.swaps` и `imageSpace.held`;
+     - `imageSpace.swaps` and `imageSpace.held`;
      - `blocker`.
 
-     Найди их, посмотрев одну запись `status`.
+     Find them by examining one `status` record.
    - **`actor.jump`:**
-     - по актёрам: имя, число, сумма и максимум `distance`;
-     - по подписи стека: первые 3 кадра без `CellLoadResearch.dll`;
-     - у каждого прыжка — время от ближайшего перехода («+0.4 с после выхода»).
-   - **`scene.change`:** сцены по квестам, время относительно переходов.
-   - **Сбои:** `frame.hitch`, `portal.fault`, строки `[error]` и `[warning]` из `CellLoadResearch.log`, наличие `*.hang.txt`.
+     - by actor: name, count, sum and maximum of `distance`;
+     - by stack signature: first 3 frames excluding `CellLoadResearch.dll`;
+     - for each jump — time relative to the nearest transition (“+0.4 s after exit”).
+   - **`scene.change`:** scenes by quest, time relative to transitions.
+   - **Failures:** `frame.hitch`, `portal.fault`, `[error]` and `[warning]` lines from `CellLoadResearch.log`, presence of `*.hang.txt`.
 
-   Проверить на `logs/run-0.8.25/` и `logs/run-0.8.24/`. Вывод для 0.8.25 (≤ 150 строк) приложить к результату.
-2. **Имя архива.** `scripts/build.ps1` дописывает имя ветки, если это не `feature/interior-portal` и не `main`. Пример: ветка `exp/T10-bard-song` → `CellLoadResearch-0.8.26-T10-bard-song.zip`.
-3. **Ветка и короткий хеш коммита** — в лог и в запись `info` трассы при старте. Например, `build.ps1` пишет генерируемый заголовок (в `.gitignore`), или define в `xmake.lua`. Сборка без git не должна ломаться.
-4. **`tools/analyze_trace.py`:** посмотреть, что пересекается. Не удалять, в результате написать, что из него устарело.
+   Verify against `logs/run-0.8.25/` and `logs/run-0.8.24/`. Attach the output for 0.8.25 (≤ 150 lines) to the result.
+2. **Archive name.** `scripts/build.ps1` appends the branch name if it is neither `feature/interior-portal` nor `main`. Example: branch `exp/T10-bard-song` → `CellLoadResearch-0.8.26-T10-bard-song.zip`.
+3. **Branch and short commit hash** — in the log and in the trace `info` record at startup. For example, `build.ps1` writes a generated header (in `.gitignore`), or a define in `xmake.lua`. Building without git must not fail.
+4. **`tools/analyze_trace.py`:** identify overlapping functionality. Do not delete it; state in the result which parts are obsolete.
 
-## Нельзя
+## Not allowed
 
-- Менять формат трассы.
+- Changing the trace format.

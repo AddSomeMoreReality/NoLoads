@@ -1,193 +1,193 @@
-# Похожие моды и проекты
+# Similar mods and projects
 
-Первый поиск — 02.11.2026 по GitHub, Nexus и форумам. Вопрос был такой: кто ещё рисует вторую камеру, держит клетку без игрока или проводит звук между клетками. Второй проход в тот же день — разбор исходников, которые скачал пользователь и которые удалось клонировать с GitHub.
+First search — 02.11.2026 on GitHub, Nexus, and forums. The question was: who else renders a second camera, holds a cell without the player, or carries sound between cells. Second pass the same day — reviewing the sources the user downloaded and those that could be cloned from GitHub.
 
-**Лицензии.** Из GPL-проектов код в мод с другой лицензией копировать нельзя. Из проектов без лицензии тоже нельзя: брать можно только идеи и факты о бинарнике игры. Код из MIT-проектов можно брать с указанием авторства. Правило для Realistic Reflections — в `docs/FEATURES.md`, 5.15.
+**Licenses.** Code from GPL projects cannot be copied into a mod with a different license. From projects without a license also cannot: only ideas and facts about the game binary may be taken. Code from MIT projects may be taken with attribution. The rule for Realistic Reflections is in `docs/FEATURES.md`, 5.15.
 
-## Что изменилось после первого поиска
+## What changed after the first search
 
-- **Audio Occlusion - Universal Support** удалён автором.
-- **TrueThroughScope**: исходники на [GitHub](https://github.com/ss7332337/True-Through-Scope), лицензия MIT.
-- Пользователь скачал в `E:\Games\Skyrim\ModCreation\references\`:
-  - Audio Occlusion, вместе с исходниками;
-  - Bodycam FO4, только DLL;
-  - Commonwealth Bodycam, исходники;
+- **Audio Occlusion - Universal Support** was removed by the author.
+- **TrueThroughScope**: sources on [GitHub](https://github.com/ss7332337/True-Through-Scope), MIT license.
+- The user downloaded to `E:\Games\Skyrim\ModCreation\references\`:
+  - Audio Occlusion, with sources;
+  - Bodycam FO4, DLL only;
+  - Commonwealth Bodycam, sources;
   - TrueThroughScope, DLL.
-- Склонированы в `E:\Games\Skyrim\ModCreation\references\github\`:
+- Cloned into `E:\Games\Skyrim\ModCreation\references\github\`:
   - True-Through-Scope, STB_ProjectileControl, hdtSMP64, Fo4VR-True-Scopes;
   - SeverActions, Modern-NPC-Pathing, SimplyKnock;
   - SkyrimSE-SmoothCam, FreeCameraFramework, community-shaders.
 
-## Решение пользователя по подходам
+## User's decision on approaches
 
-- **Перенос интерьера в клетку экстерьера** — плохой вариант. Нужна неевклидова связь, то есть портал. Сюда же относятся Breezehome без загрузки, Open Cities и Seamless City Interiors.
-- **Скрывать загрузку лифтами и шлюзами** (как Neon Core в Starfield) не подходит. В Skyrim их нет, переход между клетками должен быть незаметен глазу.
+- **Moving the interior into the exterior cell** — a bad option. A non-Euclidean link is needed, i.e. a portal. Breezehome without loading, Open Cities, and Seamless City Interiors fall into the same category.
+- **Hiding the load with elevators and airlocks** (like Neon Core in Starfield) does not fit. Skyrim has none, and the transition between cells must be invisible to the eye.
 
-## 1. Разбор
+## 1. Review
 
-### Audio Occlusion (SKSE, исходники в архиве, лицензии нет — только идеи)
+### Audio Occlusion (SKSE, sources in the archive, no license — ideas only)
 
-Глушит голоса и звуки за стенами.
+Muffles voices and sounds behind walls.
 
-**Как устроен:**
-- **Перехват вызовов.** Сканирует `.text` и ставит `write_call<5>` на все прямые вызовы функций звука: сборка, место, следование за узлом, запуск, остановка (`AE#67666`, `67631`, `67636`, `67616`, `67619`). Отдельно перехвачен конструктор реплики диалога (`AE#35220`). Начало функций мод не патчит.
-- **XAudio2.** Перехватывает `CreateSourceVoice` и добавляет флаг фильтра. Затем на конкретном голосе выставляет громкость и фильтр низких частот (`SetFilterParameters`). Место слушателя и источника берёт из `X3DAudioCalculate`.
-- **Перекрытие.** Лучи `hkpWorld::CastRay` без актёров. Если прямой путь закрыт, ищет обход слева, справа и сверху и учитывает ширину прохода.
+**How it works:**
+- **Call interception.** Scans `.text` and places `write_call<5>` on all direct calls of sound functions: assembly, position, node tracking, start, stop (`AE#67666`, `67631`, `67636`, `67616`, `67619`). The dialogue replica constructor (`AE#35220`) is intercepted separately. The mod does not patch function prologues.
+- **XAudio2.** Intercepts `CreateSourceVoice` and adds a filter flag. Then on a specific voice it sets volume and a low-pass filter (`SetFilterParameters`). Listener and source positions are taken from `X3DAudioCalculate`.
+- **Occlusion.** Rays via `hkpWorld::CastRay` without actors. If the direct path is blocked, it looks for a detour to the left, right, and above, and takes the width of the passage into account.
 
-**Что нам из этого:**
-- Наш звук через дверь сейчас идёт сквозь стены здания. У AO есть готовая схема: глушить звук и срезать высокие частоты, когда путь от источника к слушателю закрыт. Для портала путь — это «источник → дверь → слушатель».
-- Голос говорящего «следует» за его узлом, поэтому место голоса пересчитывается каждый кадр. Наш перенос в `SetEmitterPositionImpl` это уже ловит: песня барда снаружи была слышна.
-- **Совместимость.** AO будет пускать лучи от игрока к перенесённой точке. Луч упрётся в стены здания, и звук приглушится. Это близко к правде, но звук не учитывает, открыт ли дверной проём.
+**What we take from this:**
+- Our sound through the door currently passes through the walls of the building. AO has a ready-made scheme: muffle the sound and cut high frequencies when the path from source to listener is blocked. For a portal the path is "source → door → listener".
+- A speaker's voice "follows" their node, so the voice position is recomputed every frame. Our hook in `SetEmitterPositionImpl` already catches this: the bard's song was audible outside.
+- **Compatibility.** AO will cast rays from the player to the displaced point. The ray will hit the walls of the building, and the sound will be muffled. This is close to the truth, but the sound does not account for whether the doorway is open.
 
 ### True Through Scope (Fallout 4, MIT)
 
-Прицел, через который видно второй камерой.
+A scope through which a second camera sees.
 
-**Как устроен:**
-- Второй вид рисуется после основного прохода и до ImageSpace (перехват `Render_PreUI`), прямо в цели рендера игры: сначала копия первого кадра, затем второй проход, затем слияние (`RenderTargetMerger`).
-- Для TAA пишется маска векторов движения (`ApplyMaskToMVCS.hlsl`).
-- Свет для второго вида сохраняется и подменяется (`LightBackupSystem`), отсечение своё (`ScopeCulling`).
+**How it works:**
+- The second view is drawn after the main pass and before ImageSpace (hooking `Render_PreUI`), directly into the game's render target: first a copy of the first frame, then a second pass, then merging (`RenderTargetMerger`).
+- For TAA a motion-vector mask is written (`ApplyMaskToMVCS.hlsl`).
+- Lighting for the second view is saved and substituted (`LightBackupSystem`), culling is its own (`ScopeCulling`).
 
-**Что нам из этого:**
-- Подтверждает наше место прохода: после мира, до ImageSpace.
-- Объясняет огонь. Картинка второго вида проходит цветокоррекцию основного кадра: адаптацию глаза, bloom, насыщенность. Для прицела это правильно, у портала в другое освещение нет. Нужна своя тональная компрессия для картинки портала (`docs/FINDINGS.md`, прогон 0.8.24).
-- Маска векторов движения — второй способ избавиться от двоения при TAA. Мы закрыли его иначе в 0.8.21.
+**What we take from this:**
+- Confirms our pass placement: after the world, before ImageSpace.
+- Explains the fire. The second view's image goes through the main frame's color correction: eye adaptation, bloom, saturation. For a scope this is correct; a portal into different lighting has none. The portal image needs its own tone mapping (`docs/FINDINGS.md`, run 0.8.24).
+- The motion-vector mask is a second way to get rid of TAA ghosting. We solved it differently in 0.8.21.
 
-### Commonwealth Bodycam (Fallout 4, исходники)
+### Commonwealth Bodycam (Fallout 4, sources)
 
-Это не второй вид, а эффект поверх кадра через ReShade API.
+This is not a second view, but an effect over the frame via the ReShade API.
 
-Полезная мелочь: состояние D3D11 сохраняется и возвращается целиком через `ID3D11Device1::CreateDeviceContextState` и `SwapDeviceContextState`. Это надёжнее нашего ручного сохранения вокруг прохода и пригодится, когда порталов станет много.
+Useful detail: D3D11 state is saved and restored wholesale via `ID3D11Device1::CreateDeviceContextState` and `SwapDeviceContextState`. This is more reliable than our manual saving around the pass and will come in handy when there are many portals.
 
-### Bodycam FO4 (только DLL)
+### Bodycam FO4 (DLL only)
 
-Прицел с увеличением вторым рендером только внутри линзы. Исходников нет, разбирать нечего.
+A scope with zoom via a second render only inside the lens. No sources, nothing to review.
 
 ### STB Projectile Control (SE/AE, GPL-3)
 
-Позволяет управлять стрелой или заклинанием в полёте. Пригодится для шага 5: снаряды через дверь.
+Allows controlling an arrow or spell in flight. Will be useful for step 5: projectiles through the door.
 
-- `ArrowProjectile` и `MissileProjectile::UpdateImpl` (vfunc) заканчиваются `Projectile::Move`. Тот берёт скорость через виртуальную `GetLinearVelocity`, умножает на шаг кадра и двигает ссылку. Значит, пересечение двери можно ловить в `UpdateImpl` и там же переносить ссылку и поворачивать скорость.
-- Слот `0xC3` у `MissileProjectile` (`CanReorient`) решает, берёт ли модель углы ссылки. У стрелы он возвращает 1, у заклинания 0.
-- `ProcessImpacts` вызывается каждый кадр. Попадание узнаётся по флагу `kProcessedImpacts`.
-- Снаряд за пределами загруженной области ни во что не попадает. В интерьере ему понадобится мир Havok интерьера.
-- Свободная камера сделана через `FreeCameraState::GetRotation` и `GetTranslation`. Это пригодится для требования «любая камера» (5.14).
+- `ArrowProjectile` and `MissileProjectile::UpdateImpl` (vfunc) end with `Projectile::Move`. It takes velocity via virtual `GetLinearVelocity`, multiplies by the frame step, and moves the reference. So the door crossing can be caught in `UpdateImpl`, and the reference moved and velocity rotated right there.
+- Slot `0xC3` of `MissileProjectile` (`CanReorient`) decides whether the model takes the reference's angles. For an arrow it returns 1, for a spell 0.
+- `ProcessImpacts` is called every frame. A hit is detected by the `kProcessedImpacts` flag.
+- A projectile outside the loaded area hits nothing. Inside an interior it will need the interior's Havok world.
+- The free camera is done via `FreeCameraState::GetRotation` and `GetTranslation`. This will be useful for the "any camera" requirement (5.14).
 
 ### HDT-SMP (aers/hdtSMP64, MIT, 2020)
 
-Физика волос и одежды на Bullet, в собственном мире, по скелетам.
+Hair and clothing physics on Bullet, in its own world, per skeletons.
 
-- Скелет считается в сцене, если у его узла есть три уровня родителей. У NPC интерьера портала 3D висит под нашим узлом вне сцены, но три родителя у него есть. Значит, физика у них должна идти.
-- **Проверить:** современный форк FSMP (Faster HDT-SMP) отключает физику по расстоянию до камеры. Для него NPC интерьера стоят в 27 000 единиц, и волосы через портал могут не двигаться. Актуально, если пользователь им пользуется.
+- A skeleton is considered in the scene if its node has three levels of parents. Portal interior NPCs' 3D hangs under our node outside the scene, but it does have three parents. So physics should run for them.
+- **To check:** the modern fork FSMP (Faster HDT-SMP) disables physics by distance to the camera. For it, interior NPCs stand 27,000 units away, and hair may not move through the portal. Relevant if the user runs it.
 
 ### SeverActions
 
-В репозитории только скрипты Papyrus и готовая DLL, нативного кода нет. Путешествия «вне поля зрения» сделаны на Papyrus. Отставших спутников мод телепортирует и проводит через двери. Это обычный подход, для портала не годится.
+The repository has only Papyrus scripts and a ready DLL, no native code. "Off-screen" travels are done in Papyrus. Lagging followers are teleported and walked through doors by the mod. This is the ordinary approach, no good for a portal.
 
 ### NPC Pathing NG (Modern-NPC-Pathing, GPL-3)
 
-Ищет застрявших NPC: пакет велит идти, а позиция не меняется. Сначала пробует перепрыгнуть препятствие, в крайнем случае телепортирует.
+Finds stuck NPCs: a package tells them to walk, but the position does not change. First it tries to jump over the obstacle, in the worst case teleports.
 
-**Совместимость:** NPC интерьера за порталом может показаться ему застрявшим. Если пользователь поставит этот мод, смотреть записи `actor.jump`.
+**Compatibility:** an interior NPC behind the portal may look stuck to it. If the user installs this mod, watch the `actor.jump` records.
 
 ### SimplyKnock (2018)
 
-Стук в запертые двери: дверь используется как активатор. К порталам отношения не имеет.
+Knocking on locked doors: the door is used as an activator. Unrelated to portals.
 
 ### SmoothCam, FreeCameraFramework
 
-Оба двигают `PlayerCamera::cameraRoot` и `NiCamera` и пересчитывают матрицу (`UpdateWorldToScreenMtx`).
-- Портал берёт глаз из камеры мира (`AE#36609`), а не из позиции игрока, так что с ними он должен работать.
-- FCF даёт API путей камеры. Через него удобно проверить «любую камеру» (5.14).
+Both move `PlayerCamera::cameraRoot` and `NiCamera` and recompute the matrix (`UpdateWorldToScreenMtx`).
+- The portal takes the eye from the world camera (`AE#36609`), not from the player's position, so it should work with them.
+- FCF provides a camera path API. It is convenient for testing "any camera" (5.14).
 
 ### Community Shaders (GPL-3)
 
-- `package/Shaders/ISHDR.hlsl` — восстановленный шейдер тональной компрессии. По нему видно, что уличный ImageSpace делает с картинкой портала.
-- Skylighting рисует проход окклюзии осадков несколько раз за кадр с разных направлений (вызов из `AE#36559 + 0x3BF`). Ещё он увеличивает пул групп прозрачности накопителя (`BSShaderAccumulator` vfunc `0x28`, `StartGroupingAlphas`). Для многих порталов это важно: этот пул может кончиться.
-- **Совместимость.** Deferred, Light Limit Fix, Linear Lighting, Upscaling и Post Processing меняют и свет, и тональную компрессию. У пользователя Community Shaders не установлен: в `Data\SKSE\Plugins` только наш плагин и Crash Logger. Прогоны идут на чистом рендере игры.
+- `package/Shaders/ISHDR.hlsl` — the reconstructed tone-mapping shader. It shows what the outdoor ImageSpace does to the portal image.
+- Skylighting draws the precipitation occlusion pass several times per frame from different directions (call from `AE#36559 + 0x3BF`). It also enlarges the accumulator's alpha grouping pool (`BSShaderAccumulator` vfunc `0x28`, `StartGroupingAlphas`). For many portals this matters: this pool can run out.
+- **Compatibility.** Deferred, Light Limit Fix, Linear Lighting, Upscaling, and Post Processing change both lighting and tone mapping. The user does not have Community Shaders installed: `Data\SKSE\Plugins` has only our plugin and Crash Logger. Runs are on the game's clean renderer.
 
 ### Fo4VR True Scopes (GPL-3)
 
-Уже был в первом поиске: при сбое отключает себя после трёх повторов, линзу обновляет раз в N кадров. Нового сверх этого нет.
+Already covered in the first search: on failure it disables itself after three retries, updates the lens once per N frames. Nothing new beyond that.
 
-## 2. Подход другой, но полезно знать
+## 2. A different approach, but good to know
 
-| Проект | Подход | Что из этого следует |
+| Project | Approach | What follows from it |
 |---|---|---|
-| [No Loading Screen Breezehome](https://www.nexusmods.com/skyrim/mods/109103) | Интерьер перенесён в мировое пространство, один дом | Отвергнуто (см. решение пользователя). Наш 0.8.5 показал, что интерьер больше здания |
-| Open Cities Skyrim | Города перестроены внутри основного мира | [По отзывам](https://stepmodifications.org/forum/topic/18862-open-cities-alternatives-no-gates/), несовместим почти со всем. Портал не меняет данные игры |
-| Starfield: Seamless City Interiors | [Копирует данные интерьера в мир](https://www.dsogaming.com/mods/starfield-just-got-a-must-have-seamless-city-interiors-mod/) | Тот же приём и те же конфликты |
-| Starfield: Neon Core Disguised Seamless | [Скрывает загрузку лифтами](http://starfieldunity.com/mods/2450/neon-core-disguised-seamless-project) | Отвергнуто: в Skyrim нет лифтов и шлюзов |
-| OpenMW | [Запрос #6602 «порталы»](https://gitlab.com/OpenMW/openmw/-/issues/6602) | Нигде не реализовано. Названы те же трудности: интерьеры больше зданий, нужна неевклидова связь |
-| Oblivion Reloaded | [Nexus](https://nexusmods.com/oblivion/mods/51032) | Расширение рендера без правки exe, старый движок |
-| Skyrim Together Reborn, SkyMP | [TiltedEvolution](https://github.com/tiltedphoques/TiltedEvolution) | Копии игроков в чужой клетке. Как они живут с Havok, не выяснено |
-| Faster Loadscreens | [Nexus SE 182852](https://www.nexusmods.com/skyrimspecialedition/mods/182852) | Только ускоряет загрузку |
-| CommonLibSSE-NG | [v15.1.0](https://github.com/alandtse/CommonLibSSE-NG/releases/tag/v15.1.0), MIT | У нас v13.1.0. Обновление может убрать часть наших сдвигов (поля `BSShaderAccumulator`, доступ к рендеру) |
+| [No Loading Screen Breezehome](https://www.nexusmods.com/skyrim/mods/109103) | Interior moved into the worldspace, a single house | Rejected (see the user's decision). Our 0.8.5 showed the interior is larger than the building |
+| Open Cities Skyrim | Cities rebuilt inside the main world | [Per reviews](https://stepmodifications.org/forum/topic/18862-open-cities-alternatives-no-gates/), incompatible with almost everything. A portal does not change game data |
+| Starfield: Seamless City Interiors | [Copies interior data into the world](https://www.dsogaming.com/mods/starfield-just-got-a-must-have-seamless-city-interiors-mod/) | The same technique and the same conflicts |
+| Starfield: Neon Core Disguised Seamless | [Hides the load with elevators](http://starfieldunity.com/mods/2450/neon-core-disguised-seamless-project) | Rejected: Skyrim has no elevators and airlocks |
+| OpenMW | [Issue #6602 "portals"](https://gitlab.com/OpenMW/openmw/-/issues/6602) | Not implemented anywhere. The same difficulties are named: interiors larger than buildings, a non-Euclidean link needed |
+| Oblivion Reloaded | [Nexus](https://nexusmods.com/oblivion/mods/51032) | Renderer extension without exe patching, old engine |
+| Skyrim Together Reborn, SkyMP | [TiltedEvolution](https://github.com/tiltedphoques/TiltedEvolution) | Copies of players in another's cell. How they live with Havok, not determined |
+| Faster Loadscreens | [Nexus SE 182852](https://www.nexusmods.com/skyrimspecialedition/mods/182852) | Only speeds up loading |
+| CommonLibSSE-NG | [v15.1.0](https://github.com/alandtse/CommonLibSSE-NG/releases/tag/v15.1.0), MIT | We are on v13.1.0. Updating may remove some of our offsets (`BSShaderAccumulator` fields, render access) |
 
-## 3. Вывод
+## 3. Conclusion
 
-- **Готового аналога портала нет.** Второй вид в другой клетке через дверь с живым интерьером никто не делал.
-- **Что пригодится сейчас:**
-  - True Through Scope и шейдер Community Shaders — для огня: картинке портала нужна своя цветокоррекция;
-  - Audio Occlusion — для звука через дверь, а не сквозь стены;
-  - STB Projectile Control — для шага 5, снаряды через дверь;
-  - `SwapDeviceContextState` из Commonwealth Bodycam — для надёжного сохранения состояния D3D11, когда порталов станет много.
-- **Совместимость проверить:** Audio Occlusion (лучи к перенесённым точкам), FSMP (физика по расстоянию до камеры), NPC Pathing NG (телепорт «застрявших»).
+- **There is no ready-made portal analogue.** No one has done a second view into another cell through a door with a living interior.
+- **What is useful right now:**
+  - True Through Scope and the Community Shaders shader — for the fire: the portal image needs its own color correction;
+  - Audio Occlusion — for sound through the door, not through walls;
+  - STB Projectile Control — for step 5, projectiles through the door;
+  - `SwapDeviceContextState` from Commonwealth Bodycam — for reliable D3D11 state saving when there are many portals.
+- **Compatibility to check:** Audio Occlusion (rays to displaced points), FSMP (physics by camera distance), NPC Pathing NG (teleporting the "stuck").
 
-## 4. Технические и исправляющие моды (T14, 04.11.2026)
+## 4. Technical and bug-fixing mods (T14, 04.11.2026)
 
-Вопрос: брать ли мод в зависимости, опираться на него или только проверять совместимость. Подробности и план прогонов — `docs/tasks/results/T14.md`. Клон Engine Fixes — `references\github\EngineFixesSkyrim64`, разбирался тег `7.0.19` (`94ceec1`): это версия AIO у пользователя.
+Question: whether to take the mod as a dependency, rely on it, or only verify compatibility. Details and the run plan — `docs/tasks/results/T14.md`. Engine Fixes clone — `references\github\EngineFixesSkyrim64`, reviewed tag `7.0.19` (`94ceec1`): this is the AIO version the user has.
 
 ### SSE Engine Fixes (aers, MIT)
 
-**Как устроен.** На SE и на 1.6.1170 (7.0.19) `d3dx9_42.dll` вызывает экспорт `Initialize` раньше SKSE. В нём ставятся замена памяти, патчи и почти все исправления. При `kDataLoaded` добавляются ещё четыре: скриншоты сохранений, мышь, отражения деревьев, параллакс. Трамплин у него свой. Версии: 1.5.97 (отдельные файлы Part 1 и Part 2), 1.6.1170 (7.0.19 AIO), 1.7.x (7.0.20 и новее, `master` собран под 1.7.104).
+**How it works.** On SE and on 1.6.1170 (7.0.19) `d3dx9_42.dll` calls the `Initialize` export before SKSE. Memory replacement, patches, and almost all fixes are installed in it. At `kDataLoaded` four more are added: save screenshots, mouse, tree reflections, parallax. Its trampoline is its own. Versions: 1.5.97 (separate Part 1 and Part 2 files), 1.6.1170 (7.0.19 AIO), 1.7.x (7.0.20 and newer, `master` built for 1.7.104).
 
-**Пересечения с нами.** Я сравнил все `RELOCATION_ID`, `REL::ID` и таблицы ID в `src/` Engine Fixes с ID в нашем коде (63 ID) и с упоминаниями `AE#` (117 ID).
-- Совпадение одно: `AE#106342`. Мы вызываем его в `PortalLights.cpp` (сбор фигур под светом), а Engine Fixes ставит `write_branch` на `+0x16` и добавляет проверку на `nullptr` (`ShadowSceneNodeNullPtrCrash`). Наш вызов от этого только безопаснее.
-- Наши detour, `write_call` (5 мест) и vfunc с его патчами не совпадают. Его vfunc: `Actor`/`Character`/`PlayerCharacter` `0x101`, `EnchantmentItem`, `TESObjectBOOK`, `BGSMusicType[1]` и другие; наши слоты `Character` — `0x79` и `0xAD`.
-- Функции T10 и T11 он не трогает: `AE#24140`, `24235`, `24236`, `37501`, `37503`, `37618`, `37621`, `55321`. Уровни обработки (`ProcessLists`, `MoveToHigh`) тоже не трогает.
-- Рядом, но в других функциях: `CellInit` (`AE#18905+0x114`, локация ячейки до инициализации), `ESLCELLLoadBug` (`AE#18885`, `18886`), `SavedHavokDataLoadInit` (`AE#19535+0x348`), `CalendarSkipping` (вызовы в `AE#13328`, `36564`, `40445`), `TorchLandscape` (`AE#17610+0x530`, `AddLight`), `LipSync` (`AE#16267`).
+**Overlaps with us.** I compared all `RELOCATION_ID`, `REL::ID`, and ID tables in the Engine Fixes `src/` with the IDs in our code (63 IDs) and with `AE#` mentions (117 IDs).
+- One match: `AE#106342`. We call it in `PortalLights.cpp` (shape collection under a light), and Engine Fixes places a `write_branch` at `+0x16` adding a `nullptr` check (`ShadowSceneNodeNullPtrCrash`). Our call only becomes safer from this.
+- Our detours, `write_call` (5 places), and vfuncs do not overlap with its patches. Its vfuncs: `Actor`/`Character`/`PlayerCharacter` `0x101`, `EnchantmentItem`, `TESObjectBOOK`, `BGSMusicType[1]` and others; our `Character` slots — `0x79` and `0xAD`.
+- It does not touch the T10 and T11 functions: `AE#24140`, `24235`, `24236`, `37501`, `37503`, `37618`, `37621`, `55321`. Processing levels (`ProcessLists`, `MoveToHigh`) are untouched as well.
+- Nearby, but in different functions: `CellInit` (`AE#18905+0x114`, cell location before initialization), `ESLCELLLoadBug` (`AE#18885`, `18886`), `SavedHavokDataLoadInit` (`AE#19535+0x348`), `CalendarSkipping` (calls in `AE#13328`, `36564`, `40445`), `TorchLandscape` (`AE#17610+0x530`, `AddLight`), `LipSync` (`AE#16267`).
 
-**Что меняет наши допущения.**
-- **`bOverrideRenderPassCache=true` по умолчанию.** `BSRenderPass::Allocate` и `Deallocate` (`AE#107497`, `107498`) заменены на `malloc` и `free` через tbbmalloc, а пул проходов (`AE#107500`–`107502`) отключён. Слова «проходы берутся из общего пула» (`CLAUDE.md`, раздел 7, и комментарий в `PortalRender.cpp`) с Engine Fixes неверны. `DrainPasses` всё равно нужен: списки проходов на свойстве остаются общими, но зацикливание как в 0.8.21 проявится иначе, через повторное использование освобождённой памяти. Пул больше не кончается, и для многих порталов это плюс.
-- **`BSLightingShaderPropertyShadowMap`.** Игра переиспользует один проход свойства для всех карт теней света, и Engine Fixes считает это ошибкой. Он заводит до четырёх проходов на свойство, по номеру карты теней (`AE#107602`, `106517+0x295`, `106526`, `106500`, `106534`). Это та же беда, что у нас со вторым видом («один список на свойство»), и готовый приём на MIT.
-- **Замена менеджера памяти, scrap heap, памяти Havok и Scaleform.** Освобождённый блок переиспользуется иначе, поэтому падения от «чужого» освобождения (0.8.17, `DetachChild`) будут в другом месте и с другим стеком. Выводы, доказанные трассой и дизассемблером, остаются верными. Стеки Crash Logger со сборкой и без Engine Fixes сравнивать нельзя.
-- **`SafeExit`.** На выходе из игры вызывается `TerminateProcess`, деструкторы не работают. Трасса теряет не больше 250 мс (`kFlushInterval`).
-- **`SaveScreenshots`.** Патчит рендер скриншота сохранения (`AE#105674`). Проверить, нормальный ли скриншот, когда портал в кадре.
+**What changes our assumptions.**
+- **`bOverrideRenderPassCache=true` by default.** `BSRenderPass::Allocate` and `Deallocate` (`AE#107497`, `107498`) are replaced with `malloc` and `free` via tbbmalloc, and the pass pool (`AE#107500`–`107502`) is disabled. The words "passes come from a shared pool" (`CLAUDE.md`, section 7, and the comment in `PortalRender.cpp`) are wrong with Engine Fixes. `DrainPasses` is still needed: the pass lists on a property remain shared, but the looping as in 0.8.21 will manifest differently, through reuse of freed memory. The pool no longer runs out, and for many portals this is a plus.
+- **`BSLightingShaderPropertyShadowMap`.** The game reuses one property pass for all shadow maps of a light, and Engine Fixes considers this a bug. It creates up to four passes per property, by shadow map index (`AE#107602`, `106517+0x295`, `106526`, `106500`, `106534`). This is the same trouble we have with the second view ("one list per property"), and a ready-made MIT technique.
+- **Memory manager replacement, scrap heap, Havok memory, and Scaleform.** A freed block is reused differently, so crashes from "foreign" freeing (0.8.17, `DetachChild`) will be elsewhere and with a different stack. Conclusions proven by trace and disassembly remain valid. Crash Logger stacks from builds with and without Engine Fixes must not be compared.
+- **`SafeExit`.** On game exit `TerminateProcess` is called, destructors do not run. The trace loses no more than 250 ms (`kFlushInterval`).
+- **`SaveScreenshots`.** Patches the save screenshot render (`AE#105674`). Check that the screenshot is normal when a portal is in the frame.
 
-**Тип связи: совместимость, опора — по случаю.** Зависимость не нужна: ничего, что нам дорого сделать самим, он не даёт. Но мод стоит почти у всех, поэтому портал обязан работать вместе с ним. Приёмы с MIT (проходы по номеру вида, `malloc` для проходов) можно брать с указанием авторства.
+**Relationship type: compatibility, reliance — as occasion.** No dependency needed: it provides nothing that is costly for us to do ourselves. But the mod is installed for almost everyone, so the portal must work together with it. MIT techniques (passes per view index, `malloc` for passes) may be taken with attribution.
 
-### USSEP 4.3.8a (Arthmoor и др., мод данных, своя лицензия: ничего не берём)
+### USSEP 4.3.8a (Arthmoor et al., data mod, own license: we take nothing)
 
-Мастер-файлы — `Skyrim.esm`, `Update.esm`, три DLC, `ccBGSSSE001-Fish`, `ccQDRSSE001-SurvivalMode`, `ccBGSSSE037-Curios`, `ccBGSSSE025-AdvDSGS` и `_ResourcePack.esl`; у пользователя всё есть. Версия для 1.5.97 — другая, старая.
+Master files — `Skyrim.esm`, `Update.esm`, three DLCs, `ccBGSSSE001-Fish`, `ccQDRSSE001-SurvivalMode`, `ccBGSSSE037-Curios`, `ccBGSSSE025-AdvDSGS`, and `_ResourcePack.esl`; the user has all of them. The version for 1.5.97 is a different, old one.
 
-**Что меняет у бардов.** Я сравнил записи `.esp` с `Skyrim.esm` и `Update.esm` по подзаписям и VMAD, а исходники из `.bsa` — с `Data\Source\Scripts`.
-- `BardSongs` (`00074A55`): в VMAD добавлено свойство `TalsgarTheWanderer`. Фрагменты те же.
-- `BardSongStarter` (`000BE159`): у псевдонима `Lurbuk` флаги `0` → `0x202` (Optional), иначе квест не запустится после смерти Лурбука. DNAM отличается только версией формы.
-- `0006E53F`, `001062A7`, сцена `000D0843`, узел `000D1EEB` не изменены. Песенные сцены Вайтрана USSEP не трогает: правки только в сценах Коллегии бардов и Солитьюда.
-- **`BardSongsScript.pex` заменён.**
-  - Проверки `None`, `IsDead`, `IsDisabled` и `Is3dLoaded` перенесены в начало `PlaySong` и `Bard2PlaySong`. У ванили `Bard2PlaySong` наличие 3D не проверял.
-  - `StopInnMusic` в ванили всегда вызывает `MUSTavernSilence.Add()`. Ошибка в том, что проверка `HasKeyword(LocTypeInn)` стоит отдельной строкой без `if`. В USSEP музыка глушится, только если игрок сам в таверне. Её вызывают сцены песен со словами (`SF_BardSongsBallad01*`, `SF_BardSongsDrinkingSong01*`).
-- `SF_BardSongsInstrumentalFlute_0006E5AE.pex`: `PlayIdle` только при загруженном 3D.
+**What it changes for bards.** I compared the `.esp` records with `Skyrim.esm` and `Update.esm` by subrecords and VMAD, and the sources from `.bsa` — with `Data\Source\Scripts`.
+- `BardSongs` (`00074A55`): property `TalsgarTheWanderer` added to VMAD. Fragments are the same.
+- `BardSongStarter` (`000BE159`): alias `Lurbuk` flags `0` → `0x202` (Optional), otherwise the quest will not start after Lurbuk's death. DNAM differs only in form version.
+- `0006E53F`, `001062A7`, scene `000D0843`, node `000D1EEB` unchanged. USSEP does not touch Whiterun's song scenes: edits only in the Bards College and Solitude scenes.
+- **`BardSongsScript.pex` replaced.**
+  - Checks `None`, `IsDead`, `IsDisabled`, and `Is3dLoaded` moved to the start of `PlaySong` and `Bard2PlaySong`. In vanilla, `Bard2PlaySong` did not check for 3D.
+  - In vanilla `StopInnMusic` always calls `MUSTavernSilence.Add()`. The bug is that the `HasKeyword(LocTypeInn)` check stands on its own line without `if`. In USSEP music is muted only if the player is in the tavern. It is called by song scenes with vocals (`SF_BardSongsBallad01*`, `SF_BardSongsDrinkingSong01*`).
+- `SF_BardSongsInstrumentalFlute_0006E5AE.pex`: `PlayIdle` only when 3D is loaded.
 
-**NPC таверны.** Саадия, Олава и Микаэл не изменены. У `IdolafBattleBornREF` (`0001A689`) добавлен только `XLRL`. По списку изменений USSEP меняет пакеты: у хозяина таверны убрана предпочтительная скорость (`WhiterunInnkeeperPackage`), у Саадии свой маркер у Хеймскра и 4 часа проповеди, кровати Микаэла и Саадии, флаги прерывания у Йона.
+**Tavern NPCs.** Saadia, Olava, and Mikael unchanged. `IdolafBattleBornREF` (`0001A689`) only has `XLRL` added. Per the USSEP changelog it changes packages: the tavern keeper's preferred speed removed (`WhiterunInnkeeperPackage`), Saadia gets her own marker at Heimskr's and 4 hours of preaching, Mikael's and Saadia's beds, interrupt flags for Jonna.
 
-**Двери Вайтрана.** 14 из 236 переопределённых ссылок на двери, в основном `XLRL`, `XTEL`, `XNDP` и `DATA` (место и цель двери). В их числе четыре двери `WhiterunWorld`, Брисхоум, «Котелок Аркадии», дом Сынов Битвы, дом Исольды и храм Кинарет. Уличная дверь «Гарцующей кобылы» (`0001A6F4`) тоже изменена: X сдвинут на 1 единицу (25726.07 → 25725.07) и добавлен `XLRL`. XTEL и внутренняя дверь `00016072` прежние. Для геометрии портала сдвиг ничтожен, но координаты двери в трассах с USSEP будут другими.
+**Whiterun doors.** 14 of 236 overridden door references, mostly `XLRL`, `XTEL`, `XNDP`, and `DATA` (door location and target). Among them four `WhiterunWorld` doors, Breezehome, Arcadia's Cauldron, House of Clan Battle-Born, Ysolda's house, and the Temple of Kynareth. The street door of the Bannered Mare (`0001A6F4`) is also changed: X shifted by 1 unit (25726.07 → 25725.07) and `XLRL` added. XTEL and the interior door `00016072` unchanged. For portal geometry the shift is negligible, but door coordinates in traces with USSEP will differ.
 
-**Что из этого следует.**
-- Механизм T10 (строки сцены без high, `AE#24236`) USSEP не меняет. Бард портала 3D имеет, поэтому новые проверки проходят. В окне без 3D и в ванили, и в USSEP будет `Playing=0` и тишина.
-- **Отличие для T23.** С USSEP музыка снаружи не глушится, когда внутри начинается песня. В ванили `MUSTavernSilence` срабатывает и для игрока на улице.
-- Расписания NPC таверны с USSEP другие. Контрольные прогоны T10 и T11 нельзя смешивать с прогонами с USSEP.
-- **Тип связи: совместимость.** Зависимость противоречит 5.14, п. 7 (мод данных), а для 1.5.97 нужна другая версия. Решает пользователь.
+**What follows from this.**
+- The T10 mechanism (scene lines without high, `AE#24236`) USSEP does not change. The portal bard has 3D, so the new checks pass. In the window without 3D, both vanilla and USSEP will show `Playing=0` and silence.
+- **Difference for T23.** With USSEP outside music is not muted when a song starts inside. In vanilla `MUSTavernSilence` fires for the player on the street too.
+- Tavern NPC schedules differ with USSEP. Control runs T10 and T11 must not be mixed with runs with USSEP.
+- **Relationship type: compatibility.** A dependency contradicts 5.14, item 7 (a data mod), and 1.5.97 needs a different version. The user decides.
 
-### Остальные кандидаты (по описаниям и исходникам на GitHub)
+### Remaining candidates (by descriptions and sources on GitHub)
 
-| Мод | Лицензия, исходники | Версии | Что для нас | Связь |
+| Mod | License, sources | Versions | What for us | Relationship |
 |---|---|---|---|---|
-| powerofthree's Tweaks (Nexus SE 51073) | GPL-3 (файл `LICENSE`; README пишет MIT), [GitHub](https://github.com/powerof3/po3-Tweaks) | SE, AE, VR | Load Door Activate Prompts (`AE#17923+0x140/+0x168`, `write_thunk_call`); `DistantRefLoadCrash` (`asm_replace` SE `18642`); `EffectShaderZBuffer` (данные AE `360087`). С нашими ID не пересекается | совместимость, идеи |
-| Scrambled Bugs (KernalsEgg, SE 43532) | исходников не нашёл | AE с 1.6.629, на 1.6.1170 отзывы разные | игровые исправления (перки, зачарования, стрелы); по ячейкам и NPC ничего | совместимость |
-| Bug Fixes SSE (meh321, SE 33261) | закрытый | SE, AE с 1.6.629 | список исправлений не проверен: Nexus отдаёт 403 | совместимость |
-| Actor Limit Fix (meh321, SE 32349) | закрытый; порт для VR без лицензии | SE, AE с 1.6.629, по отзывам работает на 1.6.1170 | меняет непосредственные значения лимитов (128 → N). Для 5.14, п. 1 (много порталов — много high), к T11 отношения нет | совместимость, позже опора |
-| NPC AI Process Position Fix NG (SE 69326) | GPL-3, [doodlum/MaxsuAIProcessFix-ng](https://github.com/doodlum/MaxsuAIProcessFix-ng) | SE, AE, VR одна DLL | без перехватов: события `TESMoveAttachDetachEvent` и ожидание или сон ≥ 2 ч → `MoveToPackageLocation` и `MoveToRef` для high-актёров. Механизм T11 (переход через дверь) не затрагивает | совместимость (ожидание у портала) |
-| SSE Display Tweaks (SE 34705) | MIT по Nexus, не подтверждено | SE, AE | частота кадров на экране загрузки, Havok при высокой частоте. Касается шага 6 и наших `AE#61410`, `77851` через шаг Havok | совместимость |
-| Worldspace Transition Tweaks (SE 48889) | данные (`.esp` + Papyrus) | SE, AE | триггер → пересчёт координат → телепорт с экраном загрузки. Идея пересчёта координат между мирами для портала «экстерьер — экстерьер» | идея |
+| powerofthree's Tweaks (Nexus SE 51073) | GPL-3 (`LICENSE` file; README says MIT), [GitHub](https://github.com/powerof3/po3-Tweaks) | SE, AE, VR | Load Door Activate Prompts (`AE#17923+0x140/+0x168`, `write_thunk_call`); `DistantRefLoadCrash` (`asm_replace` SE `18642`); `EffectShaderZBuffer` (AE data `360087`). Does not overlap with our IDs | compatibility, ideas |
+| Scrambled Bugs (KernalsEgg, SE 43532) | sources not found | AE from 1.6.629, on 1.6.1170 reviews are mixed | game fixes (perks, enchantments, arrows); nothing on cells and NPCs | compatibility |
+| Bug Fixes SSE (meh321, SE 33261) | closed | SE, AE from 1.6.629 | fix list not checked: Nexus returns 403 | compatibility |
+| Actor Limit Fix (meh321, SE 32349) | closed; VR port without license | SE, AE from 1.6.629, per reviews works on 1.6.1170 | changes immediate limit values (128 → N). For 5.14, item 1 (many portals — many high), unrelated to T11 | compatibility, reliance later |
+| NPC AI Process Position Fix NG (SE 69326) | GPL-3, [doodlum/MaxsuAIProcessFix-ng](https://github.com/doodlum/MaxsuAIProcessFix-ng) | SE, AE, VR one DLL | no hooks: `TESMoveAttachDetachEvent` events and wait or sleep ≥ 2 h → `MoveToPackageLocation` and `MoveToRef` for high actors. Does not touch the T11 mechanism (door crossing) | compatibility (waiting at the portal) |
+| SSE Display Tweaks (SE 34705) | MIT per Nexus, unconfirmed | SE, AE | loading screen framerate, Havok at high framerate. Concerns step 6 and our `AE#61410`, `77851` via the Havok step | compatibility |
+| Worldspace Transition Tweaks (SE 48889) | data (`.esp` + Papyrus) | SE, AE | trigger → coordinate recalculation → teleport with loading screen. The idea of coordinate recalculation between worlds for an "exterior — exterior" portal | idea |

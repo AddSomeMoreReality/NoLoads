@@ -1,55 +1,55 @@
-# T16. Реакции на вход через портал: фильтр Story Manager по тегам
+# T16. Reactions to portal entry: Story Manager filter by tags
 
-Этап 2. Ветка `task/T16-story-filter`, worktree `..\CLR-T16`. Код: новый `src/StoryFilter.*` (свои перехваты, одна строка в `Hooks::Install`, правило T28 в `Hooks.h`), `Settings`, INI. Прогон: да. Начинать после T28. Прогон 0.8.30 подтвердил: на входе песня обрывается через 1–2 с.
+Stage 2. Branch `task/T16-story-filter`, worktree `..\CLR-T16`. Code: new `src/StoryFilter.*` (own hooks, one line in `Hooks::Install`, T28 rule in `Hooks.h`), `Settings`, INI. Test run: yes. Start after T28. Run 0.8.30 confirmed: on entry the song breaks after 1–2 s.
 
-**Решения пользователя.**
-- 04.11.2026: сначала посмотреть R8 в игре, затем политика по тегам (T30).
-- 05.11.2026: принята политика T30 (`docs/tasks/results/T30.md`, `docs/LOCATION_TRIGGERS.md`, 4.5–4.9): гасится только `BardSongStarter` и только когда песня уже идёт. Приветствия (`WIGreeting`, `WITavern`), радиантные встречи, одноразовые сценки и сюжет остаются.
+**User's decisions.**
+- 04.11.2026: first see R8 in-game, then a tag-based policy (T30).
+- 05.11.2026: the T30 policy is accepted (`docs/tasks/results/T30.md`, `docs/LOCATION_TRIGGERS.md`, 4.5–4.9): only `BardSongStarter` is suppressed, and only while a song is playing. Greetings (`WIGreeting`, `WITavern`), radiant encounters, one-off vignettes, and story remain.
 
-Политика — строка INI. Поэтому одна сборка: по умолчанию T30, R8 — заменой одной строки. В трассе для каждого запуска по `CLOC` пишутся решения обеих.
+The policy is an INI string. Hence a single build: T30 by default, R8 by replacing one string. The trace logs both decisions for every `CLOC` start.
 
-## Что известно (T15, T30)
+## What is known (T15, T30)
 
-- **Песню барда на входе обрывает `BardSongStarter`.** Его запускает Story Manager по `CLOC`, через +1.5 с `StopAllSongs`, через +2.2 с новая песня (прогон 0.8.27).
-- **`CLOC` рождается в одном месте:** `PlayerCharacter::SetParentCell` (`AE#40466`, vtable `PlayerCharacter` слот `0x98`). Событие собирает `+0x105` (`AE#32288`), в очередь ставит `+0x11c` (`AE#32359`); на `+0x154` синхронно уходит `OnLocationChange`.
-- **Квест выбирается позже**, при разборе очереди (`AE#40438` → `AE#32484` → `AE#32483`): `BGSStoryManagerQuestFinder` vfunc 3 (`AE#32430`, `VTABLE_BGSStoryManagerQuestFinder`, `RELOCATION_ID(256099, 205026)`). Возврат 0 — квест запущен, 2 — нет. Событие — `finder+0x48`.
-- **Теги T30** (критерии — `LOCATION_TRIGGERS.md`, 4.5; что есть в памяти — 4.6, по заголовкам NG, в игре не проверено): `story`, `once`, `scene`, `greets`, `encounter`, `technical`, `restarts`, `placeKind`, `placeSpecific`. `restarts` — производный: `technical ∧ placeKind ∧ ¬placeSpecific ∧ ¬once ∧ ¬story ∧ ¬encounter`.
-- **Политики теми же тегами:**
-  - T30: `restarts & !story & !greets & !once` и «уже идёт»;
-  - R8: `!story & !once & !placeSpecific & (placeKind | encounter)` (на 186 квестах совпадает с R8 из T15).
-- **«Уже идёт»** (`LOCATION_TRIGGERS.md`, 4.7): у квеста-контроллера (свойство скрипта стартера, `BardSongStarter` → `BardSongs`) играет сцена (`BGSScene::isPlaying`), её актёр — в ячейке назначения. Без этой проверки в мире без загрузок молчавший бард не запоёт никогда.
-- **Не делать:** подмену старой локации в событии (ломает `MS11Kicker`, `MGR01Trigger`, `T03PostQuest`) и гашение `OnLocationChange` (49 из 60 скриптов ведут ход квестов).
+- **The bard song on entry is broken by `BardSongStarter`.** Story Manager starts it on `CLOC`; after +1.5 s `StopAllSongs`, after +2.2 s a new song (run 0.8.27).
+- **`CLOC` is born in one place:** `PlayerCharacter::SetParentCell` (`AE#40466`, `PlayerCharacter` vtable slot `0x98`). The event is assembled at `+0x105` (`AE#32288`), enqueued at `+0x11c` (`AE#32359`); at `+0x154` `OnLocationChange` is sent synchronously.
+- **The quest is selected later**, when the queue is processed (`AE#40438` → `AE#32484` → `AE#32483`): `BGSStoryManagerQuestFinder` vfunc 3 (`AE#32430`, `VTABLE_BGSStoryManagerQuestFinder`, `RELOCATION_ID(256099, 205026)`). Return 0 — quest started, 2 — not started. The event is `finder+0x48`.
+- **T30 tags** (criteria — `LOCATION_TRIGGERS.md`, 4.5; what exists in memory — 4.6, from NG headers, not verified in-game): `story`, `once`, `scene`, `greets`, `encounter`, `technical`, `restarts`, `placeKind`, `placeSpecific`. `restarts` is derived: `technical ∧ placeKind ∧ ¬placeSpecific ∧ ¬once ∧ ¬story ∧ ¬encounter`.
+- **Policies in the same tags:**
+  - T30: `restarts & !story & !greets & !once` and "already running";
+  - R8: `!story & !once & !placeSpecific & (placeKind | encounter)` (matches the R8 from T15 on 186 quests).
+- **"Already running"** (`LOCATION_TRIGGERS.md`, 4.7): the controller quest (a starter script property, `BardSongStarter` → `BardSongs`) has a scene playing (`BGSScene::isPlaying`), whose actor is in the destination cell. Without this check, in a world without loading screens a silent bard would never sing.
+- **Do not do:** substituting the old location in the event (breaks `MS11Kicker`, `MGR01Trigger`, `T03PostQuest`) and suppressing `OnLocationChange` (49 of 60 scripts drive quests).
 
-## Сделать
+## To do
 
-1. **`src/StoryFilter.h/.cpp`.** Хук vfunc `0x98` `VTABLE_PlayerCharacter[0]`:
-   - до оригинала спросить `Portal::ObservedEntry(oldCell, newCell)`: есть ли портал, у которого ближняя сторона `old`, дальняя `new`, и он рисовал картинку ≥ 1 с за последние `fTagSeconds`;
-   - если да — метка `{oldLocation, newLocation, newCell, portal, t}` в кольцо на 8 элементов. Только FormID, без указателей на ячейки экстерьера (`CLAUDE.md`, раздел 7).
-2. **Хук vfunc 3 `BGSStoryManagerQuestFinder`.** Событие `*(BGSStoryEvent**)(this + 0x48)`, индекс `CLOC` один раз по `registeredEvents[i].uniqueID`. Если локации события (`members[1]`, `members[2]`) совпадают со свежей меткой и политика от маски квеста говорит «гасить» — вернуть 2, иначе оригинал.
-3. **Кэш тегов** при `kDataLoaded`: для каждого квеста в узлах `CLOC` — маска тегов T30 (обход узлов с `parent`, `TESQuest::data`, `objectives`, стадии с журналом, сцены, псевдонимы, условия, `TESTopic::ownerQuest` для реплик). В лог — каждый квест: EditorID, маска, решение R8 и T30. Ожидание в ванили: R8 — 17, T30 — 1 (`BardSongStarter`). Сверить с таблицей раздела 12 `LOCATION_TRIGGERS.md`; расхождения — в результат.
-4. **Политика из INI** — маленький разбор выражения (имена тегов, `!`, `&`, `|`, скобки) один раз при загрузке настроек, в хуке — только вычисление над маской.
-5. **«Уже идёт».** Контроллер — из свойства скрипта стартера через VM при первом обращении (если читается), иначе из `sRestartsController`. Проверка в хуке — только поля сцены и FormID ячейки актёра, без блокировок. Если не удалось определить контроллер — не гасить и записать причину в трассу.
-6. **INI `[Story]`** (комментарии на отдельных строках), по `LOCATION_TRIGGERS.md`, 4.7: `bSuppressOnPortalEntry=1` (0 — поведение игры), `sSuppressIf=restarts & !story & !greets & !once`, `bRestartsOnlyIfPlaying=1`, `sRestartsController=`, `sForceSuppress=`, `sForceKeep=`, `sTagOverride=`, `fTagSeconds=5`, `bTraceStory=1`.
-7. **Трасса:** `story.tag` (метка входа), `story.skip`, `story.start` — все запуски по `CLOC`: EditorID, маска, решения R8 и T30, «уже идёт», id потока.
-8. **`Portal::ObservedEntry`** — функция портала, а не глобальная проверка: сейчас один портал, в T29 — реестр (5.14, п. 1). Правило не делит переходы на «улица/интерьер», работает на входе и на выходе, для любых пар ячеек (п. 2).
+1. **`src/StoryFilter.h/.cpp`.** Hook vfunc `0x98` `VTABLE_PlayerCharacter[0]`:
+   - before the original, ask `Portal::ObservedEntry(oldCell, newCell)`: is there a portal whose near side is `old` and far side `new`, and which rendered a picture for ≥ 1 s within the last `fTagSeconds`;
+   - if yes — a tag `{oldLocation, newLocation, newCell, portal, t}` in an 8-element ring. FormIDs only, no pointers to exterior cells (`CLAUDE.md`, section 7).
+2. **Hook vfunc 3 `BGSStoryManagerQuestFinder`.** Event `*(BGSStoryEvent**)(this + 0x48)`, find the `CLOC` index once via `registeredEvents[i].uniqueID`. If the event's locations (`members[1]`, `members[2]`) match a fresh tag and the policy from the quest's mask says "suppress" — return 2, otherwise the original.
+3. **Tag cache** at `kDataLoaded`: for each quest in the `CLOC` nodes — the T30 tag mask (walking nodes with `parent`, `TESQuest::data`, `objectives`, stages with a journal, scenes, aliases, conditions, `TESTopic::ownerQuest` for lines). Log each quest: EditorID, mask, R8 and T30 decisions. Expected in vanilla: R8 — 17, T30 — 1 (`BardSongStarter`). Compare against the section 12 table of `LOCATION_TRIGGERS.md`; discrepancies go into the result.
+4. **Policy from INI** — a small expression parser (tag names, `!`, `&`, `|`, parentheses) run once at settings load; the hook only evaluates against the mask.
+5. **"Already running".** The controller — from the starter's script property via VM on first access (if readable), otherwise from `sRestartsController`. The hook's check touches only scene fields and the actor's cell FormID, no locks. If the controller cannot be determined — do not suppress and log the reason in the trace.
+6. **INI `[Story]`** (comments on separate lines), per `LOCATION_TRIGGERS.md`, 4.7: `bSuppressOnPortalEntry=1` (0 — game behavior), `sSuppressIf=restarts & !story & !greets & !once`, `bRestartsOnlyIfPlaying=1`, `sRestartsController=`, `sForceSuppress=`, `sForceKeep=`, `sTagOverride=`, `fTagSeconds=5`, `bTraceStory=1`.
+7. **Trace:** `story.tag` (entry tag), `story.skip`, `story.start` — all starts on `CLOC`: EditorID, mask, R8 and T30 decisions, "already running", thread id.
+8. **`Portal::ObservedEntry`** — a portal function, not a global check: one portal now, a registry in T29 (5.14, item 1). The rule does not split transitions into "street/interior", works on entry and exit, for any cell pairs (item 2).
 
-## Безопасность
+## Safety
 
-- В каком потоке разбирается очередь Story Manager (`AE#40438`), неизвестно: кольцо меток без блокировок (атомарные индексы), в хуке только сравнение FormID и маски.
-- `ObservedEntry` читает состояние портала: если хук vfunc 3 идёт не в главном потоке, состояние для него копировать в атомарные поля на тике `Update`.
-- Чтение свойств VM — не в хуке Story Manager, если оно берёт блокировки VM: заранее, в главном потоке (на `kDataLoaded`, `kPostLoadGame` или тике), результат — FormID в атомарном поле.
-- Новые смещения (`finder+0x48`, раскладка `BGSStoryEvent`, `AE#40466+0x105/+0x11c/+0x154`, `TESQuest::formEditorID +0x230`, `BGSScene::isPlaying +0xB0`, `TESTopic::ownerQuest +0x40`) — в `docs/PORTABILITY.md`.
-- Данные игры не меняются (`CLAUDE.md`, 5.14, п. 7): только перехват.
+- Which thread processes the Story Manager queue (`AE#40438`) is unknown: the tag ring is lock-free (atomic indices), the hook only compares FormIDs and the mask.
+- `ObservedEntry` reads the portal state: if the vfunc 3 hook runs off the main thread, copy the state for it into atomic fields on the `Update` tick.
+- Reading VM properties — not in the Story Manager hook if it takes VM locks: do it in advance, on the main thread (at `kDataLoaded`, `kPostLoadGame`, or a tick), the result — a FormID in an atomic field.
+- New offsets (`finder+0x48`, the `BGSStoryEvent` layout, `AE#40466+0x105/+0x11c/+0x154`, `TESQuest::formEditorID +0x230`, `BGSScene::isPlaying +0xB0`, `TESTopic::ownerQuest +0x40`) — into `docs/PORTABILITY.md`.
+- Game data is not modified (`CLAUDE.md`, 5.14, item 7): hooks only.
 
-## Как проверить в игре
+## How to verify in-game
 
-1. Политика T30 (по умолчанию), F8. В «Гарцующей кобыле» дождаться песни, выйти, войти через портал: `story.skip BardSongStarter`, песня не обрывается (нет `StopAllSongs` через +1.5 с). Трактирщик подходит (`story.start WITavern`).
-2. Выйти, дождаться конца песни, когда бард молчит, войти: `story.start BardSongStarter` («не идёт»), бард начинает песню.
-3. Войти через портал в лавку или жилой дом, если портал туда поставлен: `story.start WIGreeting`, хозяин здоровается.
-4. R8: в INI `sSuppressIf=!story & !once & !placeSpecific & (placeKind | encounter)`, `bRestartsOnlyIfPlaying=0`, перезапуск игры, п. 1: `story.skip` у `BardSongStarter` и `WITavern`, трактирщик не подходит.
-5. Контроль: F8 выключен, тот же вход — `story.start BardSongStarter`, песня меняется, как в 0.8.27.
-6. По id потока в `story.start` записать, где идёт `AE#40438`.
+1. T30 policy (default), F8. In the Bannered Mare wait for a song, exit, enter through the portal: `story.skip BardSongStarter`, the song does not break (no `StopAllSongs` after +1.5 s). The innkeeper approaches (`story.start WITavern`).
+2. Exit, wait for the song to end, when the bard is silent, enter: `story.start BardSongStarter` ("not running"), the bard starts a song.
+3. Enter a shop or a house through the portal, if a portal is placed there: `story.start WIGreeting`, the owner greets.
+4. R8: in INI `sSuppressIf=!story & !once & !placeSpecific & (placeKind | encounter)`, `bRestartsOnlyIfPlaying=0`, restart the game, item 1: `story.skip` for `BardSongStarter` and `WITavern`, the innkeeper does not approach.
+5. Control: F8 disabled, same entry — `story.start BardSongStarter`, the song changes as in 0.8.27.
+6. From the thread id in `story.start`, record where `AE#40438` runs.
 
-## Конфликты
+## Conflicts
 
-`Hooks::Install` (одна строка), `Settings.*`, INI, `Portal.h`. С T20 — если её вход без отключения изменит вызов `SetParentCell`: бесшовный вход должен вызывать его ровно один раз за переход.
+`Hooks::Install` (one line), `Settings.*`, INI, `Portal.h`. With T20 — if its entry-without-unloading changes the `SetParentCell` call: a seamless transition must call it exactly once per transition.

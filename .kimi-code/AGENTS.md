@@ -2,122 +2,122 @@
 
 # CLAUDE.md — CellLoadResearch
 
-SKSE-плагин для Skyrim AE: начинался как исследование загрузки ячеек, теперь — эксперимент «интерьер виден и живёт через дверь» (портал), цель — мир без экранов загрузки. Выдаёт архив для Vortex.
+An SKSE plugin for Skyrim AE: it began as research into cell loading and is now an experiment in "seeing the interior alive through the door" (a portal), with the goal of a world without loading screens. It produces an archive for Vortex.
 
 Accept user prompts in Russian, but always respond to the user in English. Write identifiers, code, and commits in English.
 Do all reasoning (thinking) in English: it is faster and cheaper in tokens. This applies to subagents and task executors as well.
 
-**Git.** Читающие и диагностические команды разрешены. `commit`, `push`, `merge` и всё, что меняет историю или удалённый репозиторий, делает только пользователь. В конце каждой итерации с изменениями кода дай готовую команду коммита на английском. Если нужен merge или push, скажи об этом и приведи команды. Репозиторий: `origin` = `AddSomeMoreReality/NoLoads`, `template` = исходный шаблон.
+**Git.** Read-only and diagnostic commands are allowed. Only the user performs `commit`, `push`, `merge`, and anything else that changes history or the remote repository. At the end of every iteration with code changes, provide a ready-to-use commit command in English. If a merge or push is needed, say so and provide the commands. Repositories: `origin` = `AddSomeMoreReality/NoLoads`, `template` = the original template.
 
-**Любой план учитывает требования к финальному моду из раздела 5.14 (ниже).**
+**Every plan must account for the final mod requirements in section 5.14 (below).**
 
-## Роли и порядок чтения
+## Roles and reading order
 
-- **Координатор** читает `docs/HANDOFF.md`, `docs/tasks/README.md` и `docs/tasks/results/`.
-- **Исполнитель** (один чат — одна задача из `docs/tasks/`) читает только свой бриф и `docs/tasks/README.md`. Большие документы целиком не читает (правила — в README задач).
+- The **coordinator** reads `docs/HANDOFF.md`, `docs/tasks/README.md`, and `docs/tasks/results/`.
+- The **executor** (one chat — one task from `docs/tasks/`) reads only its own brief and `docs/tasks/README.md`. It does not read large documents in full (the rules are in the task README).
 
-## Карта документов
+## Document map
 
-| Файл | За что отвечает |
+| File | Responsibility |
 |---|---|
-| `docs/HANDOFF.md` | Состояние проекта, ближайший план, ссылки |
-| `docs/tasks/README.md`, `docs/tasks/T*.md`, `docs/tasks/results/` | Задачи для отдельных чатов: правила, брифы, результаты |
-| `docs/ARCHITECTURE.md` | Устройство кода, потоки, перехваты, инструменты, ложные пути, недостатки, процесс работы |
-| `docs/FEATURES.md` | Разделы 5.4–5.13 и 5.15: INI, модули, портал (оглавление по модулям) |
-| `docs/ENGINE_MAP.md` | Раздел 3: карта движка (`TES`, ячейки, функции, события, поток перехода) |
-| `docs/ORIGINAL_TASK.md` | Разделы 0, 4, 5.1–5.3, 6, 8: исходное задание, гипотезы H1–H16, трасса, автотест, анализ |
-| `docs/HISTORY.md` | Раздел 9: история версий 0.1.0–0.8.31 и итоги прогонов 0.8.22–0.8.25 |
-| `docs/FINDINGS.md` | Выводы и доказательства по прогонам |
-| `docs/PORTABILITY.md` | Долги по версиям игры |
-| `docs/DISTANCE_CHECKS.md` (+ `_APPENDIX`) | Проверки расстояния и видимости |
-| `docs/RELATED_MODS.md` | Похожие моды, лицензии |
-| `docs/LOCATION_TRIGGERS.md` | Реакции игры и скриптов на смену локации игрока (T15) |
-| `docs/INTERIOR_SIM_STAGES.md`, `docs/archive/` | Убранные стадии InteriorSim 0.8.0–0.8.11 |
-| `docs/FAST_DOOR_TRANSITIONS.md` | Итоги экспериментов 0.7.x для отдельного мода |
-| `docs/GHIDRA.md` | База Ghidra, инструменты псевдокода, правила куратора |
+| `docs/HANDOFF.md` | Project status, immediate plan, links |
+| `docs/tasks/README.md`, `docs/tasks/T*.md`, `docs/tasks/results/` | Tasks for separate chats: rules, briefs, results |
+| `docs/ARCHITECTURE.md` | Code structure, threads, hooks, tools, false leads, shortcomings, workflow |
+| `docs/FEATURES.md` | Sections 5.4–5.13 and 5.15: INI, modules, portal (table of contents by module) |
+| `docs/ENGINE_MAP.md` | Section 3: engine map (`TES`, cells, functions, events, transition flow) |
+| `docs/ORIGINAL_TASK.md` | Sections 0, 4, 5.1–5.3, 6, 8: original assignment, hypotheses H1–H16, trace, automated test, analysis |
+| `docs/HISTORY.md` | Section 9: version history 0.1.0–0.8.31 and outcomes of runs 0.8.22–0.8.25 |
+| `docs/FINDINGS.md` | Conclusions and evidence from runs |
+| `docs/PORTABILITY.md` | Outstanding work for game versions |
+| `docs/DISTANCE_CHECKS.md` (+ `_APPENDIX`) | Distance and visibility checks |
+| `docs/RELATED_MODS.md` | Similar mods, licenses |
+| `docs/LOCATION_TRIGGERS.md` | Game and script reactions to player location changes (T15) |
+| `docs/INTERIOR_SIM_STAGES.md`, `docs/archive/` | Removed InteriorSim stages 0.8.0–0.8.11 |
+| `docs/FAST_DOOR_TRANSITIONS.md` | Results of the 0.7.x experiments for a separate mod |
+| `docs/GHIDRA.md` | Ghidra base, pseudocode tools, curator rules |
 
-Ссылки вида «5.12» без пути: 3.x — `ENGINE_MAP.md`, 4 и 5.1–5.3 — `ORIGINAL_TASK.md`, 5.4–5.13 и 5.15 — `FEATURES.md`, 5.14 и 7 — этот файл, 9 — `HISTORY.md`.
-
----
-
-## 1. Окружение пользователя
-
-- **Игра:** Skyrim Special Edition / Anniversary Edition, **Steam, runtime 1.6.1170**.
-  - В августе 2026 Steam обновил игру до 1.7.99, затем до 1.7.104. Пользователь сознательно сидит на 1.6.1170.
-  - Не предлагай обновлять игру. Не трогай `appmanifest_489830.acf`.
-- **SKSE64 для 1.6.1170** (последний релиз под этот runtime — 2.2.6): в корне игры `skse64_loader.exe` и `skse64_1_6_1170.dll`.
-- **Address Library for SKSE Plugins**, AE-версия: `Data\SKSE\Plugins\versionlib-1-6-1170-0.bin`. Без него плагин не загрузится.
-- **Менеджер модов — Vortex.** Моды разворачиваются жёсткими ссылками в `<Game>\Data`. Плагин ставится только архивом, не копированием в `Data`.
-- **Реальные пути** (память и `docs/ARCHITECTURE.md`, 5.3): игра `E:\Games\Skyrim\The Elder Scrolls V - Skyrim` (не в библиотеке Steam), staging Vortex `E:\Vortex Mods\skyrimse`. Если не знаешь пути, версию `SkyrimSE.exe` (FileVersion 1.6.1170.0) или состояние инструментов (VS 2022, xmake ≥ 3.0, git) — спроси пользователя или проверь.
-- «Документы» узнавай через `[Environment]::GetFolderPath('MyDocuments')` (часто в OneDrive). Логи и трасса пишутся в `logs/` проекта (`sLogDirectory`, задаёт `build.ps1`); по умолчанию — `<MyDocuments>\My Games\Skyrim Special Edition\SKSE\`.
-- Автотест убран из требований 01.11.2026: не реализовывать.
-
-## 2. Проект и сборка
-
-- **Основа:** шаблон https://github.com/libxse/commonlibsse-ng-template (xmake, C++23). Сабмодуль `lib/commonlibsse-ng` — CommonLibSSE-NG **v13.1.0** (коммит `12d61f3c39f7`; в `.gitmodules` он записан как `alandtse/CommonLibVR` — это старое имя `alandtse/CommonLibSSE-NG`, ветка `ng`), обновление: `git -C lib/commonlibsse-ng fetch --tags origin`, `checkout v13.1.0`, `submodule update --init --recursive`.
-- **`xmake.lua`:** target и plugin name — `CellLoadResearch` (имя target определяет имя DLL). **Повышай версию при каждой сборке, которую отдаёшь пользователю** (Vortex различает архивы по имени и предлагает Replace).
-- **Конфиг:** `xmake f -m releasedbg --skyrim_vr=n -y` (SE+AE без VR, `EXCLUSIVE_SKYRIM_FLAT`). INI — `--rex_ini=y` или WinAPI `GetPrivateProfileString*`. Mid-function хуки — `--skse_xbyak=y`. spdlog с `std_format = true`: в `SKSE::log::*` синтаксис `std::format`.
-- **Не задавай `XSE_TES5_GAME_PATH` и `XSE_TES5_MODS_PATH`:** иначе xmake скопирует DLL в `Data` в обход Vortex.
-- **WSL:** MSVC через `powershell.exe` и VS Dev Shell, подробности в `lib/commonlibsse-ng/CLAUDE.md`.
-- **Упаковка:** `scripts/build.ps1` — `xmake f` + `xmake build`, stage-папка, `dist/CellLoadResearch-<version>.zip` (версия из `xmake.lua`). В архиве `SKSE/Plugins/` (`.dll`, `.pdb`, `.ini`), с 0.8.6 рядом `Meshes/` и `Textures/` (из `res/data/`); других папок первого уровня нет. Скриптов Papyrus и `.esp` нет (5.14, п. 7). Ветка, кроме `main` и `feature/interior-portal`, добавляется к имени архива; ветка и коммит пишутся в лог и в `info.plugin` (`src/BuildInfo.h`, генерирует `build.ps1`).
-  - **Нет папки `Data/` в корне.** `xmake package` для Vortex не используй.
-  - Архивируй `tar.exe -a -c -f <zip> -C <stage> ...` или `ZipFile::CreateFromDirectory` (PowerShell 7). `Compress-Archive` из PS 5.1 пишет `\` — не использовать.
-  - После упаковки выведи `tar -tf <zip>`: разделители `/`, первый уровень как выше.
-- **Установка (пользователь):** Vortex → Install From File → Enable → Deploy; обновление — Replace. Проверка: `<Game>\Data\SKSE\Plugins\CellLoadResearch.dll` существует, после запуска появляется `CellLoadResearch.log`.
-- **Прогон:** игру запускает пользователь. Автономный запуск (`skse64_loader.exe`, правка INI в `Data` на месте, `bQuitWhenDone=1`) — только с его явного разрешения; после прогона значения вернуть.
-- **Анализ трассы:** сначала `tools/run_digest.py <папка прогона>` (сводка в `digest.md`), подробно — `tools/analyze_trace.py` (stdlib Python 3), имена функций — `tools/name_functions.py`. Подробности — `docs/ORIGINAL_TASK.md`, раздел 6.
+References such as "5.12" without a path: 3.x — `ENGINE_MAP.md`, 4 and 5.1–5.3 — `ORIGINAL_TASK.md`, 5.4–5.13 and 5.15 — `FEATURES.md`, 5.14 and 7 — this file, 9 — `HISTORY.md`.
 
 ---
 
-## 7. Правила безопасности и подводные камни
+## 1. User environment
 
-- **Мутации игры** (телепорты, `purge`, `Activate`, загрузка сохранения) — только в главном потоке, из тика `Update` (`MainThread::Post` → `MainThread::Drain` в хуке `PlayerCharacter::Update`). Не внутри обработчиков событий.
-  - **Не используй `SKSE::GetTaskInterface()->AddTask` для отложенной работы:** в 0.3.0 задача, ставившая себя в очередь повторно, повесила игру.
-  - На 1.6.1170 **не в главном потоке** приходят: события ввода, `TESObjectDOOR::Activate`, `CellFullyLoaded` экстерьера, SKSE `kDataLoaded`.
-- **Не храни `TESObjectCELL*` ячеек экстерьера дольше текущего вызова** (в 0.4.0 падение при `coc` в другой мир). Храни FormID, координаты или строку. Интерьеры и `TESWorldSpace` постоянны.
-- **Профилировщик (`Profiler.*`)** приостанавливает главный поток: между `SuspendThread` и `ResumeThread` только системные вызовы и `memcpy`, без кучи, блокировок и логирования.
-- **`<windows.h>`** (в PCH через spdlog) ломает код макросами `MAX_PATH`, `min`, `max`, `CP_ACP`, `near`, `far`: пиши `(std::min)(...)`, не называй так константы и переменные.
-- `skyrim_cast` и `netimmerse_cast` в NG — в глобальном пространстве имён, не в `RE`.
-- **`RE::BSGraphics::RenderTargetManager::GetSingleton()` в NG неверен:** разыменовывает `AE#411451`, где лежит сам менеджер (в 0.8.6 уронило игру). Бери `REL::Relocation<RenderTargetManager*>{ RELOCATION_ID(524970, 411451) }.get()`. Прежде чем верить синглтону NG, посмотри, как адрес передаёт игра: `lea` — объект, `mov` — указатель.
-- **`Renderer::GetRuntimeData().renderTargets` в сборке FLAT — 125 элементов (`kVRTOTAL`), настоящих целей 114 (SE) или 116 (1.6.1130+).** Дальше лежат `depthStencils`. Обходи по `RenderTargetCount` (`PortalGrade.cpp`), объекты D3D из чужих структур проверяй `QueryInterface`: в 0.8.28 SRV, принятый за текстуру, через чужой слот vtable писал по мусорному адресу и F11 повесил систему.
-- **`NiNode::DetachChild` (`AE#70292`) не проверяет родителя** (номер из `NiAVObject + 0x38`). Не вызывай его и функции игры, которые его зовут (например `AE#19130`), для узла с чужим родителем: в 0.8.17 так был снят и освобождён чужой узел.
-- **Машинный код игры:** псевдокод и ссылки — `tools/ghidra/gq.py` (`docs/GHIDRA.md`): `decomp AE#id[+off]`, `asm`, `xrefs`, `fieldrefs`, вывод только в scratchpad. Базу Ghidra меняет только куратор (чат T33, `..\CLR-GHIDRA`): запросы имён и типов — к нему. Псевдокод и проект — код Bethesda, в git и docs только выводы и адреса. Перед запуском игры — `python tools/ghidra/gq.py stop`; анализ Ghidra (до 10 ГБ) не одновременно с игрой. Запасной путь — `D:\VS\BuildTools\VC\Tools\MSVC\14.44.35207\bin\Hostx64\x64\dumpbin.exe /disasm:nobytes /range:<VA>,<VA> SkyrimSE.exe` (база `0x140000000`) и `tools/name_functions.py` (`--xref ID`).
-- **Хуки `CellLoaderTask::Run`** идут в IO-потоках: только поля задачи, трасса и оригинал. Никаких обращений к `TES`, игроку, UI.
-  - `CellLoaderTask::PostProcess` (`AE#18529`) идёт и на потоках заданий `BSJobs`: оттуда без замка меняются `interiorBuffer`/`exteriorBuffer` (`AE#13434`) и выгружаются ячейки (`AE#13721`). Перехват этих функций не должен полагаться на главный поток (`docs/CELL_LOADING_MAP.md`, 8).
-- **Никаких блокировок и тяжёлой работы в хуках.** Снимок сетки ограничен `length²`; `bLogCellAttachPerRef` выключен по умолчанию.
-- **Поля `TES` дальше 0x128 — только через `GetAERuntimeData()` / `GetRuntimeData2()`** (раскладка меняется с 1.6.1130). Поля игрока — через `GetPlayerRuntimeData()`. Поля `unkXXX` только логируй.
-- **Буферы ячеек (H9):** читать только при `bReadCellBuffers=1`, до `min(INI, 64)` элементов, с проверкой `nullptr` и `__try/__except` в отдельной функции без объектов с деструкторами. При падении оставь выключенным и запиши в FINDINGS.
-- **Версия runtime при старте:** `REL::Module::get().version()`; если не 1.6.1170 — warning, но плагин не выключай.
-- **Не меняй `Skyrim.ini` / `SkyrimPrefs.ini` без разрешения.** Если эксперимент требует (`uGridsToLoad`, буферы) — резервная копия, скажи пользователю, что меняешь и как откатить; INI в «Документах» может быть защищён от записи.
-- **Сохранения:** плагин не должен сохранять игру. Автосохранение при переходе безопасно, но лучше тестовый персонаж.
-- **Сборку проверяй в игре:** ошибки раскладки CommonLib компилируются без ошибок и проявляются падением.
-- **«Это поведение игры» доказывается контрольным прогоном без портала, а не рассуждением.** Вывод 0.8.22 про Идолафа был верным, но без контроля; контроль нашёлся только в старых трассах.
-- **Поведение NPC и сцен часто задают ванильные скрипты и Story Manager**, а не движок. Исходники скриптов — `<Game>\Data\Source\Scripts`, привязки и события запуска квестов (`ENAM`, например `CLOC`) — в `Skyrim.esm`. Читать можно, менять нельзя: исправление только перехватом в движке (5.14, п. 7).
-- **Смена локации игрока — только `PlayerCharacter::SetParentCell` (`AE#40466`, vtable `0x98`):** он рождает `CLOC` для Story Manager и `OnLocationChange` (T15, `docs/LOCATION_TRIGGERS.md`). Бесшовный переход (T20, T21, T27) должен вызывать его ровно один раз: иначе 148 сюжетных реакций не сработают или сработают дважды.
-- **Расстояния в трассе — в единицах игры** (1 единица ≈ 1,43 см, 70 ≈ 1 м), не в сантиметрах.
-- **Прежде чем винить расстояние, проверь видимость.** `kFarAway` и `kNotVisible` зависят от камеры, а не от расстояния (`docs/DISTANCE_CHECKS.md`).
-- **Избегай жёстко заданных сдвигов.** Сначала поле NG, затем `RELOCATION_ID(se, ae)`, затем проверяемая сигнатура. Если варианта нет — запиши в `docs/PORTABILITY.md` и не задерживай эксперимент.
-- **Второй вид и `BSRenderPass`.** Проходы рендера берутся из общего пула (с Engine Fixes, `bOverrideRenderPassCache`, — из tbbmalloc, без пула; T14), `GetRenderPasses` использует один список на свойство шейдера. Поэтому накопитель после прохода должен быть пуст (`DrainPasses`), а объект, который рисует и игра, нельзя регистрировать, пока работают её задания: `RenderPlayerView` завершает их только после `RenderWorld`.
-- **Зависание вместо падения.** Crash Logger его не видит, записи теряются за 250 мс до остановки. Смотри `CellLoadResearch.hang.txt` (пишет `Watchdog`); есть `Ctrl+Shift+F12` у Crash Logger 1.25 (дамп потоков) и `taskkill /F /IM SkyrimSE.exe` со второго рабочего стола или через `Win+R`.
-- **Комментарии в INI на отдельных строках:** `GetPrivateProfileString` не отрезает `; ...` после значения.
-- **F9 в игре — быстрая загрузка.** Свободные клавиши: F1–F4, F6–F8.
+- **Game:** Skyrim Special Edition / Anniversary Edition, **Steam, runtime 1.6.1170**.
+  - In August 2026, Steam updated the game to 1.7.99 and then to 1.7.104. The user deliberately remains on 1.6.1170.
+  - Do not suggest updating the game. Do not touch `appmanifest_489830.acf`.
+- **SKSE64 for 1.6.1170** (the latest release for this runtime is 2.2.6): `skse64_loader.exe` and `skse64_1_6_1170.dll` are in the game root.
+- **Address Library for SKSE Plugins**, AE version: `Data\SKSE\Plugins\versionlib-1-6-1170-0.bin`. The plugin will not load without it.
+- **Mod manager — Vortex.** Mods are deployed as hard links into `<Game>\Data`. The plugin must be installed only from an archive, never by copying it into `Data`.
+- **Actual paths** (memory and `docs/ARCHITECTURE.md`, 5.3): the game is at `E:\Games\Skyrim\The Elder Scrolls V - Skyrim` (not in the Steam library), and Vortex staging is at `E:\Vortex Mods\skyrimse`. If you do not know the paths, the `SkyrimSE.exe` version (FileVersion 1.6.1170.0), or the state of the tools (VS 2022, xmake ≥ 3.0, git), ask the user or check.
+- Determine the Documents folder through `[Environment]::GetFolderPath('MyDocuments')` (it is often in OneDrive). Logs and the trace are written to the project's `logs/` directory (`sLogDirectory`, set by `build.ps1`); by default, they go to `<MyDocuments>\My Games\Skyrim Special Edition\SKSE\`.
+- The automated test was removed from the requirements on 01.11.2026: do not implement it.
 
-### 5.14 Требования к финальному моду (пользователь, 01.11.2026)
+## 2. Project and build
 
-Это рамка для всех будущих планов. Сейчас реализовывать не обязательно, но решения не должны им противоречить.
+- **Base:** the https://github.com/libxse/commonlibsse-ng-template template (xmake, C++23). The `lib/commonlibsse-ng` submodule is CommonLibSSE-NG **v13.1.0** (commit `12d61f3c39f7`; in `.gitmodules` it is listed as `alandtse/CommonLibVR` — the old name of `alandtse/CommonLibSSE-NG`, branch `ng`). To update: `git -C lib/commonlibsse-ng fetch --tags origin`, `checkout v13.1.0`, `submodule update --init --recursive`.
+- **`xmake.lua`:** the target and plugin name is `CellLoadResearch` (the target name determines the DLL name). **Bump the version for every build given to the user** (Vortex distinguishes archives by name and offers Replace).
+- **Configuration:** `xmake f -m releasedbg --skyrim_vr=n -y` (SE+AE without VR, `EXCLUSIVE_SKYRIM_FLAT`). INI — `--rex_ini=y` or WinAPI `GetPrivateProfileString*`. Mid-function hooks — `--skse_xbyak=y`. spdlog with `std_format = true`: `SKSE::log::*` uses `std::format` syntax.
+- **Do not set `XSE_TES5_GAME_PATH` or `XSE_TES5_MODS_PATH`:** otherwise xmake will copy the DLL into `Data`, bypassing Vortex.
+- **WSL:** MSVC through `powershell.exe` and the VS Dev Shell; details are in `lib/commonlibsse-ng/CLAUDE.md`.
+- **Packaging:** `scripts/build.ps1` — `xmake f` + `xmake build`, a staging folder, and `dist/CellLoadResearch-<version>.zip` (the version comes from `xmake.lua`). The archive contains `SKSE/Plugins/` (`.dll`, `.pdb`, `.ini`); since 0.8.6, `Meshes/` and `Textures/` (from `res/data/`) are included alongside it. There are no other top-level folders. There are no Papyrus scripts or `.esp` files (5.14, item 7). A branch other than `main` and `feature/interior-portal` is appended to the archive name; the branch and commit are written to the log and to `info.plugin` (`src/BuildInfo.h`, generated by `build.ps1`).
+  - **There is no `Data/` folder in the root.** Do not use `xmake package` for Vortex.
+  - Archive with `tar.exe -a -c -f <zip> -C <stage> ...` or `ZipFile::CreateFromDirectory` (PowerShell 7). `Compress-Archive` from PS 5.1 writes `\` — do not use it.
+  - After packaging, print `tar -tf <zip>`: separators must be `/`, and the top level must be as above.
+- **Installation (user):** Vortex → Install From File → Enable → Deploy; for an update — Replace. Verification: `<Game>\Data\SKSE\Plugins\CellLoadResearch.dll` exists, and `CellLoadResearch.log` appears after launch.
+- **Run:** the user launches the game. An autonomous launch (`skse64_loader.exe`, editing the INI in `Data` in place, `bQuitWhenDone=1`) is allowed only with the user's explicit permission; restore the values after the run.
+- **Trace analysis:** first run `tools/run_digest.py <run folder>` (summary in `digest.md`); for details, use `tools/analyze_trace.py` (Python 3 stdlib), and for function names, `tools/name_functions.py`. Details are in `docs/ORIGINAL_TASK.md`, section 6.
 
-1. **Много порталов одновременно.** Цель — мир без загрузок, поэтому порталы работают во всех дверях сразу. Один экземпляр, глобальное состояние и один удерживаемый интерьер — временные решения.
-2. **Любые пары клеток.** Логика применяется к пещерам, подземельям и воротам городов. Портал связывает экстерьер с интерьером, экстерьер с экстерьером (другой мир, ворота) и интерьер с интерьером. Нельзя закладывать в код «снаружи улица, внутри интерьер».
-   - Стороны портала равноправны: преобразование, свет, расстояния и проход объектов работают в обе стороны.
-   - Сетку ячеек мира за воротами придётся держать и рисовать так же, как интерьер.
-3. **Звука изнутри сейчас нет.** Снаружи таверны он не слышен. Пользователь слышал его только тогда, когда все объекты клетки интерьера переносились в клетку экстерьера, а это было неправильным решением. Запись «слышит барда через дверь» в ранних прогонах относится к таким версиям. Звук нужно проводить через дверь отдельно.
-4. **Любая камера.** Логика отрисовки клеток работает для любой камеры, а не только для камеры игрока. Это нужно для других модов, катсцен и рекурсивных порталов, когда из окна одного портала виден другой портал.
-   - Проход портала принимает камеру и цель как параметры и не читает глобальную камеру игрока.
-   - Картинка зависит от камеры: нужны своя текстура на пару «портал + вид» и пул таких текстур.
-   - Рекурсии нужны ограничение глубины и план на случай, когда глубина исчерпана.
-5. **Совместимость с Realistic Reflections - Mirrors.** Финальная версия работает вместе с этим модом (`https://github.com/1001Bits/Realistic-Reflections-Mirrors`). Портал в зеркале должен показывать правильную картинку, а зеркало за порталом — отражение. Код мода копировать нельзя (`docs/FEATURES.md`, 5.15).
-6. **Все версии игры.** Минимум SE 1.5.97 и новее, вплоть до актуальной AE. Долги ведутся в `docs/PORTABILITY.md`.
-7. **Данные игры не меняются** (пользователь, 03.11.2026). Мод не правит квесты, сцены, скрипты Papyrus, пакеты ИИ и другие формы: так он остаётся совместимым с другими модами. Поведение меняется только перехватом обработчиков движка (detour, `write_call`, vfunc). Исключение — двери, которые заменяет портал.
-8. **Совместимость с Engine Fixes** (пользователь, 04.11.2026). Мод работает и с ним, и без него; зависимостью Engine Fixes не делается (T14, прогон 0.8.31). Его приёмы (MIT) можно брать как идеи. Прогон с Engine Fixes — в конце каждого этапа.
+---
+
+## 7. Safety rules and pitfalls
+
+- **Game mutations** (teleports, `purge`, `Activate`, loading a save) — only on the main thread, from an `Update` tick (`MainThread::Post` → `MainThread::Drain` in the `PlayerCharacter::Update` hook). Never inside event handlers.
+  - **Do not use `SKSE::GetTaskInterface()->AddTask` for deferred work:** in 0.3.0, a task that requeued itself hung the game.
+  - On 1.6.1170, the following arrive **off the main thread**: input events, `TESObjectDOOR::Activate`, exterior `CellFullyLoaded`, and SKSE `kDataLoaded`.
+- **Do not retain `TESObjectCELL*` pointers to exterior cells beyond the current call** (0.4.0 crashed on `coc` to another world). Store the FormID, coordinates, or a string. Interiors and `TESWorldSpace` are permanent.
+- **The profiler (`Profiler.*`)** suspends the main thread: between `SuspendThread` and `ResumeThread`, use only system calls and `memcpy` — no heap operations, locks, or logging.
+- **`<windows.h>`** (included in the PCH through spdlog) breaks code with the `MAX_PATH`, `min`, `max`, `CP_ACP`, `near`, and `far` macros: write `(std::min)(...)` and do not use those names for constants or variables.
+- `skyrim_cast` and `netimmerse_cast` in NG are in the global namespace, not in `RE`.
+- **`RE::BSGraphics::RenderTargetManager::GetSingleton()` is incorrect in NG:** it dereferences `AE#411451`, where the manager itself resides (this crashed the game in 0.8.6). Use `REL::Relocation<RenderTargetManager*>{ RELOCATION_ID(524970, 411451) }.get()`. Before trusting an NG singleton, inspect how the game passes the address: `lea` means an object, `mov` means a pointer.
+- **`Renderer::GetRuntimeData().renderTargets` in the FLAT build has 125 elements (`kVRTOTAL`), but there are only 114 (SE) or 116 (1.6.1130+) real render targets.** `depthStencils` follows them. Iterate using `RenderTargetCount` (`PortalGrade.cpp`), and validate D3D objects from foreign structures with `QueryInterface`: in 0.8.28, an SRV mistaken for a texture wrote through the wrong vtable slot to a garbage address, and F11 hung the system.
+- **`NiNode::DetachChild` (`AE#70292`) does not check the parent** (the index comes from `NiAVObject + 0x38`). Do not call it, or game functions that call it (such as `AE#19130`), on a node with a different parent: in 0.8.17, this detached and released another node's child.
+- **Game machine code:** use `tools/ghidra/gq.py` (`docs/GHIDRA.md`) for pseudocode and cross-references: `decomp AE#id[+off]`, `asm`, `xrefs`, `fieldrefs`; output goes only to the scratchpad. Only the curator modifies the Ghidra base (T33 chat, `..\CLR-GHIDRA`): send requests for names and types to the curator. The pseudocode and project are Bethesda code; only conclusions and addresses go into git and docs. Before launching the game, run `python tools/ghidra/gq.py stop`; do not run Ghidra analysis (up to 10 GB) at the same time as the game. The fallback is `D:\VS\BuildTools\VC\Tools\MSVC\14.44.35207\bin\Hostx64\x64\dumpbin.exe /disasm:nobytes /range:<VA>,<VA> SkyrimSE.exe` (base `0x140000000`) and `tools/name_functions.py` (`--xref ID`).
+- **`CellLoaderTask::Run` hooks** run on IO threads: access only task fields, tracing, and the original function. Do not access `TES`, the player, or the UI.
+  - `CellLoaderTask::PostProcess` (`AE#18529`) also runs on `BSJobs` job threads: from there, `interiorBuffer`/`exteriorBuffer` (`AE#13434`) are modified and cells (`AE#13721`) are unloaded without a lock. Hooks for these functions must not assume the main thread (`docs/CELL_LOADING_MAP.md`, 8).
+- **No locks or heavy work in hooks.** The grid snapshot is bounded by `length²`; `bLogCellAttachPerRef` is disabled by default.
+- **Access `TES` fields beyond 0x128 only through `GetAERuntimeData()` / `GetRuntimeData2()`** (the layout changes starting with 1.6.1130). Access player fields through `GetPlayerRuntimeData()`. Only log `unkXXX` fields.
+- **Cell buffers (H9):** read them only when `bReadCellBuffers=1`, up to `min(INI, 64)` elements, with a `nullptr` check and `__try/__except` in a separate function containing no objects with destructors. If this crashes, leave it disabled and record it in FINDINGS.
+- **Runtime version at startup:** `REL::Module::get().version()`; if it is not 1.6.1170, emit a warning but do not disable the plugin.
+- **Do not modify `Skyrim.ini` / `SkyrimPrefs.ini` without permission.** If an experiment requires it (`uGridsToLoad`, buffers), make a backup and tell the user what you are changing and how to roll it back; the INI in Documents may be write-protected.
+- **Saves:** the plugin must not save the game. Autosaving on transition is safe, but a test character is preferable.
+- **Verify builds in the game:** CommonLib layout errors compile without errors and manifest as crashes.
+- **"This is game behavior" must be proven by a control run without the portal, not by reasoning.** The 0.8.22 conclusion about Idolaf was correct but had no control; a control was found only in old traces.
+- **NPC and scene behavior is often driven by vanilla scripts and Story Manager**, not the engine. Script sources are in `<Game>\Data\Source\Scripts`; bindings and quest startup events (`ENAM`, such as `CLOC`) are in `Skyrim.esm`. They may be read but not modified: fixes must use only engine hooks (5.14, item 7).
+- **Player location changes must go only through `PlayerCharacter::SetParentCell` (`AE#40466`, vtable `0x98`):** it generates `CLOC` for Story Manager and `OnLocationChange` (T15, `docs/LOCATION_TRIGGERS.md`). A seamless transition (T20, T21, T27) must call it exactly once: otherwise, 148 story reactions will fail to fire or will fire twice.
+- **Distances in the trace are in game units** (1 unit ≈ 1.43 cm, 70 ≈ 1 m), not centimeters.
+- **Before blaming distance, check visibility.** `kFarAway` and `kNotVisible` depend on the camera, not distance (`docs/DISTANCE_CHECKS.md`).
+- **Avoid hard-coded offsets.** First use an NG field, then `RELOCATION_ID(se, ae)`, then a verifiable signature. If none is available, record it in `docs/PORTABILITY.md` and do not delay the experiment.
+- **Second view and `BSRenderPass`.** Render passes come from a shared pool (with Engine Fixes and `bOverrideRenderPassCache`, they come from tbbmalloc without a pool; T14), and `GetRenderPasses` uses one list per shader property. Therefore, the accumulator must be empty after a pass (`DrainPasses`), and an object also rendered by the game must not be registered while the game's jobs are running: `RenderPlayerView` completes them only after `RenderWorld`.
+- **A hang instead of a crash.** Crash Logger does not detect it, and records are lost for the 250 ms before the stop. See `CellLoadResearch.hang.txt` (written by `Watchdog`); Crash Logger 1.25 provides `Ctrl+Shift+F12` (thread dump), and `taskkill /F /IM SkyrimSE.exe` can be run from a second desktop or through `Win+R`.
+- **Put INI comments on separate lines:** `GetPrivateProfileString` does not strip `; ...` after a value.
+- **F9 in the game is quickload.** Available keys: F1–F4, F6–F8.
+
+### 5.14 Final mod requirements (user, 01.11.2026)
+
+This is the framework for all future plans. Implementation is not required now, but decisions must not conflict with it.
+
+1. **Many portals simultaneously.** The goal is a world without loading screens, so portals work at every door at once. A single instance, global state, and one retained interior are temporary solutions.
+2. **Any cell pairs.** The logic applies to caves, dungeons, and city gates. A portal connects an exterior to an interior, an exterior to an exterior (another world, gates), and an interior to an interior. The code must not assume "a street outside, an interior inside."
+   - The two sides of a portal are equivalent: transformation, lighting, distances, and object passage work in both directions.
+   - The cell grid of the world beyond the gates will have to be retained and rendered in the same way as an interior.
+3. **There is currently no sound from inside.** It cannot be heard outside the tavern. The user heard it only when all objects in the interior cell were moved into the exterior cell, which was the wrong solution. The statement "hears the bard through the door" in early runs refers to those versions. Sound must be transmitted through the door separately.
+4. **Any camera.** Cell rendering logic works for any camera, not only the player camera. This is needed for other mods, cutscenes, and recursive portals, where another portal is visible through one portal's window.
+   - The portal pass accepts the camera and target as parameters and does not read the global player camera.
+   - The image depends on the camera: each "portal + view" pair needs its own texture, and a pool of such textures is required.
+   - Recursion needs a depth limit and a plan for when that depth is exhausted.
+5. **Compatibility with Realistic Reflections - Mirrors.** The final version works together with this mod (`https://github.com/1001Bits/Realistic-Reflections-Mirrors`). A portal in a mirror must show the correct image, and a mirror beyond a portal must show a reflection. The mod's code must not be copied (`docs/FEATURES.md`, 5.15).
+6. **All game versions.** At minimum, SE 1.5.97 and newer, up to the current AE. Outstanding work is tracked in `docs/PORTABILITY.md`.
+7. **Game data is not modified** (user, 03.11.2026). The mod does not edit quests, scenes, Papyrus scripts, AI packages, or other forms, so it remains compatible with other mods. Behavior is changed only by hooking engine handlers (detour, `write_call`, vfunc). The exception is doors replaced by a portal.
+8. **Compatibility with Engine Fixes** (user, 04.11.2026). The mod works both with and without it; Engine Fixes is not made a dependency (T14, run 0.8.31). Its techniques (MIT) may be used as ideas. A run with Engine Fixes is performed at the end of every stage.
 
 <!-- End imported from Claude Code: E:/Games/Skyrim/ModCreation/My attempts/NoLoads/CellLoadResearch/CLAUDE.md -->

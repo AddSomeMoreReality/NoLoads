@@ -1,61 +1,61 @@
-# План T34–T41: база Ghidra, карты игрока и загрузки ячеек, мультиплеер
+# T34–T41 plan: Ghidra database, player and cell loading maps, multiplayer
 
-Составлен куратором базы Ghidra (T33) 07.11.2026 по задачам пользователя. Брифы — `T34`…`T41` в этой папке. В таблицу README и в `HANDOFF.md` переносит координатор.
+Prepared by the Ghidra database curator (T33) on 07.11.2026 from the user's tasks. Briefs are `T34`…`T41` in this folder. The coordinator adds them to the README table and to `HANDOFF.md`.
 
-## Задачи
+## Tasks
 
-| ID | Задача | Кто | Код | Прогон | Зависит от |
+| ID | Task | Who | Code | Run | Depends on |
 |---|---|---|---|---|---|
-| [T35](T35-ghidra-interface.md) | Интерфейс к базе: MCP-сервер, навык, агент-читатель | куратор | `tools/ghidra/`, `.mcp.json`, `.claude/` | нет | T33 |
-| [T36](T36-ghidra-types.md) | Типы NG в базе: структуры, vtable, `this`, синглтоны | куратор | `tools/ghidra/` | нет | T35 |
-| [T34](T34-ghidra-check-names.md) | Проверка расхождений, имена безымянных функций | куратор | `tools/ghidra/` | нет | T35 (T37, T41 — кандидаты по готовности) |
-| [T37](T37-creation-kit.md) | Creation Kit: окупается ли, кандидаты имён | исполнитель | `tools/ghidra/ck/` | нет | T35 |
-| [T38](T38-player-map.md) | Карта игрока (`PlayerCharacter` и всё про игрока) | исполнитель | нет | по желанию, T40 | T35, лучше T36 |
-| [T39](T39-cell-loading-map.md) | Карта загрузки ячеек | исполнитель | нет | старые трассы; по желанию T40 | T35, лучше T36 |
-| [T40](T40-call-probe.md) | Сборка-зонд: счётчики вызовов и сэмплы всех потоков | исполнитель | `src/CallProbe.*`, `Profiler` | да, один на T38+T39 | списки ID от T38/T39; T32 слить раньше |
-| [T41](T41-multiplayer-mods.md) | Моды мультиплеера и несколько игроков в одном мире | исполнитель | нет | нет | — |
+| [T35](T35-ghidra-interface.md) | Database interface: MCP server, skill, reader agent | curator | `tools/ghidra/`, `.mcp.json`, `.claude/` | none | T33 |
+| [T36](T36-ghidra-types.md) | NG types in the database: structures, vtables, `this`, singletons | curator | `tools/ghidra/` | none | T35 |
+| [T34](T34-ghidra-check-names.md) | Check discrepancies, name unnamed functions | curator | `tools/ghidra/` | none | T35 (T37, T41 — candidates as available) |
+| [T37](T37-creation-kit.md) | Creation Kit: whether worthwhile, name candidates | executor | `tools/ghidra/ck/` | none | T35 |
+| [T38](T38-player-map.md) | Player map (`PlayerCharacter` and everything related to the player) | executor | none | optional, T40 | T35, preferably T36 |
+| [T39](T39-cell-loading-map.md) | Cell loading map | executor | none | old traces; optional T40 | T35, preferably T36 |
+| [T40](T40-call-probe.md) | Probe build: call counters and samples of all threads | executor | `src/CallProbe.*`, `Profiler` | yes, one for T38+T39 | ID lists from T38/T39; merge T32 earlier |
+| [T41](T41-multiplayer-mods.md) | Multiplayer mods and multiple players in one world | executor | none | none | — |
 
-## Порядок
+## Order
 
 ```
-куратор:     T35 ──► T36 ──► T34 ──────────────► (имена из T37, T41, T38, T39)
-исполнители: T41 ─────────────────────────────►
-             T37 (после T35; не во время анализа куратора) ──► кандидаты куратору
-             T38 ┐ (после T35, лучше после T36)
-             T39 ┘ ──► списки ID ──► T40 (сборка) ──► прогон пользователя ──► разбор в T38/T39
+curator:   T35 ──► T36 ──► T34 ──────────────► (names from T37, T41, T38, T39)
+executors: T41 ─────────────────────────────►
+           T37 (after T35; not during curator analysis) ──► candidates for curator
+           T38 ┐ (after T35, preferably after T36)
+           T39 ┘ ──► ID lists ──► T40 (build) ──► user run ──► analysis in T38/T39
 ```
 
-- **Сразу и параллельно:** T35 (куратор) и T41 (веб, база не нужна до вопроса 4).
-- **После T35:** T37 и статическая часть T38, T39. T36 и T34 куратор делает по очереди: один проект, один писатель.
-- **T40** начинают, когда T38/T39 дадут списки ID. Прогон пользователя — один на обе задачи.
-- **Память (ОЗУ 15,8 ГБ):** анализ Ghidra (T37, повторный `analyze.ps1` в T34) — до 10 ГБ. Не одновременно друг с другом и с игрой. Сервер запросов — 0,7 ГБ, перед игрой `gq.py stop`.
-- **T32 идёт параллельно:** T38 даёт ей статическую карту и не повторяет перепись чтений. T40 переиспользует генератор заглушек T32, поэтому T32 лучше слить до T40.
+- **Immediately and in parallel:** T35 (curator) and T41 (web; database not needed until question 4).
+- **After T35:** T37 and the static parts of T38, T39. The curator performs T36 and T34 sequentially: one project, one writer.
+- **T40** starts when T38/T39 provide ID lists. One user run covers both tasks.
+- **Memory (15.8 GB RAM):** Ghidra analysis (T37, repeated `analyze.ps1` in T34) uses up to 10 GB. Do not run analyses together with each other or with the game. The query server uses 0.7 GB; run `gq.py stop` before playing.
+- **T32 proceeds in parallel:** T38 provides its static map and does not repeat the read inventory. T40 reuses the T32 stub generator, so T32 should preferably be merged before T40.
 
-## Модели и усилие
+## Models and effort
 
-| Задача | Модель | Усилие | Субагенты |
+| Task | Model | Effort | Subagents |
 |---|---|---|---|
-| Координатор | Opus 5.5 | medium | — |
-| T35 интерфейс | Opus 5.5 | medium | нет |
-| T36 типы | Opus 5.5 | high | нет (разбор NG тонкий, ошибки раскладки молчаливые) |
-| T34 проверка и имена | Opus 5.5 | high | Sonnet 5.5 / medium — сборщики кандидатов (таблица Papyrus, консольные команды, сторонние таблицы); Haiku 5.5 / low — массовая сортировка имён Function ID «библиотека или Bethesda» |
-| T37 Creation Kit | Opus 5.5 | high | нет (суждение о точности сопоставления) |
-| T38 карта игрока | Opus 5.5 | high | агент-читатель T35 на Sonnet 5.5 / medium — пакеты по 20–40 функций, ответ выводами; Haiku 5.5 / low — разметка сотен мелких функций по подсистемам |
-| T39 карта загрузки | Opus 5.5 | high | то же, что T38 |
-| T40 сборка-зонд | Opus 5.5 | high | нет (патчи в чужом коде, потоки) |
-| T41 мультиплеер | Sonnet 5.5 | high | web-fetch для страниц и репозиториев; итоговый синтез можно отдать Opus 5.5 / medium |
+| Coordinator | Opus 5.5 | medium | — |
+| T35 interface | Opus 5.5 | medium | none |
+| T36 types | Opus 5.5 | high | none (NG analysis is subtle, layout errors are silent) |
+| T34 checking and names | Opus 5.5 | high | Sonnet 5.5 / medium — candidate collectors (Papyrus table, console commands, third-party tables); Haiku 5.5 / low — bulk classification of Function ID names as “library or Bethesda” |
+| T37 Creation Kit | Opus 5.5 | high | none (judgment about mapping accuracy) |
+| T38 player map | Opus 5.5 | high | T35 reader agent on Sonnet 5.5 / medium — batches of 20–40 functions, conclusions as output; Haiku 5.5 / low — classification of hundreds of small functions by subsystem |
+| T39 loading map | Opus 5.5 | high | same as T38 |
+| T40 probe build | Opus 5.5 | high | none (patches in existing code, threads) |
+| T41 multiplayer | Sonnet 5.5 | high | web-fetch for pages and repositories; final synthesis can be assigned to Opus 5.5 / medium |
 
-- Субагенты получают MCP-инструменты базы после T35. Псевдокод возвращают выводами с адресами, не текстом.
-- Куратор и исполнители T36–T39 начинают **в новом чате**: контекст T33 почти исчерпан. Опора — `docs/GHIDRA.md`, `results/T33.md`, бриф.
+- Subagents receive the database MCP tools after T35. They return pseudocode as conclusions with addresses, not as text.
+- The curator and executors of T36–T39 start **in a new chat**: T33 context is almost exhausted. Use `docs/GHIDRA.md`, `results/T33.md`, and the brief as references.
 
-## Прогоны
+## Runs
 
-- Нужен **один** — сборкой T40, для T38 и T39 (какие функции работают на каждой фазе перехода и на каком потоке). Готовой сборки пока нет: модуля `CallProbe` ещё нет, а списки ID дают T38/T39. Сборку и шаги прогона выдаёт чат T40.
-- До этого T39 разбирает старые трассы (`logs/run-*`, записи `profile` под экраном загрузки) с именами из базы. Это бесплатно.
-- T34–T37 и T41 прогонов не требуют.
+- **One** is needed — using the T40 build, for T38 and T39 (which functions run during each transition phase and on which thread). No ready build exists yet: the `CallProbe` module does not exist yet, and T38/T39 provide the ID lists. The T40 chat provides the build and run steps.
+- Before that, T39 analyzes old traces (`logs/run-*`, `profile` records under the loading screen) using names from the database. This costs nothing.
+- T34–T37 and T41 require no runs.
 
-## Решения пользователя
+## User decisions
 
-- T35: `.mcp.json` в корне репозитория (сервер `ghidra` действует на все чаты) и папка `.claude/`.
-- T37: новый проект Ghidra `My attempts\SkyrimCK-1.6.1378` (около 1,5 ГБ) и время анализа без игры.
-- T34: сторонние таблицы имён — только после проверки лицензии; список источников — в `docs/GHIDRA.md`.
+- T35: `.mcp.json` in the repository root (the `ghidra` server applies to all chats) and the `.claude/` folder.
+- T37: new Ghidra project `My attempts\SkyrimCK-1.6.1378` (about 1.5 GB) and analysis time without the game running.
+- T34: third-party name tables only after license verification; the source list is in `docs/GHIDRA.md`.

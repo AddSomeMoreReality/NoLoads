@@ -1,45 +1,45 @@
-# T02. Разрезать `Portal.cpp` и удалить мёртвый код
+# T02. Split `Portal.cpp` and remove dead code
 
-Ветка `task/T02-split`. Код: весь `src/`. Нужен контрольный прогон: поведение не должно измениться. Идёт после T00. Пока T02 не слит, другие ветки с кодом не начинать.
+Branch `task/T02-split`. Code: all of `src/`. A control game run is required: behavior must not change. Comes after T00. Do not start other code branches until T02 is merged.
 
-## Зачем
+## Why
 
-`src/Portal.cpp` — 3 300 строк, 147 КБ. Чат, которому нужен кусок портала, тратит на чтение много контекста, а параллельные ветки конфликтуют в одном файле. Ещё в коде остались выключенные эксперименты.
+`src/Portal.cpp` is 3,300 lines and 147 KB. A chat that needs part of the portal spends a lot of context reading it, and parallel branches conflict in the same file. Disabled experiments also remain in the code.
 
-## Сделать
+## Tasks
 
-1. **Удалить мёртвый код.** Сначала список с доказательствами в результате (почему мёртвое: выключено в INI, нет вызовов), затем удаление. Кандидаты:
-   - настройки автотеста: `[AutoTest]` в `Settings.*` и INI, клавиша F10. Самого автотеста в коде нет, он снят с требований 01.11.2026;
-   - окна в `Detectors`: `bWindows` и всё, что ищет окна. Поиск дверей оставить: `NearestDoorTo` нужен `Preload` и `InteriorSim`;
-   - экстерьер в `Preload`: `sExteriorCell`, `iExteriorRadius`;
-   - остатки стадий 1–5 `InteriorSim` (архив — `docs/INTERIOR_SIM_STAGES.md`);
-   - проход портала прямо перед `RenderWorld` (`bPassAtSceneListFence=0`), режимы глубины 0 и 1 (`iDepthMode`). Сначала проверить, что рабочий путь от них не зависит;
-   - переключатель мягких частиц `bSoftEffects`: прогон 0.8.24 показал, что они не влияют. Поведение по умолчанию оставить;
-   - detour `AE#41466` (`bGameAnimatesActors`). Только в список кандидатов: решает координатор.
-2. **Разрезать `Portal.cpp`** по ответственности, перенося код как есть, без изменения логики. Примерно так:
+1. **Remove dead code.** First provide a list with evidence in the result (why it is dead: disabled in INI, no callers), then remove it. Candidates:
+   - automated-test settings: `[AutoTest]` in `Settings.*` and INI, F10 key. The automated test itself is absent from the code and was removed from the requirements on 01.11.2026;
+   - windows in `Detectors`: `bWindows` and everything that searches for windows. Keep door search: `NearestDoorTo` is needed by `Preload` and `InteriorSim`;
+   - exterior in `Preload`: `sExteriorCell`, `iExteriorRadius`;
+   - remnants of `InteriorSim` stages 1–5 (archive — `docs/INTERIOR_SIM_STAGES.md`);
+   - portal pass immediately before `RenderWorld` (`bPassAtSceneListFence=0`), depth modes 0 and 1 (`iDepthMode`). First verify that the working path does not depend on them;
+   - soft-particle toggle `bSoftEffects`: run 0.8.24 showed that they have no effect. Keep the default behavior;
+   - detour `AE#41466` (`bGameAnimatesActors`). Candidate list only: the coordinator decides.
+2. **Split `Portal.cpp`** by responsibility, moving code as-is without changing logic. Approximately as follows:
 
-   | Файл | Что в нём |
+   | File | Contents |
    |---|---|
-   | `Portal.cpp` | жизненный цикл (`Start`/`Stop`/`Tick`), преобразование через дверь |
-   | `PortalRender.cpp` | проход: цели рендера, состояние, накопитель, глубина, ImageSpace |
-   | `PortalLights.cpp` | копии ламп, свет игрока, свет NPC |
-   | `PortalActors.cpp` | NPC: видимость, анимация, камера мира, расстояния |
-   | `PortalEffects.cpp` | частицы, контроллеры, затухание, бюджет, общие системы |
-   | `PortalAudio.cpp` | звук и субтитры |
-   | `PortalStatus.cpp` | статус и JSON для трассы |
+   | `Portal.cpp` | lifecycle (`Start`/`Stop`/`Tick`), transformation through the door |
+   | `PortalRender.cpp` | pass: render targets, state, accumulator, depth, ImageSpace |
+   | `PortalLights.cpp` | lamp copies, player light, NPC light |
+   | `PortalActors.cpp` | NPCs: visibility, animation, world camera, distances |
+   | `PortalEffects.cpp` | particles, controllers, fade, budget, master systems |
+   | `PortalAudio.cpp` | sound and subtitles |
+   | `PortalStatus.cpp` | status and JSON for the trace |
 
-   - Общее состояние из анонимного пространства имён переходит во внутренний заголовок `PortalState.h` (`namespace Portal::detail`).
-   - Файл — не больше ~800 строк.
-   - `xmake.lua` собирает `src/**.cpp`, добавлять файлы не нужно.
-3. **`Hooks.cpp`** (1 200 строк) — разрезать по подсистемам, если это просто. Иначе описать план в результате.
-4. **Сборка без предупреждений.** Коммитов два: удаление, затем разрезание. Команды для пользователя.
-5. **Контрольный прогон** (шаги для пользователя):
-   - таверна Вайтрана, F8, посмотреть через портал;
-   - войти и выйти два раза;
+   - Shared state from the anonymous namespace moves into the internal header `PortalState.h` (`namespace Portal::detail`).
+   - No file larger than ~800 lines.
+   - `xmake.lua` builds `src/**.cpp`; no files need to be added.
+3. **`Hooks.cpp`** (1,200 lines) — split by subsystem if straightforward. Otherwise describe a plan in the result.
+4. **Build without warnings.** Two commits: removal, then splitting. Provide commands for the user.
+5. **Control game run** (steps for the user):
+   - Whiterun tavern, F8, look through the portal;
+   - enter and exit twice;
    - F2, F11.
 
-   Сравнить сводку (`tools/run_digest.py`, T01) с `logs/run-0.8.25/`: счётчики должны быть того же порядка.
+   Compare the summary (`tools/run_digest.py`, T01) with `logs/run-0.8.25/`: counters must be of the same order of magnitude.
 
-## Нельзя
+## Not allowed
 
-- Менять поведение. Найденные ошибки — в «Открытые вопросы», не чинить.
+- Changing behavior. Put any bugs found under “Open Questions”; do not fix them.

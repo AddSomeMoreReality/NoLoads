@@ -1,330 +1,330 @@
-# Архитектура плагина (из `docs/HANDOFF.md`)
+# Plugin architecture (from `docs/HANDOFF.md`)
 
-Разделы 2–5 и 8 перенесены из прежнего HANDOFF, нумерация старая. Раздел 9 заменён планом задач. Прежние 6.2 и 7 — разделы 4 и 5 `docs/HANDOFF.md`.
+Sections 2–5 and 8 were moved from the former HANDOFF; the numbering is old. Section 9 was replaced by the task plan. Former sections 6.2 and 7 are sections 4 and 5 of `docs/HANDOFF.md`.
 
-## 2. Термины
+## 2. Terms
 
-| Термин | Значение |
+| Term | Meaning |
 |---|---|
-| Портал | Весь механизм: интерьер рисуется второй камерой в текстуру, текстура показана на месте двери |
-| Квадрат | `portalquad.nif`: прямоугольник на уличной грани двери, на него ложится текстура портала |
-| Проход (pass) | Отрисовка интерьера в текстуру портала, один раз за кадр на границе списков сцены (`AE#36559 + 0x17E`), до накопления мира |
-| Подключённый интерьер | Ячейка в состоянии `kAttached` без игрока. Её 3D висит под нашим узлом вне сцены, поэтому основная камера его не видит |
-| Зона трансформации | Перенос точки через дверь: координаты улицы в координаты интерьера (`Portal::IntoInterior`) |
-| Удержание | Интерьер не выгружается, пока игрок рядом с дверью (`Preload`) |
-| `AE#N` | Идентификатор функции или данных в Address Library для 1.6.1170 |
-| 27 000 единиц | Примерное расстояние между NPC интерьера и камерой на улице в сырых координатах. Отсюда почти все проблемы расстояний |
+| Portal | The entire mechanism: the interior is rendered by a second camera into a texture, and the texture is displayed in place of the door |
+| Quad | `portalquad.nif`: a rectangle on the exterior face of the door onto which the portal texture is mapped |
+| Pass | Rendering the interior into the portal texture, once per frame at the scene-list boundary (`AE#36559 + 0x17E`), before world accumulation |
+| Attached interior | A cell in the `kAttached` state without the player. Its 3D hangs under our node outside the scene, so the main camera does not see it |
+| Transformation zone | Mapping a point through the door: exterior coordinates into interior coordinates (`Portal::IntoInterior`) |
+| Keeping | The interior is not unloaded while the player is near the door (`Preload`) |
+| `AE#N` | Function or data identifier in Address Library for 1.6.1170 |
+| 27 000 units | Approximate distance between interior NPCs and the camera on the street in raw coordinates. This is the source of almost all distance problems |
 
 
-## 3. Архитектура
+## 3. Architecture
 
-### 3.1 Модули
+### 3.1 Modules
 
-Весь код — в `src/`, около 10 400 строк (0.8.26). Плагин собран вокруг хуков: модули не имеют своего цикла и работают из перехватов и событий игры.
+All code is in `src/`, approximately 10,400 lines (0.8.26). The plugin is built around hooks: modules have no loop of their own and run from game hooks and events.
 
-| Модуль | Строк | За что отвечает |
+| Module | Lines | Responsibility |
 |---|---:|---|
-| `main.cpp` | 252 | Вход плагина: лог, трасса, установка хуков, реакция на сообщения SKSE. На `kSaveGame` снимает портал |
-| `Hooks*.cpp`, `Hooks.h`, `HooksCommon.h` | 1438 | Перехваты, логики почти нет: перехват считает или зовёт нужный модуль (T28, раздел 3.6). `Hooks.cpp` (98) — `Install`, одна транзакция detour, `Ready`, `BufferInterior`, тик `PlayerCharacter::Update`; `HooksCells.cpp` (352) — дверь, `GridCellArray`, `CellLoaderTask`; `HooksTes.cpp` (267) — функции `TES`, `MoveTo`, `SetPosition`, Havok, выгрузка; `HooksInteriorSim.cpp` (127) — подключённый интерьер, `OnVisible`; `HooksPortal.cpp` (391) — рендер, частицы, NPC, расстояния, звук, субтитры; `HooksCommon.h` (183) — помощники |
-| `Portal*.cpp`, `PortalState.h` | 3369 | Вторая камера и всё, что нужно для прохода, восемь файлов (раздел 3.3) |
-| `InteriorSim.cpp` | 1033 | Когда портал включён: подключение и отключение ячейки, шаг физики интерьера, NPC на high, скрытие дверей, геометрия двери, статус |
-| `Preload.cpp` | 339 | Удержание интерьера `sInteriorCell`: ставит его в очередь и блокирует выгрузку. Без него порталу нечего рисовать |
-| `Detectors.cpp` | 578 | Поиск дверей (нужен `Preload` и `InteriorSim`), вершины двери, луч под взглядом. Поиск окон удалён в 0.8.26 |
-| `Events.cpp` | 525 | Подписки на события игры, горячие клавиши, замер «дверь → картинка» |
-| `Trace.cpp` | 367 | Трасса JSONL и подпись вызывающих функций через `AE#` |
-| `Probe.cpp` | 218 | Проба симуляции раз в 5 с: ячейки, актёры, миры Havok, огонь изнутри |
-| `Profiler.cpp` | 348 | Сэмплирование главного потока под экраном загрузки |
-| `Snapshot.cpp` | 149 | Снимок состояния `TES` и сетки |
-| `Physics.cpp` | 75 | Учёт шагов Havok, значение прогрева |
-| `Overrides.cpp` | 149 | Наборы настроек в памяти по F7 |
-| `Hud.cpp` | 79 | Очередь сообщений на экран: с 0.8.25 только ответы на клавиши |
-| `ActorJumps.cpp` | 130 | Запись `actor.jump`: прыжки NPC и стек `SetPosition` (0.8.25) |
-| `MainThread.cpp` | 28 | Очередь отложенной работы для главного потока |
-| `Settings.cpp` | 199 | Чтение INI |
+| `main.cpp` | 252 | Plugin entry point: logging, tracing, hook installation, responses to SKSE messages. Removes the portal on `kSaveGame` |
+| `Hooks*.cpp`, `Hooks.h`, `HooksCommon.h` | 1438 | Hooks, almost no logic: a hook counts something or calls the required module (T28, section 3.6). `Hooks.cpp` (98) — `Install`, one detour transaction, `Ready`, `BufferInterior`, the `PlayerCharacter::Update` tick; `HooksCells.cpp` (352) — doors, `GridCellArray`, `CellLoaderTask`; `HooksTes.cpp` (267) — `TES` functions, `MoveTo`, `SetPosition`, Havok, unloading; `HooksInteriorSim.cpp` (127) — attached interior, `OnVisible`; `HooksPortal.cpp` (391) — rendering, particles, NPCs, distances, sound, subtitles; `HooksCommon.h` (183) — helpers |
+| `Portal*.cpp`, `PortalState.h` | 3369 | Second camera and everything needed for the pass, eight files (section 3.3) |
+| `InteriorSim.cpp` | 1033 | When the portal is enabled: attaching and detaching the cell, interior physics stepping, NPCs on high, hiding doors, doorway geometry, status |
+| `Preload.cpp` | 339 | Keeps the `sInteriorCell` interior: queues it and blocks unloading. Without it, the portal has nothing to render |
+| `Detectors.cpp` | 578 | Door detection (needed by `Preload` and `InteriorSim`), door vertices, ray under the crosshair. Window detection was removed in 0.8.26 |
+| `Events.cpp` | 525 | Game event subscriptions, hotkeys, door-to-image timing |
+| `Trace.cpp` | 367 | JSONL tracing and caller annotation via `AE#` |
+| `Probe.cpp` | 218 | Simulation probe every 5 s: cells, actors, Havok worlds, fire from inside |
+| `Profiler.cpp` | 348 | Main-thread sampling under the loading screen |
+| `Snapshot.cpp` | 149 | Snapshot of `TES` and grid state |
+| `Physics.cpp` | 75 | Havok step counting, warm-up value |
+| `Overrides.cpp` | 149 | In-memory setting presets on F7 |
+| `Hud.cpp` | 79 | On-screen message queue: since 0.8.25, only responses to keys |
+| `ActorJumps.cpp` | 130 | Records `actor.jump`: NPC jumps and the `SetPosition` stack (0.8.25) |
+| `MainThread.cpp` | 28 | Deferred-work queue for the main thread |
+| `Settings.cpp` | 199 | INI reading |
 
-Зависимости идут сверху вниз: `Hooks` и `Events` зовут `InteriorSim`, тот зовёт `Portal`, `Preload` и `Detectors`. `Portal` не знает про `InteriorSim`: он получает готовую структуру `Portal::Door`.
+Dependencies run top to bottom: `Hooks` and `Events` call `InteriorSim`, which calls `Portal`, `Preload`, and `Detectors`. `Portal` does not know about `InteriorSim`: it receives a ready-made `Portal::Door` structure.
 
-### 3.2 Что происходит за кадр
+### 3.2 What happens in a frame
 
 ```
-PlayerCharacter::Update (хук, главный поток)
-  оригинал игры
+PlayerCharacter::Update (hook, main thread)
+  original game function
   MainThread::Drain, Hud::Tick, Preload::Tick, Detectors::Tick
-  InteriorSim::Tick     решает, можно ли держать портал; запускает или снимает его;
-                        раз в секунду поднимает NPC интерьера на high
+  InteriorSim::Tick     decides whether the portal can be kept; starts or removes it;
+                        raises interior NPCs to high once per second
   Probe::Tick
 
-AE#13291 / AE#13325 (задания игры): обходы загруженных ячеек
-  после оригинала InteriorSim добавляет подключённый интерьер (AE#18890, AE#18900)
+AE#13291 / AE#13325 (game jobs): traversals of loaded cells
+  after the original, InteriorSim adds the attached interior (AE#18890, AE#18900)
 
-Шаг мира игрока (поток физики, detour AE#77851)
-  после оригинала InteriorSim тем же оригиналом шагает мир интерьера
+Player world step (physics thread, detour AE#77851)
+  after the original, InteriorSim steps the interior world using the same original function
 
-RenderPlayerView (AE#36559, главный поток)
-  + 0x17E: задания списков сцены завершены (write_call AE#69353)
-    Portal::Render      проход портала: задания игры стоят, накопление мира ещё не началось
-  Main::RenderWorld     рисует улицу; квадрат на двери показывает готовую текстуру
+RenderPlayerView (AE#36559, main thread)
+  + 0x17E: scene-list jobs complete (write_call AE#69353)
+    Portal::Render      portal pass: game jobs are stopped, world accumulation has not started
+  Main::RenderWorld     renders the street; the quad on the door displays the finished texture
 ```
 
-До 0.8.22 проход шёл прямо перед `Main::RenderWorld` (detour `AE#107142`), до 0.8.26 это можно было вернуть настройкой. Там задания игры ещё работают, и общие системы частиц вешали игру (0.8.21).
+Before 0.8.22, the pass ran immediately before `Main::RenderWorld` (detour `AE#107142`); until 0.8.26, this could be restored with a setting. Game jobs are still running there, and shared particle systems hung the game (0.8.21).
 
-Шаги `Portal::Render` по порядку:
-1. Перенести копии света игрока через дверь. Найти видимую часть двери (`SeeDoor`). Если её нет, прохода нет.
-2. Навести камеру (`AimCamera`) и обновить UV квадрата (`MapQuad`).
-3. Сохранить состояние рендера и подставить свои текстуры в ячейки движка (`LendSlots`).
-4. Разбудить копии ламп, продвинуть анимацию NPC и контроллеры, показать NPC, одолжить им лампы.
-5. Отсечение по `cell3D` интерьера, затем по `BSParticleSystemManager`.
-6. Поставить фоновый свет интерьера и отрисовать накопитель (`SubmitAccumulator`).
-7. Вернуть всё в обратном порядке и пометить состояние рендера грязным.
+`Portal::Render` steps, in order:
+1. Mirror the player's lights through the door. Find the visible part of the door (`SeeDoor`). If there is none, there is no pass.
+2. Aim the camera (`AimCamera`) and update the quad UVs (`MapQuad`).
+3. Save the render state and substitute our textures into the engine's slots (`LendSlots`).
+4. Wake the lamp copies, advance NPC animation and controllers, show NPCs, and lend lamps to them.
+5. Cull by the interior `cell3D`, then by `BSParticleSystemManager`.
+6. Set the interior ambient light and render the accumulator (`SubmitAccumulator`).
+7. Restore everything in reverse order and mark the render state dirty.
 
-### 3.3 Устройство портала (`Portal*.cpp`)
+### 3.3 Portal implementation (`Portal*.cpp`)
 
-С 0.8.26 (T02) прежний `Portal.cpp` разрезан по ответственности, код перенесён как есть. Публичный интерфейс — `Portal.h`.
+Since 0.8.26 (T02), the former `Portal.cpp` has been split by responsibility, with the code moved as-is. The public interface is `Portal.h`.
 
-| Файл | Строк | Что в нём |
+| File | Lines | Contents |
 |---|---:|---|
-| `PortalState.h` | 333 | Общее состояние (`inline`-переменные), типы, функции, которые один файл зовёт из другого. Всё в `Portal::detail` |
-| `Portal.cpp` | 496 | `Prepare`/`Start`/`Stop`/`Tick`, квадрат (`LoadQuad`, `PlaceQuad`), дверь на экране (`SeeDoor`, `ClipPolygon`), камера через дверь (`AimCamera`, `MapQuad`), `IntoInterior` |
-| `PortalRender.cpp` | 555 | Цель рендера (`CreateTarget`), ячейки движка (`LendSlots`/`ReturnSlots`), отсечение (`t_culling`), `Render`, `DrainPasses`, граница списков сцены (`OnSceneListFence`), `BeforeEffectTechnique` |
-| `PortalImage.cpp` | 250 | Фоновый свет и ImageSpace интерьера (`UseInteriorLook`/`RestoreLook`, F2), TAA (F4), дампы F11 (`WriteDump`) |
-| `PortalLights.cpp` | 513 | Копии ламп (`AddInteriorLights`, `WakeLights`/`SleepLights`), свет игрока (`MirrorPlayerLights`), свет NPC (`LendActorLights`), лампы и эффекты (`BeforeEffectPasses`/`AfterEffectPasses`) |
-| `PortalActors.cpp` | 523 | NPC: `RefreshActors`, `AnimateActors`, `ShowActors`/`HideActors`, видимость, камера мира, расстояния, `GrantFullProcessing`, `AdjustAnimationUpdate`, `AddAnimatedActors` |
-| `PortalEffects.cpp` | 563 | Частицы, контроллеры (`UpdateControllers`), бюджет (`BeforeEmission`), общие системы частиц, наблюдаемые эффекты (`NoteVisible`) |
-| `PortalAudio.cpp` | 30 | Звук и субтитры через дверь |
+| `PortalState.h` | 333 | Shared state (`inline` variables), types, functions called between files. Everything is in `Portal::detail` |
+| `Portal.cpp` | 496 | `Prepare`/`Start`/`Stop`/`Tick`, quad (`LoadQuad`, `PlaceQuad`), door on screen (`SeeDoor`, `ClipPolygon`), camera through the door (`AimCamera`, `MapQuad`), `IntoInterior` |
+| `PortalRender.cpp` | 555 | Render target (`CreateTarget`), engine slots (`LendSlots`/`ReturnSlots`), culling (`t_culling`), `Render`, `DrainPasses`, scene-list boundary (`OnSceneListFence`), `BeforeEffectTechnique` |
+| `PortalImage.cpp` | 250 | Interior ambient light and ImageSpace (`UseInteriorLook`/`RestoreLook`, F2), TAA (F4), F11 dumps (`WriteDump`) |
+| `PortalLights.cpp` | 513 | Lamp copies (`AddInteriorLights`, `WakeLights`/`SleepLights`), player light (`MirrorPlayerLights`), NPC light (`LendActorLights`), lamps and effects (`BeforeEffectPasses`/`AfterEffectPasses`) |
+| `PortalActors.cpp` | 523 | NPCs: `RefreshActors`, `AnimateActors`, `ShowActors`/`HideActors`, visibility, world camera, distances, `GrantFullProcessing`, `AdjustAnimationUpdate`, `AddAnimatedActors` |
+| `PortalEffects.cpp` | 563 | Particles, controllers (`UpdateControllers`), budget (`BeforeEmission`), shared particle systems, observed effects (`NoteVisible`) |
+| `PortalAudio.cpp` | 30 | Sound and subtitles through the door |
 | `PortalStatus.cpp` | 106 | `StatusJson` |
 
-`namespace Portal` видит `detail` через `using namespace detail;` в `PortalState.h`. Искать код портала — Grep по `src/Portal*`.
+`namespace Portal` sees `detail` through `using namespace detail;` in `PortalState.h`. To find portal code, Grep `src/Portal*`.
 
-### 3.4 Запуск и снятие портала
+### 3.4 Starting and removing the portal
 
-**Запуск.** `InteriorSim::Tick`, затем `UpdateRender`, затем `AttachPortal`. Попытка не чаще раза в секунду, условия:
-- стадия 1 (F8 или `iStartStage=1`);
-- игрок снаружи;
-- интерьер в `kUnattached`;
-- дверь в него есть в загруженных ячейках.
+**Startup.** `InteriorSim::Tick`, then `UpdateRender`, then `AttachPortal`. At most one attempt per second, under these conditions:
+- stage 1 (F8 or `iStartStage=1`);
+- player outside;
+- interior in `kUnattached`;
+- a door to it exists in the loaded cells.
 
-`AttachPortal` считает прямоугольник двери и преобразование `toExterior`, подключает ячейку (`AttachCell`), запускает `Portal::Start` и скрывает обе двери.
+`AttachPortal` calculates the door rectangle and the `toExterior` transform, attaches the cell (`AttachCell`), starts `Portal::Start`, and hides both doors.
 
-**Снятие** (`DetachNow`, затем `DetachCell`) происходит перед:
+**Removal** (`DetachNow`, then `DetachCell`) occurs before:
 - `Loading Menu`, `TES::SetCurrentCell`, `TES::PurgeBufferedCells`;
-- `GridCellArray::DetachAll` и `KillAll`, `Detach` и `ClearItem` ячейки с дверью;
-- `kSaveGame` (портал вернётся через секунду);
-- сменой стадии, потерей 3D или двери, сменой состояния ячейки игрой.
+- `GridCellArray::DetachAll` and `KillAll`, `Detach` and `ClearItem` of the cell containing the door;
+- `kSaveGame` (the portal returns after a second);
+- a stage change, loss of 3D or the door, or a cell-state change by the game.
 
-Порядок отключения важен и уже один раз ронял игру: 3D снимается с нашего узла **до** `AE#19130` (`CLAUDE.md`, раздел 7, про `DetachChild`).
+Shutdown order matters and has already crashed the game once: the 3D is detached from our node **before** `AE#19130` (`CLAUDE.md`, section 7, on `DetachChild`).
 
-### 3.5 Потоки и блокировки
+### 3.5 Threads and locks
 
-| Поток | Что в нём идёт | Как защищено |
+| Thread | What runs there | Protection |
 |---|---|---|
-| Главный | Тик `Update`, `Portal::Render`, все изменения состояния | Держит блокировки `g_worldLock`, `g_attachLock` |
-| Задания `BSJobs` (шаг Havok) | Шаг мира интерьера сразу после мира игрока. Отдельного потока физики нет: шаг каждый раз на другом рабочем потоке (T31, `stepThread` в 0.8.32 — пять разных) | Только `try_lock` на `g_worldLock`: при занятой блокировке шаг пропускается |
-| Задания игры | Обходы ячеек, обновление актёров, анимация, выпуск частиц | `try_lock` на `g_attachLock`, атомарные `g_space`, `g_animatedActors` и счётчики |
-| IO | `CellLoaderTask::Run` | Только поля задачи и трасса |
-| Ввод | Горячие клавиши | Сразу `MainThread::Post` |
+| Main | `Update` tick, `Portal::Render`, all state changes | Holds the `g_worldLock` and `g_attachLock` locks |
+| `BSJobs` jobs (Havok step) | Interior world step immediately after the player world. There is no separate physics thread: each step runs on a different worker thread (T31, `stepThread` in 0.8.32 — five different threads) | Only `try_lock` on `g_worldLock`: if the lock is held, the step is skipped |
+| Game jobs | Cell traversals, actor updates, animation, particle emission | `try_lock` on `g_attachLock`, atomic `g_space`, `g_animatedActors`, and counters |
+| IO | `CellLoaderTask::Run` | Only task fields and tracing |
+| Input | Hotkeys | Immediately `MainThread::Post` |
 
-Двери активируются не в главном потоке, а `SKSE AddTask` запрещён (`CLAUDE.md`, раздел 7).
+Doors are activated off the main thread, and `SKSE AddTask` is forbidden (`CLAUDE.md`, section 7).
 
-### 3.6 Перехваты
+### 3.6 Hooks
 
-В `Hooks*.cpp` 60 (0.8.32): 29 vfunc, 26 detour (Microsoft Detours, одна транзакция), 5 `write_call`. Ставятся всегда, даже при выключенном портале. Каждый файл ставит свои: `InstallVfuncs`, `AttachDetours`, `InstallCalls` в пространствах `Hooks::Cells`, `Tes`, `Interior`, `Portals`; порядок — `Hooks::Install`. Ещё 10 ставят модули сами, каждый своей транзакцией: `ActorHold` (detour, `write_call`, 5 vfunc), `Scenes` (2 detour, vfunc).
+There are 60 in `Hooks*.cpp` (0.8.32): 29 vfunc, 26 detours (Microsoft Detours, one transaction), 5 `write_call`. They are always installed, even with the portal disabled. Each file installs its own: `InstallVfuncs`, `AttachDetours`, `InstallCalls` in the `Hooks::Cells`, `Tes`, `Interior`, `Portals` namespaces; the order is in `Hooks::Install`. Another 10 are installed by the modules themselves, each in its own transaction: `ActorHold` (detour, `write_call`, 5 vfunc), `Scenes` (2 detours, vfunc).
 
-**Правило для новых модулей** (T16 `StoryFilter`, T20, T22). Перехваты модуля лежат в его `.cpp`, в анонимном пространстве имён; ставит их `Module::Install()` помощниками `HooksCommon.h`: `DetourTransaction` (своя транзакция, ошибки в лог с префиксом модуля), `WriteCall` (проверка байтов вызова, ошибка в лог), `WriteVfunc`. В `Hooks::Install` добавляется одна строка вызова. В `Hooks*.cpp` новые перехваты не добавляются.
+**Rule for new modules** (T16 `StoryFilter`, T20, T22). A module's hooks reside in its `.cpp`, in an anonymous namespace; `Module::Install()` installs them using `HooksCommon.h` helpers: `DetourTransaction` (its own transaction, errors logged with the module prefix), `WriteCall` (call-byte validation, errors logged), `WriteVfunc`. One call line is added to `Hooks::Install`. No new hooks are added to `Hooks*.cpp`.
 
-| Назначение | Перехваты |
+| Purpose | Hooks |
 |---|---|
-| Трасса загрузки | `TESObjectDOOR::Activate`, 8 методов `GridCellArray`, 5 методов `CellLoaderTask`, `QueueCellLoad`, `CenterOnCell`, `MoveTo` |
-| Снятие портала и защита | `SetCurrentCell`, `PurgeBufferedCells`, `GridCellArray::DetachAll/KillAll/Detach/ClearItem`, `AE#19130`, `AE#13434` |
-| Удержание интерьера | `AE#13370`, `AE#13721`, `AE#18547` |
-| Подключение ячейки | `AE#13291`, `AE#13325`, `AE#106385` |
-| Физика | `AE#61410` (счёт), `AE#13419` (прогрев), `AE#77851` (шаг интерьера) |
-| Отрисовка | граница списков сцены `AE#36559 + 0x17E`, `RenderPlayerView` из `AE#36558 + 0x11D`, `BSEffectShader::SetupTechnique`, `BSEffectShaderProperty::GetRenderPasses`, `OnVisible` на 7 классах (счётчики) |
-| Актёры | `AE#37277` (полная обработка), `AE#41466` (задания анимации), `AE#37350` (счёт передвижения), `ModifyAnimationUpdateData` |
-| Зона трансформации | `AE#78274` из `AE#37348+0x1F3` (`lodDistance`), `AE#105486` из `AE#19384+0xE4` (затухание) |
-| Частицы | `AE#74651` (бюджет) |
-| Тик | `PlayerCharacter::Update` |
+| Loading trace | `TESObjectDOOR::Activate`, 8 `GridCellArray` methods, 5 `CellLoaderTask` methods, `QueueCellLoad`, `CenterOnCell`, `MoveTo` |
+| Portal removal and protection | `SetCurrentCell`, `PurgeBufferedCells`, `GridCellArray::DetachAll/KillAll/Detach/ClearItem`, `AE#19130`, `AE#13434` |
+| Keeping the interior | `AE#13370`, `AE#13721`, `AE#18547` |
+| Cell attachment | `AE#13291`, `AE#13325`, `AE#106385` |
+| Physics | `AE#61410` (counting), `AE#13419` (warm-up), `AE#77851` (interior step) |
+| Rendering | scene-list boundary `AE#36559 + 0x17E`, `RenderPlayerView` from `AE#36558 + 0x11D`, `BSEffectShader::SetupTechnique`, `BSEffectShaderProperty::GetRenderPasses`, `OnVisible` on 7 classes (counters) |
+| Actors | `AE#37277` (full processing), `AE#41466` (animation jobs), `AE#37350` (movement counting), `ModifyAnimationUpdateData` |
+| Transformation zone | `AE#78274` from `AE#37348+0x1F3` (`lodDistance`), `AE#105486` from `AE#19384+0xE4` (fading) |
+| Particles | `AE#74651` (budget) |
+| Tick | `PlayerCharacter::Update` |
 
-### 3.7 Настройки, клавиши, трасса
+### 3.7 Settings, keys, tracing
 
-| Клавиша | Действие |
+| Key | Action |
 |---|---|
-| F8 | Портал включён или выключен. Основная клавиша |
-| F11 | Снимок, проба, кадр игры в HDR `logs/main-N.dds` и текстура портала `logs/portal-N.dds` |
-| F4 | TAA игры в памяти |
-| F3 | Захват обращений к позиции игрока и камер (`AccessWatch`) |
-| F2 | ImageSpace интерьера на всём экране, пока виден портал (с 0.8.25; в 0.8.24 мягкие частицы) |
-| F7 | Наборы настроек `[Overrides]` |
-| F6 | Что под взглядом |
+| F8 | Portal enabled or disabled. Main key |
+| F11 | Snapshot, probe, game frame in HDR `logs/main-N.dds`, and portal texture `logs/portal-N.dds` |
+| F4 | Game TAA in memory |
+| F3 | Capture accesses to player and camera positions (`AccessWatch`) |
+| F2 | Interior ImageSpace across the whole screen while the portal is visible (since 0.8.25; soft particles in 0.8.24) |
+| F7 | `[Overrides]` setting presets |
+| F6 | What is under the crosshair |
 
-Настройки-предохранители в `[Portal]` и `[InteriorSim]`:
+Safety settings in `[Portal]` and `[InteriorSim]`:
 
-| Настройка | Что отключает при значении 0 |
+| Setting | What a value of 0 disables |
 |---|---|
-| `bMasterParticles` | Обход общих систем частиц, первый кандидат при падении в 0.8.21 |
-| `bIgnoreParticleBudget` | Выпуск частиц интерьера вне бюджета |
-| `bAttachInterior` | Подключение ячейки: портал работает с `kUnattached` |
-| `bFullActorProcessing`, `bGameAnimatesActors`, `bAnimateActors` | Части обработки NPC |
+| `bMasterParticles` | Traversal of shared particle systems, first candidate for a crash in 0.8.21 |
+| `bIgnoreParticleBudget` | Interior particle emission outside the budget |
+| `bAttachInterior` | Cell attachment: the portal works with `kUnattached` |
+| `bFullActorProcessing`, `bGameAnimatesActors`, `bAnimateActors` | Parts of NPC processing |
 
-Главные записи трассы:
-- `interior.sim` с полем `action`: `status` (раз в 10 с, внутри `portal`), `attach`, `detach`, `cellAttach`, `cellDetach`, `cellDetachedByGame`, `cellLost`, `promote`, `renderFail`, `stage`;
+Main trace records:
+- `interior.sim` with an `action` field: `status` (every 10 s, contains `portal`), `attach`, `detach`, `cellAttach`, `cellDetach`, `cellDetachedByGame`, `cellLost`, `promote`, `renderFail`, `stage`;
 - `portal.start`, `portal.dump`, `portal.taa`, `window.focus`;
 - `probe`, `snapshot`, `preload.*`, `loading.summary`, `transition.visible`, `frame.hitch`.
 
-### 3.8 Инструменты
+### 3.8 Tools
 
-| Инструмент | Назначение |
+| Tool | Purpose |
 |---|---|
-| `scripts/build.ps1` | Сборка и zip для Vortex. Пишет `src/BuildInfo.h` (ветка и коммит, в `.gitignore`), к имени архива добавляет ветку, кроме `main` и `feature/interior-portal` |
-| `tools/run_digest.py` | Короткая сводка прогона: `python tools/run_digest.py logs/run-X.Y.Z [--full]` → `digest.md` в папке прогона. Переходы, клавиши, портал, `actor.jump`, `scene.change`, сбои. Первый шаг разбора |
-| `tools/analyze_trace.py` | Полный разбор трассы: `python tools/analyze_trace.py <trace> --timeline`. Нужен для исследования загрузки ячеек (0.2–0.7); для портала хватает `run_digest.py` |
-| `tools/name_functions.py` | Подпись `AE#id`, дерево вызовов, поиск ссылок (`--xref`) |
-| `tools/portal_dump_to_png.py` | DDS портала в PNG рядом с исходным файлом |
-| `tools/make_portal_assets.py` | Квадрат и заглушка текстуры в `res/data/` |
-| `tools/re/*.py` | Реверс: см. ниже. Пути к игре и `tools/` зашиты в начале файлов |
-| `tools/re/scan_player_access.py`, `distance_report.py`, `scan_distance_settings.py` | Перечень проверок расстояния: `docs/DISTANCE_CHECKS_APPENDIX.md`. Нужен файл `dumpbin /disasm:nobytes SkyrimSE.exe > full.asm`, 330 МБ |
+| `scripts/build.ps1` | Build and zip for Vortex. Writes `src/BuildInfo.h` (branch and commit, in `.gitignore`), appends the branch to the archive name except for `main` and `feature/interior-portal` |
+| `tools/run_digest.py` | Short run summary: `python tools/run_digest.py logs/run-X.Y.Z [--full]` → `digest.md` in the run folder. Transitions, keys, portal, `actor.jump`, `scene.change`, failures. First analysis step |
+| `tools/analyze_trace.py` | Full trace analysis: `python tools/analyze_trace.py <trace> --timeline`. Needed for cell-loading research (0.2–0.7); `run_digest.py` is sufficient for the portal |
+| `tools/name_functions.py` | `AE#id` annotation, call tree, reference search (`--xref`) |
+| `tools/portal_dump_to_png.py` | Portal DDS to PNG next to the source file |
+| `tools/make_portal_assets.py` | Quad and texture placeholder in `res/data/` |
+| `tools/re/*.py` | Reverse engineering: see below. Game and `tools/` paths are hard-coded at the beginning of the files |
+| `tools/re/scan_player_access.py`, `distance_report.py`, `scan_distance_settings.py` | List of distance checks: `docs/DISTANCE_CHECKS_APPENDIX.md`. Requires a `dumpbin /disasm:nobytes SkyrimSE.exe > full.asm` file, 330 MB |
 
-| Скрипт `tools/re/` | Что делает |
+| `tools/re/` script | What it does |
 |---|---|
-| `fn.py <id> [full]` | Дизассемблирует функцию целиком, подписывает цели через `AE#`. Нужны данные `.pdata`, иначе брать `calls.py` |
-| `calls.py <VA> <VA> [full]` | То же для диапазона адресов |
-| `vtab.py <Класс> [Базовый]` | Все слоты таблицы виртуальных функций, отличия от базового класса |
-| `vslot.py <Класс> <слот>` | Функция в слоте |
-| `scandisp.py <смещение> [store]` | Функции с обращением к полю по смещению |
-| `scanbits.py <смещение> <бит>` | Функции, которые ставят, снимают или проверяют бит поля |
-| `riprefs.py <id>` | Кто читает или пишет глобальные данные |
-| `va2id.py <VA>` | Адрес в `AE#` |
-| `scanflag.py <смещение> <бит>` | Читатели бита через регистр (`mov`, затем `shr`, `bt`, `test`) |
-| `scanfield.py <смещение> [read\|write]` | Чтения и записи поля, любые размеры смещения |
-| `vcalls.py <индекс>` | Вызовы виртуальной функции. Не видит короткие смещения до `0x7F` |
-| `settingname.py` | Черновик: имя настройки по адресу. Надёжнее `scan_distance_settings.py` |
+| `fn.py <id> [full]` | Disassembles an entire function, annotating targets via `AE#`. Requires `.pdata` data; otherwise use `calls.py` |
+| `calls.py <VA> <VA> [full]` | Same for an address range |
+| `vtab.py <Class> [Base]` | All virtual-function table slots, differences from the base class |
+| `vslot.py <Class> <slot>` | Function in a slot |
+| `scandisp.py <offset> [store]` | Functions accessing a field at an offset |
+| `scanbits.py <offset> <bit>` | Functions that set, clear, or test a field bit |
+| `riprefs.py <id>` | Who reads or writes global data |
+| `va2id.py <VA>` | Address to `AE#` |
+| `scanflag.py <offset> <bit>` | Bit readers through a register (`mov`, then `shr`, `bt`, `test`) |
+| `scanfield.py <offset> [read\|write]` | Field reads and writes, any offset sizes |
+| `vcalls.py <index>` | Virtual-function calls. Does not see short displacements up to `0x7F` |
+| `settingname.py` | Draft: setting name by address. `scan_distance_settings.py` is more reliable |
 
 
-## 4. Что уже проверено и не сработало
+## 4. What has already been tested and did not work
 
-Этот список экономит время: не повторять.
+This list saves time: do not repeat these.
 
-| Вопрос | Ложный путь | Что оказалось на деле |
+| Question | False lead | What actually happened |
 |---|---|---|
-| Как показать интерьер | Подвесить `cell3D` в сцену улицы (0.8.5), клон интерьера (стадия 5) | Интерьер больше здания и торчит из стен. Поэтому вторая камера. Код для возврата — `docs/INTERIOR_SIM_STAGES.md` |
-| Нет огня | Режимы глубины (0.8.9–0.8.11), свет ламп на эффектах (0.8.12), мягкие частицы (0.8.14) | Не двигались контроллеры (0.8.13) |
-| Огонь маленький | `Glow:2/3` не попадают в отрисовку (0.8.19, метрика `lastAccumulated` не работает), бюджет частиц (0.8.21), поворот квадов (0.8.23), снимки `portal-N.png` с гаммой, мягкие частицы (0.8.24) | Симуляция частиц совпадает с внутренней (0.8.23). Весь интерьер через портал ярче и серее: кандидат — уличная цветокоррекция, F2 в 0.8.25 |
-| Нет огоньков свечей | Пламя — освещаемая фигура модели (0.8.16–0.8.17) | Частицы живут вне дерева ячейки, в общей системе (0.8.21, проверяется) |
-| Двоение | Лишний проход, чужой материал, альфа текстуры | Всё опровергнуто. Устаревшее `previousWorld` квадрата |
-| NPC в A-позе | Не вызывалась анимация | `kNotVisible` давал обновление без движения костей (0.8.13) |
-| Идолаф застыл | Игра считала его в интерьере, ИИ выключен из-за 27 000 единиц | Он честно вышел в ячейку улицы и стоял там на временном пакете. Портал ни при чём |
-| Бард обрывает песню на переходе | Портал отключает и заново подключает интерьер; на выходе песни останавливает `BardSongStarter` (0.8.24) | На выходе: строки сцены без `AIProcess::high` кончаются за кадры, сцена доходит до конца сама (T10, контроль 0.8.27). `BardSongStarter` (`CLOC`, условие `LocTypeInn`) срабатывает только на входе и там обрывает песню (0.8.27) |
-| Песня барда после замены фрагмента `BardSongStarter` (0.8.25) | Всё дело в `PlaySongRequest` на смене локации | Инструментальные сцены всё равно менялись, а заказанная песня остановлена через 1.6 с после выхода без новой. Замена снята: данные игры не меняются. Причина — T10 |
-| Идолаф «телепортируется» внутрь | Портал ломает его путь | Пакет слушателя барда, а путь NPC не в high игра выполняет мгновенно (0.8.24) |
-| Флаг `kFarAway` | Признак расстояния через дверь | Копия `kNotVisible`: «не виден основной камере» (`AE#37992`) |
-| Высота NPC | Движение по навмешу (`AE#38308`) | Ветка выключена: `bUseNavMeshForMovement=0`. Причина — `kNotVisible` и Foot IK |
-| `[rax+0xE0]` в `es_setupgeom` | `previousWorld` | Это поле `ImageSpaceManager`. Настоящее доказательство: `add rdx, 0B0h` перед `AE#106462` |
+| How to show the interior | Hang `cell3D` in the street scene (0.8.5), interior clone (stage 5) | The interior is larger than the building and sticks out through the walls. Hence the second camera. Restoration code is in `docs/INTERIOR_SIM_STAGES.md` |
+| No fire | Depth modes (0.8.9–0.8.11), lamp light on effects (0.8.12), soft particles (0.8.14) | Controllers were not advancing (0.8.13) |
+| Fire is small | `Glow:2/3` do not enter rendering (0.8.19, the `lastAccumulated` metric does not work), particle budget (0.8.21), quad rotation (0.8.23), `portal-N.png` screenshots with gamma, soft particles (0.8.24) | Particle simulation matches the interior (0.8.23). The entire interior through the portal is brighter and grayer: candidate — exterior color grading, F2 in 0.8.25 |
+| No candle sparks | Flame is a lit model shape (0.8.16–0.8.17) | Particles live outside the cell tree, in a shared system (0.8.21, being checked) |
+| Doubling | Extra pass, foreign material, texture alpha | All disproved. Stale quad `previousWorld` |
+| NPC in A-pose | Animation was not called | `kNotVisible` produced an update without bone movement (0.8.13) |
+| Idolaf froze | The game considered him inside, AI disabled because of 27 000 units | He legitimately exited into the street cell and stood there on a temporary package. The portal was irrelevant |
+| Bard interrupts the song on transition | Portal detaches and reattaches the interior; on exit, `BardSongStarter` stops songs (0.8.24) | On exit: scene lines without `AIProcess::high` finish within frames, and the scene reaches its end by itself (T10, 0.8.27 control). `BardSongStarter` (`CLOC`, `LocTypeInn` condition) triggers only on entry and interrupts the song there (0.8.27) |
+| Bard song after replacing the `BardSongStarter` fragment (0.8.25) | `PlaySongRequest` on location change was entirely responsible | Instrumental scenes still changed, and the requested song stopped 1.6 s after exit without a new one. Replacement removed: game data is not modified. Cause — T10 |
+| Idolaf "teleports" inside | Portal breaks his path | Bard-listener package, and the game instantly executes the path of an NPC not on high (0.8.24) |
+| `kFarAway` flag | Indication of distance through the door | Copy of `kNotVisible`: "not visible to the main camera" (`AE#37992`) |
+| NPC height | Navmesh movement (`AE#38308`) | Branch disabled: `bUseNavMeshForMovement=0`. Cause — `kNotVisible` and Foot IK |
+| `[rax+0xE0]` in `es_setupgeom` | `previousWorld` | This is an `ImageSpaceManager` field. Actual proof: `add rdx, 0B0h` before `AE#106462` |
 
-Прочие ловушки:
-- F9 — быстрая загрузка игры, занимать её нельзя.
-- `RenderTargetManager::GetSingleton()` в NG неверен.
-- `<windows.h>` определяет `near`, `far`, `min`, `max`.
-- Heredoc в Bash съедает `\\n`: скрипты правок писать через Write.
+Other pitfalls:
+- F9 is the game's quickload key and cannot be used.
+- `RenderTargetManager::GetSingleton()` is incorrect in NG.
+- `<windows.h>` defines `near`, `far`, `min`, `max`.
+- Bash heredocs consume `\\n`: write edit scripts via Write.
 
 
-## 5. Как идёт работа
+## 5. Workflow
 
-### 5.1 Цикл версии
+### 5.1 Version cycle
 
-1. Повысить версию в `xmake.lua`, описать изменения в `docs/FEATURES.md`, `docs/HISTORY.md` и `docs/FINDINGS.md`. При работе задачами это делает координатор (`docs/tasks/README.md`).
-2. Собрать: `powershell -File scripts/build.ps1`.
-3. Отдать пользователю путь к zip и короткий сценарий проверки.
-4. Пользователь ставит архив в Vortex (Replace, Deploy), играет, пишет наблюдения.
-5. Разложить логи (5.4), разобрать трассу, записать вывод в FINDINGS, сделать следующую версию.
+1. Increment the version in `xmake.lua`, describe changes in `docs/FEATURES.md`, `docs/HISTORY.md`, and `docs/FINDINGS.md`. When working by tasks, the coordinator does this (`docs/tasks/README.md`).
+2. Build: `powershell -File scripts/build.ps1`.
+3. Give the user the zip path and a short test scenario.
+4. The user installs the archive in Vortex (Replace, Deploy), plays, and reports observations.
+5. Sort the logs (5.4), analyze the trace, record the conclusion in FINDINGS, and make the next version.
 
-### 5.2 Ограничения
+### 5.2 Restrictions
 
-Полный список — `CLAUDE.md`. Чаще всего важны эти:
-- игру запускает пользователь; автономный запуск только с его явного разрешения;
-- коммиты, push и слияния делает только пользователь;
-- `Skyrim.ini` и `SkyrimPrefs.ini` не менять без разрешения;
-- не предлагать обновить игру;
-- Alt+Tab отложен пользователем.
+The full list is in `CLAUDE.md`. These matter most often:
+- the user launches the game; autonomous launch only with explicit permission;
+- only the user makes commits, pushes, and merges;
+- do not modify `Skyrim.ini` or `SkyrimPrefs.ini` without permission;
+- do not suggest updating the game;
+- Alt+Tab has been postponed by the user.
 
-### 5.3 Окружение
+### 5.3 Environment
 
-- Игра: `E:\Games\Skyrim\The Elder Scrolls V - Skyrim`, не в библиотеке Steam.
+- Game: `E:\Games\Skyrim\The Elder Scrolls V - Skyrim`, not in the Steam library.
 - Vortex: staging `E:\Vortex Mods\skyrimse`.
-- `xmake` и Python 3.12 в `PATH`, `pwsh` нет.
+- `xmake` and Python 3.12 in `PATH`; no `pwsh`.
 - `dumpbin`: `D:\VS\BuildTools\VC\Tools\MSVC\14.44.35207\bin\Hostx64\x64\dumpbin.exe`.
 
-### 5.4 Логи
+### 5.4 Logs
 
-Плагин пишет в `logs/`, это задаёт `sLogDirectory` при сборке. Трасса перезаписывается при каждом запуске, поэтому после прогона файлы переносятся в `logs/run-X.Y.Z/` вместе со скриншотами. Падения хранятся как `logs/run-X.Y.Z-crash/`. Папка в `.gitignore`, занимает 1.6 ГБ.
+The plugin writes to `logs/`, as set by `sLogDirectory` at build time. The trace is overwritten on every launch, so after a run the files are moved to `logs/run-X.Y.Z/` together with screenshots. Crashes are stored as `logs/run-X.Y.Z-crash/`. The folder is in `.gitignore` and occupies 1.6 GB.
 
 
-## 8. Недостатки и улучшения
+## 8. Shortcomings and improvements
 
-### 8.1 Процесс
+### 8.1 Process
 
-| Проблема | Почему важно | Что сделать |
+| Problem | Why it matters | What to do |
 |---|---|---|
-| Нет автоматических проверок | Каждая проверка стоит пользователю запуска игры | Математику двери (`InteriorToExterior`, `ClipPolygon`, `AimCamera`) вынести и проверять без игры. Автотест сценария портала |
-| Анализатор показывает числа, но не вердикт | Сравнение с ожиданием идёт вручную | Режим «проверка»: сверка полей статуса с ожиданиями |
+| No automatic checks | Every check costs the user a game launch | Extract door math (`InteriorToExterior`, `ClipPolygon`, `AimCamera`) and test it without the game. Automated test of the portal scenario |
+| Analyzer shows numbers but no verdict | Comparison against expectations is manual | "Check" mode: compare status fields against expectations |
 
-### 8.2 Дефекты и риски в коде
+### 8.2 Code defects and risks
 
-Отсортировано по вероятности проблем.
+Sorted by likelihood of problems.
 
-| Проблема | Где | Последствие | Что сделать |
+| Problem | Where | Consequence | What to do |
 |---|---|---|---|
-| **Гонка на глобальном множителе выпуска.** Несколько заданий одновременно сохраняют и возвращают `AE#388630`. Если второе сохранит уже подменённую 1, множитель останется 1 до конца кадра | `BeforeEmission`, `AfterEmission` | Улица на кадр без бюджета, или интерьер с урезанным выпуском. Комментарий в коде описывает только мягкий случай | Не писать в глобал. По коду игры `AE#74651` считает `count × scale + [this+0x30]`. Перед оригиналом прибавить `count × (1 − scale)` к `this+0x30`: итог точно равен выпуску без бюджета |
-| **Общие частицы делят проходы рендера с основным накопителем.** Новый код, в игре не проверен | Второй `Process` в `Render` | Возможное падение или мерцание огоньков | Проверить прогоном. Запасной вариант — свой список частиц интерьера |
-| **Общая система без разделения мест.** Частицы в мировых координатах, а координаты интерьера и улицы — одно числовое пространство | Тот же вызов | Уличные огоньки могут попасть в портал, огоньки интерьера — в основной кадр. В Вайтране их разделяют 27 000 единиц, в общем случае гарантии нет (предположение) | Фильтровать по эмиттерам интерьера |
-| **Выпуск общих систем остаётся под бюджетом.** `target` такого эмиттера лежит под менеджером, а не под 3D интерьера | `BeforeEmission` | Огоньки могут гореть слабее, чем изнутри (предположение) | Проверять эмиттер через `emitterObjs` |
-| **NPC застревают на месте.** Садия в 0.8.16, Олава и Садия в 0.8.18: контроллер лезет вверх, актёр нет. Причина с 0.8.23: Z актёра не идёт за контроллером при `kNotVisible` | Передвижение NPC интерьера | Исправлено в 0.8.24, в игре не проверено | Смотреть разность высот в статусе |
-| **Подключение без игрока не изучено со стороны логики.** Скрипты, `OnCellAttach`, условия квестов, обнаружение игрока и бой через дверь. Подключение повторяется при каждом сохранении | `AttachCell` | Неизвестно. Важно для шагов 5–6 | Проверить скрипты и условия таверны, затем обнаружение и бой |
-| **Не проверены пути сохранения.** Быстрая загрузка при активном портале, выход в меню, смерть. `kPreLoadGame` не обрабатывается: расчёт на `Loading Menu open` | `main.cpp`, `Events.cpp` | Возможное падение | Добавить сценарий в проверку |
-| **Alt+Tab.** Окно не возвращается. Ломает игру и до нажатия F8 (0.8.13). Без плагина не проверялось. Отложено пользователем | Неизвестно | Портал здесь, возможно, ни при чём | Когда пользователь вернётся к этому, начать с запуска без плагина |
-| **Обход `->parent` в заданиях без блокировки.** `InInterior` зовётся для каждого выпуска частиц | `InInterior` | Безопасно, только если главный поток в это время не меняет дерево. Не доказано | Проверить, где идут задания частиц относительно снятия портала |
-| **Лимит 32 актёра.** Остальные молча не получают полную обработку и анимацию | `kMaxAnimatedActors` | Для таверны хватает (6 NPC), для большого интерьера нет | Писать предупреждение в трассу. Заменить на множество при разделении кода |
-| **Версия игры не проверяется строго.** Портал требует только `IsAE()`, при другой версии лишь предупреждение. Смещения вроде `+0xC5F9` и `+0x1F0` проверить нечем | `main.cpp`, `Start` | На другой версии AE тихая порча памяти | Отключать эксперименты вне 1.6.1170 |
-| **Запас трамплина.** `trampolineSize = 128` при 5 `write_call` (по 14 байт) | `main.cpp` | Новые вызовы могут не поместиться | Поднимать размер вместе с новыми хуками |
-| **Проход только на границе списков сцены** (с 0.8.26). Запасного пути перед `RenderWorld` больше нет | `HooksPortal.cpp`, `InstallCalls` | Если байты вызова `AE#36559 + 0x17E` не совпали (другая версия), портала нет, в логе ошибка `call hook` | Сигнатура внутри функции (`docs/PORTABILITY.md`) |
-| `Space` не освобождается: один объект на запуск портала | `Start` | Сознательно, ради чтения без блокировки. Утечка мала | Оставить или перейти на статический массив |
+| **Race on the global emission multiplier.** Several jobs simultaneously save and restore `AE#388630`. If the second saves the already-substituted 1, the multiplier remains 1 until the end of the frame | `BeforeEmission`, `AfterEmission` | Street without a budget for a frame, or interior with reduced emission. The code comment describes only the mild case | Do not write to the global. According to game code, `AE#74651` computes `count × scale + [this+0x30]`. Before the original, add `count × (1 − scale)` to `this+0x30`: the result exactly equals emission without a budget |
+| **Shared particles share render passes with the main accumulator.** New code, not tested in game | Second `Process` in `Render` | Possible crash or flickering sparks | Test in a run. Fallback — a separate interior particle list |
+| **Shared system without location separation.** Particles are in world coordinates, and interior and exterior coordinates are one numerical space | Same call | Street sparks may enter the portal, interior sparks the main frame. In Whiterun they are 27 000 units apart; in the general case there is no guarantee (hypothesis) | Filter by interior emitters |
+| **Shared-system emission remains under the budget.** Such an emitter's `target` is under the manager, not under the interior 3D | `BeforeEmission` | Sparks may burn more weakly than inside (hypothesis) | Check the emitter through `emitterObjs` |
+| **NPCs get stuck in place.** Saadia in 0.8.16, Olava and Saadia in 0.8.18: the controller moves up, the actor does not. Cause since 0.8.23: actor Z does not follow the controller under `kNotVisible` | Interior NPC movement | Fixed in 0.8.24, not tested in game | Watch the height difference in status |
+| **Attachment without the player has not been studied logically.** Scripts, `OnCellAttach`, quest conditions, player detection, and combat through the door. Attachment repeats on every save | `AttachCell` | Unknown. Important for steps 5–6 | Check tavern scripts and conditions, then detection and combat |
+| **Save paths not tested.** Quickload with an active portal, exit to menu, death. `kPreLoadGame` is not handled: relies on `Loading Menu open` | `main.cpp`, `Events.cpp` | Possible crash | Add a scenario to testing |
+| **Alt+Tab.** The window does not return. Breaks the game even before F8 is pressed (0.8.13). Not tested without the plugin. Postponed by the user | Unknown | The portal may be irrelevant here | When the user returns to this, start with a launch without the plugin |
+| **`->parent` traversal in jobs without a lock.** `InInterior` is called for every particle emission | `InInterior` | Safe only if the main thread is not modifying the tree at that time. Not proven | Check where particle jobs run relative to portal removal |
+| **32-actor limit.** The rest silently do not receive full processing and animation | `kMaxAnimatedActors` | Enough for the tavern (6 NPCs), not for a large interior | Write a warning to the trace. Replace with a set when splitting the code |
+| **Game version is not checked strictly.** The portal requires only `IsAE()`; other versions get only a warning. There is no way to check offsets such as `+0xC5F9` and `+0x1F0` | `main.cpp`, `Start` | Silent memory corruption on another AE version | Disable experiments outside 1.6.1170 |
+| **Trampoline reserve.** `trampolineSize = 128` with 5 `write_call` (14 bytes each) | `main.cpp` | New calls may not fit | Increase the size together with new hooks |
+| **Pass only at the scene-list boundary** (since 0.8.26). There is no longer a fallback before `RenderWorld` | `HooksPortal.cpp`, `InstallCalls` | If the call bytes at `AE#36559 + 0x17E` do not match (another version), there is no portal and the log contains a `call hook` error | Signature inside the function (`docs/PORTABILITY.md`) |
+| `Space` is not freed: one object per portal start | `Start` | Deliberate, to allow lock-free reads. Leak is small | Leave it or switch to a static array |
 
-### 8.3 Архитектура
+### 8.3 Architecture
 
-| Проблема | Что сделать |
+| Problem | What to do |
 |---|---|
-| Около 80 глобальных переменных портала в `PortalState.h`. Файлы разделены (T02, 0.8.26), состояние — нет | Собрать в класс вместе с переходом на много порталов (строка ниже) |
-| ~~`Hooks.cpp` — 1224 строки, все перехваты в одном файле~~ | Сделано (T28, 0.8.32): `Hooks*.cpp` по назначению, помощники в `HooksCommon.h`, новые модули ставят перехваты сами (раздел 3.6) |
-| **Портал рассчитан на один экземпляр.** Шаг 4 и автономность (`docs/HANDOFF.md`, раздел 5) требуют двух и больше | Собрать состояние в класс, в глобальном оставить реестр порталов. Сделать до шага 4 |
-| **Зона трансформации односторонняя и растворена в `Portal`.** Есть только улица → интерьер, а шагам 2–5 нужны оба направления | Вынести отдельный модуль (`PortalSpace`): преобразования в обе стороны, принадлежность объекта, счётчики `Carried` |
-| Исследование и продукт смешаны: все 60 перехватов (и 10 в модулях) стоят всегда, диагностика считается всегда, `StatusJson` — 32–38 КБ раз в 10 с в главном потоке | Разделить хуки на исследовательские и нужные порталу, включать по настройке. Перед релизом выделить отдельную сборку |
-| Выключенные эксперименты после T02: `iControllerUpdate=2` (0.8.13: разницы нет), `bLightEffects` (0.8.12), `iParticleFacing` 0/1, `bAttachInterior=0` (путь 0.8.15), `[Detectors] bEnabled=1`. Остатки стадий: `kStages`, `Cycle`, флаги `g_*Read` | Решить после T13 (огонь): ей могут понадобиться `bLightEffects` и `iParticleFacing` |
-| Логика решений `InteriorSim` смешана с учётом наблюдения (`Watch*`, `TakeVisibility`) | Счётчики `OnVisible` перенести в диагностику |
+| About 80 global portal variables in `PortalState.h`. Files have been split (T02, 0.8.26), state has not | Gather into a class together with the transition to multiple portals (row below) |
+| ~~`Hooks.cpp` — 1224 lines, all hooks in one file~~ | Done (T28, 0.8.32): `Hooks*.cpp` by purpose, helpers in `HooksCommon.h`, new modules install their own hooks (section 3.6) |
+| **Portal is designed for one instance.** Step 4 and autonomy (`docs/HANDOFF.md`, section 5) require two or more | Gather state into a class, leave a portal registry globally. Do before step 4 |
+| **Transformation zone is one-way and dissolved in `Portal`.** Only street → interior exists, while steps 2–5 need both directions | Extract a separate module (`PortalSpace`): transforms in both directions, object membership, `Carried` counters |
+| Research and product are mixed: all 60 hooks (and 10 in modules) are always installed, diagnostics always run, `StatusJson` is 32–38 KB every 10 s on the main thread | Split hooks into research and portal-required, enable by setting. Produce a separate build before release |
+| Disabled experiments after T02: `iControllerUpdate=2` (0.8.13: no difference), `bLightEffects` (0.8.12), `iParticleFacing` 0/1, `bAttachInterior=0` (0.8.15 path), `[Detectors] bEnabled=1`. Stage remnants: `kStages`, `Cycle`, `g_*Read` flags | Decide after T13 (fire): it may need `bLightEffects` and `iParticleFacing` |
+| `InteriorSim` decision logic is mixed with observation accounting (`Watch*`, `TakeVisibility`) | Move `OnVisible` counters to diagnostics |
 
-### 8.4 Качество картинки
+### 8.4 Image quality
 
-| Ограничение | Статус | Что можно сделать |
+| Limitation | Status | What can be done |
 |---|---|---|
-| Картинка плоская: TAA видит движение двери, а не сцены за ней | Шлейф в движении возможен, проверяется в 0.8.21 | Писать в буфер скоростей значения камеры портала или исключить квадрат из TAA |
-| Нет теней от ламп интерьера: копии ламп без теней | Подтверждено кодом | Дорого. Смотреть после шага 2 |
-| Экспозиция, туман и погода улицы могут действовать на квадрат, адаптация глаза — уличная | Не проверялось | Сравнить снимки портала и вида изнутри в одной точке |
-| SSAO, SSR и прочие пост-эффекты в проходе | Не проверялось | То же сравнение |
-| Глаз ближе 10 единиц к двери: прохода нет, остаётся старая картинка (`kMinEyeDistance`) | По коду | Важно для шага 6, решать вместе с ним |
-| Совместимость с ENB и Community Shaders | Не проверялась | Подмена ячеек рендера и перехваты в `RenderPlayerView` — вероятные места конфликта |
+| Image is flat: TAA sees door movement, not the scene behind it | Trails in motion possible, being checked in 0.8.21 | Write portal-camera values to the velocity buffer or exclude the quad from TAA |
+| No shadows from interior lamps: lamp copies have no shadows | Confirmed by code | Expensive. Revisit after step 2 |
+| Exterior exposure, fog, and weather may affect the quad; eye adaptation is exterior | Not tested | Compare portal and interior-view screenshots from the same point |
+| SSAO, SSR, and other post-effects in the pass | Not tested | Same comparison |
+| Eye closer than 10 units to the door: no pass, old image remains (`kMinEyeDistance`) | From code | Important for step 6; solve together with it |
+| Compatibility with ENB and Community Shaders | Not tested | Render-slot substitution and hooks in `RenderPlayerView` are likely conflict points |
 
-### 8.5 Производительность
+### 8.5 Performance
 
-Прогон 0.8.20, экран 2560×1600:
-- проход занимает 2.9 мс CPU в среднем, медиана максимумов 4.9 мс, пик 28.7 мс;
-- контроллеры — 0.66 мс;
-- кадр 17 мс с порталом и без него, но он упирается в 60 FPS. **Стоимость на GPU неизвестна.**
+Run 0.8.20, 2560×1600 screen:
+- pass takes 2.9 ms CPU on average, median of maxima 4.9 ms, peak 28.7 ms;
+- controllers — 0.66 ms;
+- frame is 17 ms with and without the portal, but it is capped at 60 FPS. **GPU cost is unknown.**
 
-Улучшения:
-- **Замер GPU.** Запросы времени D3D11 вокруг прохода, иначе решения вслепую.
-- **Проверка перекрытия.** `SeeDoor` режет только по пирамиде видимости: дверь за стеной всё равно рисуется целиком.
-- **Адаптивное разрешение.** Разрешение прохода сейчас равно размеру двери на экране, вблизи это почти весь экран.
-- **Обновление через кадр** на большом расстоянии от двери.
-- **Уровни симуляции.** Интерьер считается полностью, пока дверь в загруженных ячейках, даже если игрок в двух ячейках от неё. Шаг 1 частично это решит.
+Improvements:
+- **GPU timing.** D3D11 timestamp queries around the pass; otherwise decisions are blind.
+- **Occlusion check.** `SeeDoor` clips only against the view frustum: a door behind a wall is still rendered in full.
+- **Adaptive resolution.** Pass resolution currently equals the door size on screen; nearby, this is almost the entire screen.
+- **Every-other-frame updates** at a large distance from the door.
+- **Simulation levels.** The interior is fully simulated while the door is in loaded cells, even if the player is two cells away. Step 1 will partially solve this.
 
 
-## 9. Рекомендуемый порядок
+## 9. Recommended order
 
-Заменён планом задач `docs/tasks/README.md`. Пункты прежнего списка сделаны (коммит, разбор 0.8.21) или есть в 8.2–8.3 и в задачах T02, T22–T27.
+Replaced by the task plan in `docs/tasks/README.md`. Items from the former list have been done (commit, 0.8.21 analysis) or are in 8.2–8.3 and tasks T02, T22–T27.

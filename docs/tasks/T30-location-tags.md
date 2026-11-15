@@ -1,42 +1,42 @@
-# T30. Теги реакций на смену локации: что гасить на входе через портал
+# T30. Tags for location-change reactions: what to suppress on portal entry
 
-Этап 2. Ветка `exp/T30-location-tags`, worktree `..\CLR-T30` (сабмодуль не нужен). Кода нет, прогона нет. Начинать можно сразу. Результат нужен для второй итерации T16. Первая итерация T16 ставит в игру правило R8 как есть.
+Stage 2. Branch `exp/T30-location-tags`, worktree `..\CLR-T30` (submodule not needed). No code, no run. Can start immediately. The result is needed for the second T16 iteration. The first T16 iteration puts rule R8 into the game as is.
 
-## Зачем
+## Purpose
 
-Решение пользователя от 04.11.2026. Правило R8 (T15) делит квесты на «гасить» и «оставить» одним признаком. Нужна классификация: у каждой реакции на смену локации несколько тегов, и решение «гасить или нет» выводится из тегов. Опорные примеры пользователя:
-- `BardSongStarter` — **технический** квест: на входе останавливает песню, которую игрок уже слышал через портал, и начинает новую. Его гасить;
-- приветствие торговца или трактирщика при входе в лавку или таверну **повторяется, но должно остаться**. R8 сейчас гасит `WIGreeting` (хозяин жилища приветствует игрока) и `WITavern` (хозяин таверны подходит и предлагает сесть): это ошибка R8 с точки зрения пользователя;
-- одноразовые сценки, которые нужны обычному квесту, остаются.
+User decision dated 04.11.2026. Rule R8 (T15) divides quests into “suppress” and “keep” using a single attribute. Classification is needed: each location-change reaction has several tags, and the “suppress or not” decision is derived from those tags. The user's reference examples:
+- `BardSongStarter` — a **technical** quest: on entry it stops the song the player already heard through the portal and starts a new one. Suppress it;
+- a merchant's or innkeeper's greeting when entering a shop or tavern **repeats, but must remain**. R8 currently suppresses `WIGreeting` (the home owner greets the player) and `WITavern` (the tavern owner approaches and offers a seat): from the user's perspective, this is an R8 error;
+- one-time scenes needed by an ordinary quest remain.
 
-## Что известно (T15)
+## What is known (T15)
 
-- `docs/LOCATION_TRIGGERS.md`: раздел 4 (категории, R8, ошибки), раздел 9 (186 квестов `CLOC` с условиями и признаками), раздел 10 (60 привязанных скриптов `OnLocationChange`), раздел 11 (объёмы у загрузочных дверей). `docs/tasks/results/T15.md`.
-- Скрипты разбора T15 (ESM, VMAD, условия, правило, двери): `C:\temp\TEMP\claude\e--Games-Skyrim-ModCreation-My-attempts-NoLoads-CellLoadResearch\743dbd9b-dbf3-4ab3-9d3b-95be6732c2fe\scratchpad\T15\` (`common.py`, `a1_sm.py`, `a2_feat.py`, `a3_papyrus.py`, `a4_eval.py`, `labels.py`). Скопируй в свой scratchpad, в репозиторий не клади.
-- Исходники скриптов — `<Game>\Data\Source\Scripts`. Игра: `E:\Games\Skyrim\The Elder Scrolls V - Skyrim`. Данные только читаются (`CLAUDE.md`, 5.14, п. 7).
-- `OnLocationChange` гасить нельзя (49 из 60 скриптов ведут ход квестов). Фильтровать можно только запуск квеста Story Manager по `CLOC`.
+- `docs/LOCATION_TRIGGERS.md`: section 4 (categories, R8, errors), section 9 (186 `CLOC` quests with conditions and attributes), section 10 (60 bound `OnLocationChange` scripts), section 11 (volumes at load doors). `docs/tasks/results/T15.md`.
+- T15 analysis scripts (ESM, VMAD, conditions, rule, doors): `C:\temp\TEMP\claude\e--Games-Skyrim-ModCreation-My-attempts-NoLoads-CellLoadResearch\743dbd9b-dbf3-4ab3-9d3b-95be6732c2fe\scratchpad\T15\` (`common.py`, `a1_sm.py`, `a2_feat.py`, `a3_papyrus.py`, `a4_eval.py`, `labels.py`). Copy them into your scratchpad; do not put them in the repository.
+- Script sources — `<Game>\Data\Source\Scripts`. Game: `E:\Games\Skyrim\The Elder Scrolls V - Skyrim`. Data is read-only (`CLAUDE.md`, 5.14, item 7).
+- `OnLocationChange` must not be suppressed (49 of 60 scripts advance quests). Only Story Manager quest startup by `CLOC` can be filtered.
 
-## Сделать
+## Tasks
 
-1. **Охват.** Все реакции игрока на смену локации: 186 квестов `CLOC` и сцены, которые они запускают; 60 скриптов `OnLocationChange` (тегировать для полноты, гасить их нельзя). Отдельно выясни, **как в ванили устроено приветствие торговца** при входе в лавку: квест `CLOC`, `OnLocationChange` или реплика `Hello` с условиями. Если это диалог без `CLOC`, фильтр T16 его не касается: так и запиши.
-2. **Словарь тегов.** Предложи 6–10 тегов. Каждый тег: определение, примеры, критерий по данным. Основа — для уточнения:
-   - `once` — срабатывает один раз за игру (`RunOnce`, проверка своей стадии или глобальной);
-   - `story` — журнал, цели, условия на ход других квестов, нужен для хода сюжета;
-   - `technical` — служебный, без обращения к игроку (песни, музыка, пакеты окружения);
-   - `restarts` — останавливает или перезапускает то, что уже идёт на месте: сцену, песню, музыку, пакеты. Главный вред при входе через портал;
-   - `greets` — реакция обращена к пришедшему игроку: приветствие, реплика, хозяин подходит;
-   - `encounter` — случайная встреча, нападение, появление NPC;
-   - `placeKind` / `placeSpecific` — условие на вид места (ключевое слово) или на конкретное место.
-3. **Разметка.** Для всех 186 квестов: теги вручную (по скриптам и сценам) и теги по критериям из данных. Столбец «что потеряется, если погасить». Таблица расхождений «вручную ≠ по данным».
-4. **Что доступно в игре.** Для каждого критерия укажи, читается ли он в памяти игры при `kDataLoaded` без FormID: `TESQuest::data` (тип, флаги), `objectives`, стадии с журналом, условия узлов и квеста, сцены квеста, псевдонимы, имена скриптов (через VM, без разбора байткода). Если критерия в памяти нет, предложи замену или исключение по EditorID в INI. Мод должен работать с квестами других модов: решение по данным предпочтительнее списка.
-5. **Политика.** Правило «гасить ⇔ выражение от тегов» и его форма в INI для T16 (например `sSuppressIf=technical&restarts&!story&!greets`, `sForceKeep=`, `sForceSuppress=` по EditorID). Проверка на таблице: что гасится, что нет, ошибки в сравнении с R8. Ожидание пользователя: `BardSongStarter` гасится; `WIGreeting`, `WITavern` и одноразовые сценки остаются.
-6. **5.14.** Политика не делит переходы на «улица/интерьер»: работает на входе и на выходе, для любых пар ячеек (п. 2) и для нескольких порталов (п. 1).
+1. **Scope.** All player reactions to location changes: 186 `CLOC` quests and the scenes they start; 60 `OnLocationChange` scripts (tag for completeness; they must not be suppressed). Separately determine **how the vanilla merchant greeting works** when entering a shop: `CLOC` quest, `OnLocationChange`, or a conditional `Hello` line. If this is dialogue without `CLOC`, the T16 filter does not affect it: record that explicitly.
+2. **Tag vocabulary.** Propose 6–10 tags. For each tag: definition, examples, data-based criterion. Starting point for refinement:
+   - `once` — triggers once per playthrough (`RunOnce`, check of its own stage or a global);
+   - `story` — journal, objectives, conditions on other quests' progress, needed for story progression;
+   - `technical` — utility, without addressing the player (songs, music, ambient packages);
+   - `restarts` — stops or restarts something already occurring at the location: scene, song, music, packages. The main harm on portal entry;
+   - `greets` — reaction addressed to the arriving player: greeting, line, owner approaches;
+   - `encounter` — random encounter, attack, NPC appearance;
+   - `placeKind` / `placeSpecific` — condition on the kind of place (keyword) or on a specific place.
+3. **Tagging.** For all 186 quests: manual tags (from scripts and scenes) and tags derived from data criteria. A “what is lost if suppressed” column. A discrepancy table, “manual ≠ data-derived.”
+4. **What is available in the game.** For each criterion, state whether it can be read from game memory at `kDataLoaded` without FormIDs: `TESQuest::data` (type, flags), `objectives`, stages with journal, node and quest conditions, quest scenes, aliases, script names (through the VM, without bytecode analysis). If a criterion is unavailable in memory, propose a substitute or an EditorID exception in the INI. The mod must work with quests from other mods: a data-based decision is preferable to a list.
+5. **Policy.** Rule “suppress ⇔ expression over tags” and its INI form for T16 (for example, `sSuppressIf=technical&restarts&!story&!greets`, `sForceKeep=`, `sForceSuppress=` by EditorID). Validate against the table: what is suppressed, what is not, errors compared with R8. User expectation: `BardSongStarter` is suppressed; `WIGreeting`, `WITavern`, and one-time scenes remain.
+6. **5.14.** The policy does not divide transitions into “street/interior”: it works on entry and exit, for any cell pairs (item 2) and for multiple portals (item 1).
 
-## Результат
+## Result
 
-- `docs/LOCATION_TRIGGERS.md`: новый раздел «Теги и политика» (словарь, критерии, политика, ошибки) и столбец тегов в таблице раздела 9. Длинные таблицы — в конце файла.
-- `docs/tasks/results/T30.md` по шаблону `docs/tasks/README.md`: итог политики, что меняется для T16 (какие признаки читать при `kDataLoaded`, какие ключи INI), вопросы пользователю — спорные квесты, по каждому рекомендация.
+- `docs/LOCATION_TRIGGERS.md`: new “Tags and policy” section (vocabulary, criteria, policy, errors) and a tag column in the section 9 table. Put long tables at the end of the file.
+- `docs/tasks/results/T30.md` following the `docs/tasks/README.md` template: policy outcome, what changes for T16 (which attributes to read at `kDataLoaded`, which INI keys), questions for the user — disputed quests, with a recommendation for each.
 
-## Конфликты
+## Conflicts
 
-Только `docs/LOCATION_TRIGGERS.md`. С T16 — по содержанию: T16 первой итерацией делает кэш R8, его структура должна принять теги без переделки (это в брифе T16).
+Only `docs/LOCATION_TRIGGERS.md`. With T16 in content: the first T16 iteration builds the R8 cache, whose structure must accept tags without rework (this is in the T16 brief).

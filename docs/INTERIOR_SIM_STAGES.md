@@ -1,60 +1,60 @@
-# Стадии InteriorSim 1–5: что это было и как вернуть
+# InteriorSim stages 1–5: what they were and how to restore them
 
-С 0.8.12 клавиша F8 переключает только «выключено» ↔ «портал» (бывшая стадия 6). Стадии 1–5 убраны из переключения по просьбе пользователя от 25.10.2026.
+Since 0.8.12, F8 toggles only "off" ↔ "portal" (former stage 6). Stages 1–5 were removed from the toggle at the user's request on 25.10.2026.
 
-- **Стадии 1 и 2 остались в коде:** шаг физики интерьера и подъём его NPC до уровня high теперь входят в режим портала. Без них в портале не было бы живого интерьера.
-- **Код стадий 3–5 удалён** из `src/InteriorSim.cpp`. Это отрисовка `cell3D` интерьера в сцене улицы, подъём над зданием, копия интерьера, контрольные копии двери и скрытие куска здания в проёме.
-- **Полные исходники 0.8.11** (последняя версия со всеми стадиями) лежат в [archive/interior-sim-0.8.11/](archive/interior-sim-0.8.11/): `InteriorSim.cpp`, `InteriorSim.h`, `Settings.h` и секция `[InteriorSim]` из INI.
-- Подробные разборы прогонов — в [FINDINGS.md](FINDINGS.md), раздел «H14–H16».
+- **Stages 1 and 2 remain in the code:** interior physics stepping and raising its NPCs to high are now part of portal mode. Without them, the portal would not contain a living interior.
+- **The code for stages 3–5 was removed** from `src/InteriorSim.cpp`. It rendered the interior `cell3D` in the street scene, lifted it above the building, copied the interior, placed control door copies, and hid part of the building in the doorway.
+- **The complete 0.8.11 sources** (the last version with all stages) are in [archive/interior-sim-0.8.11/](archive/interior-sim-0.8.11/): `InteriorSim.cpp`, `InteriorSim.h`, `Settings.h`, and the `[InteriorSim]` section from the INI.
+- Detailed run analyses are in [FINDINGS.md](FINDINGS.md), section "H14–H16".
 
-## Сводка
+## Summary
 
-| Стадия F8 (до 0.8.12) | Что делала | Итог |
+| F8 stage (before 0.8.12) | What it did | Outcome |
 |---|---|---|
-| 0 | выключено | — |
-| 1 | шаг мира Havok интерьера в потоке физики сразу после мира игрока | работает с 0.8.1: ~58 шагов в секунду, кадр не дольше. **Оставлено** в режиме портала |
-| 2 | плюс `Actor::MoveToHigh()` раз в секунду для NPC интерьера | работает: 6/6–7/7 NPC на high, ИИ ходит, бард поёт за дверью. **Оставлено** в режиме портала |
-| 3 | плюс `cell3D` интерьера в сцене улицы: дверь интерьера, развёрнутая на 180°, на двери снаружи | рисуется с 0.8.5, но интерьер больше здания и торчит из стен, маркеры видны, NPC в A-позе |
-| 4 | то же, поднятое на `fLiftHeight` над зданием | рисуется над крышей (0.8.5) |
-| 5 | над дверью копия интерьера: клоны 3D ссылок без актёров и двери, узел в `ShadowSceneNode::AttachObject` | рисуется над крышей, темнее стадии 4 (0.8.5). Клоны не освобождаются: в 0.8.2 деструктор клона скелета NPC уронил игру |
-| 6 | портал: вторая камера рисует интерьер в текстуру на месте двери | с 0.8.12 — единственный режим F8 (номер 1) |
+| 0 | off | — |
+| 1 | step the interior Havok world on the physics thread immediately after the player world | works since 0.8.1: ~58 steps per second, frame no longer. **Kept** in portal mode |
+| 2 | plus `Actor::MoveToHigh()` once per second for interior NPCs | works: 6/6–7/7 NPCs on high, AI walks, bard sings behind the door. **Kept** in portal mode |
+| 3 | plus interior `cell3D` in the street scene: the interior door, rotated 180°, on the exterior door | renders since 0.8.5, but the interior is larger than the building and sticks out through the walls, markers are visible, NPCs are in A-pose |
+| 4 | same, raised by `fLiftHeight` above the building | renders above the roof (0.8.5) |
+| 5 | copy of the interior above the door: clones of 3D references without actors and the door, node in `ShadowSceneNode::AttachObject` | renders above the roof, darker than stage 4 (0.8.5). Clones are not freed: in 0.8.2, an NPC skeleton clone's destructor crashed the game |
+| 6 | portal: a second camera renders the interior into a texture in place of the door | since 0.8.12 — the only F8 mode (number 1) |
 
-На стадиях 3–5 также:
-- на улице стояли 2 контрольные копии двери (`HangControls`);
-- скрывались наружная дверь, дверь интерьера в проёме и кусок здания с текстурой двери (`HideDoorway`, `[InteriorSim] bHideExteriorDoor`);
-- счётчики `OnVisible` следили за зданием, узлом ячейки, нашим узлом, интерьером и копиями двери. Сами счётчики остались для портала.
+Stages 3–5 also:
+- placed 2 control door copies on the street (`HangControls`);
+- hid the exterior door, the interior door in the doorway, and the part of the building with the door texture (`HideDoorway`, `[InteriorSim] bHideExteriorDoor`);
+- used `OnVisible` counters to watch the building, cell node, our node, interior, and door copies. The counters themselves remain for the portal.
 
-## Что выяснилось и почему так устроено
+## What was learned and why it is designed this way
 
-- **Рисуется только то, что висит в узлах ячеек экстерьера.**
-  - Отсечение игры обходит корень каждой ячейки (`BSMultiBoundNode` под `ObjectLODRoot`).
-  - Под `ObjectLODRoot`, `ShadowSceneNode` и `WorldRoot` оно до добавленных узлов не доходило (0.8.4).
-  - Поэтому наш узел добавлялся в конец детей корня ячейки, где стоит наружная дверь. `AttachChild(child, false)`: первые пустые места у корня ячейки отведены под типы ссылок.
-- **У `cell3D` выгруженного из сцены интерьера устаревшие границы** (радиус 1 в начале координат). После подвешивания нужен `Update`.
-  - Обновлять нужно с `NiUpdateData::kDisableCollision`, чтобы не двигать тела Havok интерьера.
-- **Перед подвешиванием снимались `AppCulled` и поднимался `BSFadeNode::currentFade`** со всего поддерева (`Walk(reveal)`). Из-за этого видны маркеры и скрытые игрой варианты геометрии.
-- **Узел надо снимать раньше, чем игра отсоединит ячейку:**
-  - при `Loading Menu` open;
-  - в `GridCellArray::DetachAll`/`Detach`/`ClearItem`/`KillAll`;
-  - при любой смене состояния интерьера;
-  - если дверь ушла из загруженных ячеек.
-- **«Другая дверь» в проёме таверны** — кусок здания `WRHouseBanneredMare01:16` (`wrdoor01.dds`) в постоянной ячейке мира. Его находили лучами Havok в проём и поиском ссылок в постоянной ячейке.
-- **Клоны (стадия 5 и копии двери) нельзя освобождать.** Они живут до конца сессии (`g_graveyard`). Актёры не клонируются.
+- **Only objects hanging in exterior cell nodes are rendered.**
+  - Game culling traverses the root of each cell (`BSMultiBoundNode` under `ObjectLODRoot`).
+  - Under `ObjectLODRoot`, `ShadowSceneNode`, and `WorldRoot`, it never reached the added nodes (0.8.4).
+  - Therefore our node was added at the end of the children of the cell root containing the exterior door. `AttachChild(child, false)`: the first empty slots at the cell root are reserved for reference types.
+- **The `cell3D` of an interior detached from the scene has stale bounds** (radius 1 at the origin). An `Update` is needed after hanging it.
+  - The update must use `NiUpdateData::kDisableCollision` so as not to move the interior Havok bodies.
+- **Before hanging, `AppCulled` was cleared and `BSFadeNode::currentFade` raised** across the entire subtree (`Walk(reveal)`). This makes markers and geometry variants hidden by the game visible.
+- **The node must be detached before the game detaches the cell:**
+  - on `Loading Menu` open;
+  - in `GridCellArray::DetachAll`/`Detach`/`ClearItem`/`KillAll`;
+  - on any interior state change;
+  - if the door leaves the loaded cells.
+- **The "other door" in the tavern doorway** is part of the building `WRHouseBanneredMare01:16` (`wrdoor01.dds`) in the world's persistent cell. It was found with Havok rays into the doorway and by searching references in the persistent cell.
+- **Clones (stage 5 and door copies) must not be freed.** They live until the end of the session (`g_graveyard`). Actors are not cloned.
 
-## Как вернуть стадии 3–5
+## How to restore stages 3–5
 
-Проще всего вернуть файлы 0.8.11 целиком:
-1. Скопировать `docs/archive/interior-sim-0.8.11/InteriorSim.cpp` и `InteriorSim.h` в `src/`.
-2. В `Settings.h`/`Settings.cpp` вернуть поля `interiorSimLift` (`[InteriorSim] fLiftHeight`, 1500) и `interiorSimHideDoor` (`bHideExteriorDoor`, 1), а `interiorSimStage` снова ограничить 0..6.
-3. В INI вернуть ключи из `docs/archive/interior-sim-0.8.11/InteriorSim.ini`.
+The simplest option is to restore the complete 0.8.11 files:
+1. Copy `docs/archive/interior-sim-0.8.11/InteriorSim.cpp` and `InteriorSim.h` to `src/`.
+2. In `Settings.h`/`Settings.cpp`, restore the `interiorSimLift` (`[InteriorSim] fLiftHeight`, 1500) and `interiorSimHideDoor` (`bHideExteriorDoor`, 1) fields, and again limit `interiorSimStage` to 0..6.
+3. Restore the INI keys from `docs/archive/interior-sim-0.8.11/InteriorSim.ini`.
 
-Остальное (`Portal`, хуки `GridCellArray`, `OnVisible`, `bhkWorld::vfunc[0x32]`, `GuardWorlds`) не менялось. Портал в версии 0.8.11 вызывается из `AttachPortal`, тоже в архивном файле.
+Everything else (`Portal`, `GridCellArray` hooks, `OnVisible`, `bhkWorld::vfunc[0x32]`, `GuardWorlds`) has not changed. In version 0.8.11, the portal is called from `AttachPortal`, also in the archived file.
 
-Ниже — ключевой код каждой стадии из архивной версии (пространство имён без имени в `InteriorSim.cpp`).
+Below is the key code for each stage from the archived version (anonymous namespace in `InteriorSim.cpp`).
 
-### Стадия 1: шаг физики интерьера
+### Stage 1: interior physics step
 
-Detour на `bhkWorld::vfunc[0x32]` (`AE#77851`) в `src/Hooks.cpp`. Он есть и в 0.8.12:
+Detour on `bhkWorld::vfunc[0x32]` (`AE#77851`) in `src/Hooks.cpp`. It also exists in 0.8.12:
 
 ```cpp
 // bhkWorld::vfunc[0x32] (also bhkWorldM's): one step of a Bethesda physics world; the time step
@@ -73,7 +73,7 @@ struct BhkWorldStep
 };
 ```
 
-Сам шаг (в 0.8.12 тот же код, условие — режим портала):
+The step itself (same code in 0.8.12, condition — portal mode):
 
 ```cpp
 void AfterWorldStep(RE::bhkWorld* a_world, std::int32_t a_flag, StepFn a_step)
@@ -110,11 +110,11 @@ void AfterWorldStep(RE::bhkWorld* a_world, std::int32_t a_flag, StepFn a_step)
 }
 ```
 
-Главный поток держит `GuardWorlds()` вокруг `TES::SetCurrentCell`, `PurgeBufferedCells`, `GridCellArray::DetachAll`, `AE#13370` и `AE#13434`. Между открытием и закрытием `Loading Menu` шагов нет (`SetTransition`).
+The main thread holds `GuardWorlds()` around `TES::SetCurrentCell`, `PurgeBufferedCells`, `GridCellArray::DetachAll`, `AE#13370`, and `AE#13434`. There are no steps between `Loading Menu` open and close (`SetTransition`).
 
-### Стадия 2: NPC интерьера на уровне high
+### Stage 2: interior NPCs on high
 
-Раз в секунду из `Tick` (в 0.8.12 — в режиме портала):
+Once per second from `Tick` (in 0.8.12 — in portal mode):
 
 ```cpp
 // ------------------------------------------------------------------
@@ -161,9 +161,9 @@ void PromoteActors(RE::TESObjectCELL* a_cell)
 }
 ```
 
-### Стадии 3 и 4: `cell3D` интерьера в сцене улицы
+### Stages 3 and 4: interior `cell3D` in the street scene
 
-Перенос координат: дверь интерьера, развёрнутая на 180° вокруг своей Z, ложится на наружную дверь (в 0.8.12 используется порталом):
+Coordinate mapping: the interior door, rotated 180° around its own Z, lies on the exterior door (used by the portal in 0.8.12):
 
 ```cpp
 // Interior coordinates -> exterior: the interior door, turned around (180 deg about its own Z), lies
@@ -216,7 +216,7 @@ RE::NiNode* CellRootOf(RE::NiAVObject* a_object)
 }
 ```
 
-Подвешивание (`a_mode` 3 — у двери, 4 — поднятый на `fLiftHeight`, 5 — копия, см. ниже):
+Hanging (`a_mode` 3 — at the door, 4 — lifted by `fLiftHeight`, 5 — copy, see below):
 
 ```cpp
 bool Attach(RE::TESObjectCELL* a_cell, std::uint32_t a_mode)
@@ -362,7 +362,7 @@ bool Attach(RE::TESObjectCELL* a_cell, std::uint32_t a_mode)
 }
 ```
 
-Снятие скрытия и прозрачности со всего поддерева, обновление без коллизии:
+Clearing culling and transparency across the entire subtree, updating without collision:
 
 ```cpp
 struct TreeStats
@@ -422,7 +422,7 @@ RE::NiUpdateData NoCollisionUpdate()
 }
 ```
 
-Снятие (вызывается при `Loading Menu`, из хуков сетки и при смене состояния):
+Detachment (called on `Loading Menu`, from grid hooks, and on state change):
 
 ```cpp
 void DetachNow(std::string_view a_why)
@@ -501,7 +501,7 @@ void UpdateRender(RE::TESObjectCELL* a_cell, bool a_ready, std::int64_t a_now)
 }
 ```
 
-### Скрытие проёма и контрольные копии двери (стадии 3–5)
+### Hiding the doorway and control door copies (stages 3–5)
 
 ```cpp
 // The street in front of the exterior door: where the player arrives when leaving the interior
@@ -707,7 +707,7 @@ std::string HangControls(RE::NiAVObject* a_door, const RE::NiPoint3& a_ground, c
 }
 ```
 
-### Стадия 5: копия интерьера
+### Stage 5: interior copy
 
 ```cpp
 // Clones keep their Havok objects; they must never reach a physics world.
@@ -770,7 +770,7 @@ void RegisterForLight(RE::NiAVObject* a_object)
 }
 ```
 
-Константы и состояние этих стадий — в начале архивного `InteriorSim.cpp`:
+Constants and state for these stages are at the beginning of the archived `InteriorSim.cpp`:
 - `kRenderAligned = 3`, `kRenderLifted = 4`, `kRenderCopyLifted = 5`;
 - `kControls*`, `kDoorway*`;
 - `g_container`, `g_controls`, `g_unculled`, `g_fades`, `g_graveyard`.

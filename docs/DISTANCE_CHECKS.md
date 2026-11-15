@@ -1,157 +1,157 @@
-# Проверки расстояния и видимости: что игра меряет от игрока и камеры
+# Distance and visibility checks: what the game measures from the player and camera
 
-Запрос пользователя от 02.11.2026: найти все проверки расстояния до игрока, даже не относящиеся к порталу сейчас, заменить их проверкой от виртуальной камеры портала и добавить хуки, которые фиксируют каждое обращение.
+User request of 02.11.2026: find all checks of distance to the player, even those unrelated to the portal at present, replace them with a check from the portal's virtual camera, and add hooks that record every access.
 
-Полный автоматический список — в `docs/DISTANCE_CHECKS_APPENDIX.md`. Здесь разбор: что важно, что уже перенесено, что осталось.
+The full automatically generated list is in `docs/DISTANCE_CHECKS_APPENDIX.md`. This document analyzes what matters, what has already been transformed, and what remains.
 
-Пометки: **по коду** — найдено в машинном коде 1.6.1170, в игре не проверено; **в игре** — подтвердила трасса или пользователь; **предположение** — не проверено ничем.
+Labels: **in code** — found in the 1.6.1170 machine code, not tested in the game; **in game** — confirmed by a trace or the user; **hypothesis** — not verified by anything.
 
-## 1. Главный вывод
+## 1. Main conclusion
 
-Большая часть «проблем расстояния» оказалась проблемами **видимости**. NPC интерьера далеко не потому, что до них 27 000 единиц, а потому, что основная камера их не видит. Игра по этому признаку отключает им всё, что нельзя заметить. Портал показывает их другой камерой, и отключённое становится заметно: отсюда и хождение по воздуху, и NPC под полом.
+Most "distance problems" turned out to be **visibility** problems. Interior NPCs are not far away because they are 27,000 units away, but because the main camera does not see them. Based on this, the game disables everything that cannot be noticed. The portal shows them through another camera, and the disabled behavior becomes noticeable: hence both walking on air and NPCs below the floor.
 
-| Механизм | Что читает | Что ломал | Статус |
+| Mechanism | What it reads | What it broke | Status |
 |---|---|---|---|
-| Отметка `kNotVisible` | Основная камера | Высота NPC, `kFarAway`, анимация | Снята, 0.8.24 |
-| Камера мира `AE#36609` | Камера улицы | Затухание, выбор пути обновления, движение | Подменяется в рамках обновления актёра, 0.8.24 |
-| `GetDistance` и его квадрат | Разные миры дают `FLT_MAX` | 108 мест вызова | Через дверь, 0.8.24 |
-| Прямое чтение `player + 0x54` | Позиция игрока | Часть логики ИИ | Не перенесено, раздел 6 |
+| `kNotVisible` mark | Main camera | NPC height, `kFarAway`, animation | Cleared, 0.8.24 |
+| World camera `AE#36609` | Street camera | Fade, update-path selection, movement | Replaced within actor update scope, 0.8.24 |
+| `GetDistance` and its square | Different worlds produce `FLT_MAX` | 108 call sites | Through the door, 0.8.24 |
+| Direct read of `player + 0x54` | Player position | Part of AI logic | Not transformed, section 6 |
 
-Перенос включён настройками `[Portal] bActorsSeen`, `bVirtualCamera`, `bDistanceThroughDoor`, `bSoundThroughDoor`, по умолчанию 1. Каждую можно выключить отдельно.
+The transformation is enabled by `[Portal] bActorsSeen`, `bVirtualCamera`, `bDistanceThroughDoor`, `bSoundThroughDoor`, all defaulting to 1. Each can be disabled separately.
 
-## 2. Как это искалось
+## 2. How this was investigated
 
-| Способ | Что даёт | Что не видит |
+| Method | What it provides | What it misses |
 |---|---|---|
-| `tools/re/scan_player_access.py` | Код, который сам загружает игрока или камеру и читает позицию, а также функции, куда игрока передают аргументом. 59 прямых читателей, 89 косвенных, 46 вспомогательных функций | Игрока, полученного из поля другого объекта. Линейный проход, ветвления не разбираются |
-| `tools/re/scan_distance_settings.py` | 639 настроек с расстоянием, радиусом или диапазоном в имени, у 517 найдены читающие функции | Числа, зашитые в коде, и настройки с другими именами |
-| `tools/re/scanflag.py` | Все читатели бита флагов через регистр | Чтения через сохранённую копию флагов |
-| `src/AccessWatch.*` (F3) | Каждую инструкцию, которая реально коснулась позиции, с вызывающими, в живой игре | Код, который не выполнился за время захвата, и потоки, созданные после старта |
+| `tools/re/scan_player_access.py` | Code that itself loads the player or camera and reads the position, as well as functions to which the player is passed as an argument. 59 direct readers, 89 indirect readers, 46 helper functions | Player obtained from a field of another object. Linear scan; branches are not analyzed |
+| `tools/re/scan_distance_settings.py` | 639 settings with distance, radius, or range in the name; reader functions found for 517 | Numbers embedded in code and settings with other names |
+| `tools/re/scanflag.py` | All readers of the flag bit through a register | Reads through a saved copy of the flags |
+| `src/AccessWatch.*` (F3) | Every instruction that actually touched a position, with callers, in the live game | Code that did not execute during capture and threads created after startup |
 
-Статика показывает, что вообще есть в игре. Захват по F3 показывает, что реально работает и как часто. Вместе они закрывают слабые места друг друга.
+Static analysis shows what exists in the game at all. F3 capture shows what actually runs and how often. Together they cover each other's weaknesses.
 
-**`AccessWatch`.** Аппаратные точки останова процессора (регистры DR0–DR3) стоят на четырёх адресах: позиция игрока, 3D игрока, камера мира, камера игрока. Точка срабатывает и на чтение, и на запись. Отчёт — `logs/CellLoadResearch.access-N.txt` и запись `access.watch` в трассе.
+**`AccessWatch`.** CPU hardware breakpoints (registers DR0–DR3) are set on four addresses: player position, player 3D, world camera, player camera. A breakpoint triggers on both reads and writes. The report is `logs/CellLoadResearch.access-N.txt` and an `access.watch` record in the trace.
 
-## 3. Источники положения
+## 3. Position sources
 
-| Что | Откуда | Сколько мест |
+| What | Source | Number of locations |
 |---|---|---|
-| Позиция игрока | `AE#403521` (указатель на игрока), поле `+0x54` | 2843 ссылки на указатель, 149 прямых чтений позиции |
-| Камера мира | `AE#36609`: `[AE#403513] + 0x128` | Раздел 5 |
-| Камера игрока | `AE#50785` от `PlayerCamera` (`AE#400802`) | `AE#20710`, `AE#37348`, `AE#39102`, `AE#40449`, `AE#40620`, `AE#40636` |
-| Слушатель звука | `AE#67710`, читает `AE#68007` | Звук, раздел 7 |
+| Player position | `AE#403521` (player pointer), field `+0x54` | 2843 references to the pointer, 149 direct position reads |
+| World camera | `AE#36609`: `[AE#403513] + 0x128` | Section 5 |
+| Player camera | `AE#50785` from `PlayerCamera` (`AE#400802`) | `AE#20710`, `AE#37348`, `AE#39102`, `AE#40449`, `AE#40620`, `AE#40636` |
+| Sound listener | `AE#67710`, read by `AE#68007` | Sound, section 7 |
 
-## 4. `kNotVisible`: двенадцать читателей
+## 4. `kNotVisible`: twelve readers
 
-Ставит `HighActorCuller` (`AE#40335`) по пирамиде основной камеры. Снимает только `BSFadeNodeCuller` (`AE#107507`) и только для узлов сцены основной камеры. 3D интерьера висит вне сцены, поэтому отметка однажды ставится и не снимается. **По коду.**
+Set by `HighActorCuller` (`AE#40335`) using the main camera frustum. Cleared only by `BSFadeNodeCuller` (`AE#107507`) and only for nodes in the main camera scene. Interior 3D is outside the scene, so the mark is set once and never cleared. **In code.**
 
-| Функция | Что это | Что происходит при `kNotVisible` | Для NPC портала |
+| Function | What it is | What happens with `kNotVisible` | For portal NPCs |
 |---|---|---|---|
-| `AE#37992` | `Actor` vfunc `0x11C`, из `AE#37350` | Ставит контроллеру `kFarAway` | Флаг значит «не виден», а не «далеко». Это объясняет старую загадку: он стоял и у NPC улицы в 300–900 единицах |
-| `AE#41375`, `AE#41447` | Задания после анимации | Пропускают `AE#43690` и `AE#37480` | **Причина высоты**, см. ниже |
-| `AE#38054` | `Actor` vfunc `0x79` | Обновление анимации без движения костей | Обойдено с 0.8.13, теперь снято и в корне |
-| `AE#41381` | Обновление актёра, `AE#40522`, `AE#41446` | Берёт видимость иначе, через `AE#36618` | Причина не разобрана |
-| `AE#36661` | Из `AE#36561`, `AE#36590` | Пропускает проверку с позицией игрока | Не разобрано |
-| `AE#41246` | Из `AE#41233` | Пропускает проверку расстояния до игрока | Не разобрано |
-| `AE#76553`, `AE#71084`, `AE#108600` | Процессы отсечения | Пропускают узел | Контекст портала ставит `ignorePreprocess` |
-| `AE#107089` | `BSParticleShaderGeometryEmitter` | Пропускает эмиттер | Не разобрано |
-| `AE#40335` | Сам `HighActorCuller` | Не проверяет второй раз | После него отметка снимается перехватом |
+| `AE#37992` | `Actor` vfunc `0x11C`, from `AE#37350` | Sets `kFarAway` on the controller | The flag means "not visible", not "far away". This explains an old mystery: it was also set on street NPCs 300–900 units away |
+| `AE#41375`, `AE#41447` | Post-animation jobs | Skip `AE#43690` and `AE#37480` | **Cause of the height issue**, see below |
+| `AE#38054` | `Actor` vfunc `0x79` | Animation update without bone movement | Bypassed since 0.8.13; now cleared at the root as well |
+| `AE#41381` | Actor update, `AE#40522`, `AE#41446` | Gets visibility differently, through `AE#36618` | Cause not analyzed |
+| `AE#36661` | From `AE#36561`, `AE#36590` | Skips the check with the player position | Not analyzed |
+| `AE#41246` | From `AE#41233` | Skips the distance-to-player check | Not analyzed |
+| `AE#76553`, `AE#71084`, `AE#108600` | Culling processes | Skip the node | Portal context sets `ignorePreprocess` |
+| `AE#107089` | `BSParticleShaderGeometryEmitter` | Skips the emitter | Not analyzed |
+| `AE#40335` | `HighActorCuller` itself | Does not check a second time | A hook clears the mark after it |
 
-**Почему NPC ходят по воздуху.** `AE#43691` принимает новую позицию от контроллера, но для актёра из базы Foot IK (`AE#401101`, `BGSFootIkRaycastInterfaceDB`) оставляет старый Z. Дальше Z ведёт обратная связь Foot IK `AE#43690`. Её вызывают только `AE#41375` и `AE#41447`, а они пропускают `kNotVisible`. Итог: X и Y идут за контроллером, Z стоит.
+**Why NPCs walk on air.** `AE#43691` accepts a new position from the controller, but keeps the old Z for the actor from the Foot IK base (`AE#401101`, `BGSFootIkRaycastInterfaceDB`). Foot IK feedback `AE#43690` subsequently drives Z. It is called only by `AE#41375` and `AE#41447`, which skip `kNotVisible`. The result: X and Y follow the controller, while Z stays fixed.
 
-Доказательство из трассы 0.8.23, разность контроллера и актёра по высоте (норма 64):
+Evidence from the 0.8.23 trace, height difference between controller and actor (norm 64):
 
-| NPC | t | Актёр Z | Контроллер Z | Разность |
+| NPC | t | Actor Z | Controller Z | Difference |
 |---|---|---:|---:|---:|
 | Синмир | 58.9 | 87.8 | 126.7 | 38.9 |
 | Олава | 182.4 | 32.6 | 134.7 | 102.1 |
 | Идолаф | 182.4 | 51.4 | 94.8 | 43.4 |
 
-Контроллер везде на верной высоте. Стоит NPC остановиться, разность снова становится 64. **В игре**, причинная связь с `kNotVisible` пока **по коду**. Проверка: `footFeedback` в статусе больше нуля, разность около 64 и в ходьбе.
+The controller is at the correct height everywhere. As soon as the NPC stops, the difference becomes 64 again. **In game**; the causal link to `kNotVisible` is still **in code**. Check: `footFeedback` in the status is greater than zero, and the difference is around 64 while walking as well.
 
-В обычной игре этого не заметить: Z замирает только у того, кого никто не видит.
+This is unnoticeable in normal play: Z freezes only for someone nobody sees.
 
-## 5. Камера мира `AE#36609`
+## 5. World camera `AE#36609`
 
-Детур: пока поток обновляет актёра интерьера (`Portal::ActorScope`), функция отвечает камерой портала. Она стоит в глазу игрока, перенесённом через дверь, даже когда дверь не на экране (`CarryCamera`). Рамка стоит на `Character::Update`, `AE#37350` и `ModifyAnimationUpdateData`.
+Detour: while a thread updates an interior actor (`Portal::ActorScope`), the function returns the portal camera. It is positioned at the player's eye transformed through the door, even when the door is off-screen (`CarryCamera`). The scope is installed on `Character::Update`, `AE#37350`, and `ModifyAnimationUpdateData`.
 
-| Читатель | Что делает | Статус |
+| Reader | What it does | Status |
 |---|---|---|
-| `AE#19384` | Затухание анимированных ссылок | Перенесено с 0.8.19 отдельным перехватом, вне рамки актёра |
-| `AE#38054` | Данные обновления анимации | В рамке |
-| `AE#37507` через `AE#105490` | Признак «виден» для контроллера (`moveData + 0x20`). Только оптимизация стоящих актёров | В рамке |
-| `AE#37277` через `AE#105490` | Урезанное обновление | Обойдено с 0.8.14 |
-| `AE#37286`, `AE#37361` | Обновление актёра, не разобрано | В рамке |
-| `AE#37690` | Попадание по актёру, вызывается из `AE#36991`, `AE#38586` | Только если идёт внутри рамки |
-| `AE#38308` | Движение по навмешу, порог `fVisibleNavmeshMoveDist` 4096 и `fNotVisibleNavmeshMoveDist` 2048 | Выключено в обычной игре: `bUseNavMeshForMovement=0` в `Skyrim_Default.ini` |
-| `AE#43851`, `AE#44213` | Взрывы и снаряды | Вне рамки, нужны для шага 5 |
-| `AE#32179` | Небо | Не нужно |
+| `AE#19384` | Fade of animated references | Transformed since 0.8.19 by a separate hook, outside actor scope |
+| `AE#38054` | Animation update data | Within scope |
+| `AE#37507` via `AE#105490` | "Visible" flag for the controller (`moveData + 0x20`). Only an optimization for stationary actors | Within scope |
+| `AE#37277` via `AE#105490` | Reduced update | Bypassed since 0.8.14 |
+| `AE#37286`, `AE#37361` | Actor update, not analyzed | Within scope |
+| `AE#37690` | Hit on an actor, called from `AE#36991`, `AE#38586` | Only if it runs within scope |
+| `AE#38308` | Navmesh movement, threshold `fVisibleNavmeshMoveDist` 4096 and `fNotVisibleNavmeshMoveDist` 2048 | Disabled in normal play: `bUseNavMeshForMovement=0` in `Skyrim_Default.ini` |
+| `AE#43851`, `AE#44213` | Explosions and projectiles | Outside scope, needed for step 5 |
+| `AE#32179` | Sky | Not needed |
 
-## 6. Расстояние до игрока
+## 6. Distance to the player
 
-**`AE#19823` и `AE#19824`** — `TESObjectREFR::GetDistance` и его квадрат, 10 и 98 мест вызова. Для ссылок в разных мирах оба отвечают `FLT_MAX`. Теперь между игроком и ссылкой интерьера они считают расстояние через дверь. **Риск:** логика, которой раньше было «бесконечно далеко», теперь видит игрока рядом. Например, NPC у двери может заговорить с игроком сквозь портал. При странном поведении — `bDistanceThroughDoor=0`.
+**`AE#19823` and `AE#19824`** — `TESObjectREFR::GetDistance` and its square, 10 and 98 call sites. For references in different worlds, both return `FLT_MAX`. Now, between the player and an interior reference, they calculate distance through the door. **Risk:** logic that previously saw "infinitely far away" now sees the player nearby. For example, an NPC near the door may speak to the player through the portal. If behavior is strange, use `bDistanceThroughDoor=0`.
 
-Читатели, куда игрок передаётся явно: `AE#25063`, `AE#37284`, `AE#37627`, `AE#37896`, `AE#38009`, `AE#39219`, `AE#39632`, `AE#39637`, `AE#39648`, `AE#39652`, `AE#40435`, `AE#40847`, `AE#41334`, `AE#41348`, `AE#41402`, `AE#41403`, `AE#41442`.
+Readers to which the player is passed explicitly: `AE#25063`, `AE#37284`, `AE#37627`, `AE#37896`, `AE#38009`, `AE#39219`, `AE#39632`, `AE#39637`, `AE#39648`, `AE#39652`, `AE#40435`, `AE#40847`, `AE#41334`, `AE#41348`, `AE#41402`, `AE#41403`, `AE#41442`.
 
-**Прямые чтения, ещё не перенесены.** Группы из приложения:
+**Direct reads not yet transformed.** Groups from the appendix:
 
-| Группа | Функции | Нужно порталу |
+| Group | Functions | Needed by the portal |
 |---|---|---|
-| ИИ и пакеты | `AE#39322` (шесть чтений, из `AE#37800`–`AE#37805`), `AE#39648`, `AE#39391`, `AE#39673`, `AE#37618` | Да, разобрать по данным F3 |
-| Ячейки | `AE#18889`, `AE#32089` | Проверить: обновляет интерьер игрока |
-| Перебор актёров вокруг точки | `AE#41470`–`AE#41474` (магия, эффекты), `AE#40807`, `AE#40817`, `AE#40818` | Шаг 5 |
-| Снаряды и взрывы | `AE#43869`, `AE#44217` | Шаг 5 |
-| Камера и прицел | `AE#50722`, `AE#50724`, `AE#33120`, `AE#21550` (VATS) | Нет |
-| Интерфейс | `AE#47314`, `AE#51671`, `AE#51676`, `AE#51728`, `AE#51744`, `AE#53111` (компас, карта, здоровье врага) | Нет |
-| Эффекты магии | `AE#34351`, `AE#34355` (`GuideEffect`, Ясновидение) | Нет |
-| Быстрое перемещение | `AE#40445` | Нет |
-| Небо, погода | `AE#32164`, `AE#32179`, `AE#32217`, `AE#32218` | Нет |
-| Эффекты рядом с игроком | `AE#15203`, `AE#36216`, `AE#36661`, `AE#17927`, `AE#22643`, `AE#35639`, `AE#35651`, `AE#36581`, `AE#40725`, `AE#40821`, `AE#40826`, `AE#40829`, `AE#55494`, `AE#56860` | Не разобрано |
+| AI and packages | `AE#39322` (six reads, from `AE#37800`–`AE#37805`), `AE#39648`, `AE#39391`, `AE#39673`, `AE#37618` | Yes, analyze using F3 data |
+| Cells | `AE#18889`, `AE#32089` | Check: updates the player's interior |
+| Actor enumeration around a point | `AE#41470`–`AE#41474` (magic, effects), `AE#40807`, `AE#40817`, `AE#40818` | Step 5 |
+| Projectiles and explosions | `AE#43869`, `AE#44217` | Step 5 |
+| Camera and crosshair | `AE#50722`, `AE#50724`, `AE#33120`, `AE#21550` (VATS) | No |
+| Interface | `AE#47314`, `AE#51671`, `AE#51676`, `AE#51728`, `AE#51744`, `AE#53111` (compass, map, enemy health) | No |
+| Magic effects | `AE#34351`, `AE#34355` (`GuideEffect`, Clairvoyance) | No |
+| Fast travel | `AE#40445` | No |
+| Sky, weather | `AE#32164`, `AE#32179`, `AE#32217`, `AE#32218` | No |
+| Effects near the player | `AE#15203`, `AE#36216`, `AE#36661`, `AE#17927`, `AE#22643`, `AE#35639`, `AE#35651`, `AE#36581`, `AE#40725`, `AE#40821`, `AE#40826`, `AE#40829`, `AE#55494`, `AE#56860` | Not analyzed |
 
-Подменить позицию игрока глобально нельзя: её читают параллельно с NPC улицы, а указатель — обычная переменная, не функция. Поэтому такие места переносятся по одному.
+The player position cannot be replaced globally: street NPCs read it concurrently, and the pointer is an ordinary variable, not a function. Therefore, such locations are transformed one at a time.
 
-## 7. Звук
+## 7. Sound
 
-Перенесён одной точкой: `BSXAudio2GameSound::SetEmitterPositionImpl` (vfunc `0x0F`, `AE#68007`). Сюда приходит итоговое место любого звука, и функция сама считает `listenerDistance`. Звук в границах интерьера переводится в координаты улицы. Музыка, 2D-звуки и звуки без места не трогаются. **По коду**, в игре не проверено.
+Transformed at a single point: `BSXAudio2GameSound::SetEmitterPositionImpl` (vfunc `0x0F`, `AE#68007`). The final position of every sound arrives here, and the function itself calculates `listenerDistance`. Sound within the interior bounds is transformed into street coordinates. Music, 2D sounds, and sounds without a position are untouched. **In code**, not tested in the game.
 
-Ограничения:
-- звук идёт сквозь стены таверны, а не только через дверь: затухание только по расстоянию;
-- игра может не запускать звук ещё раньше, например, если проверка стоит в логике ИИ;
-- границы — сфера интерьера: в мире, где координаты интерьера пересекаются с улицей, уличный звук может быть перенесён по ошибке. В Вайтране их разделяют 27 000 единиц.
+Limitations:
+- sound passes through the tavern walls, not only through the door: attenuation is based only on distance;
+- the game may decline to start a sound even earlier, for example if the check is in AI logic;
+- the bounds are the interior sphere: in a world where interior coordinates overlap the street, a street sound may be transformed by mistake. In Whiterun, 27,000 units separate them.
 
-Настройки звука: `fMaxHighlightRadius:Audio` 250 (`AE#35124`, `AE#35127`), `fNonHighlightSpeechAtten:Audio` 12, `fDeathSoundMaxDistance` 1000 (`AE#37896`).
+Sound settings: `fMaxHighlightRadius:Audio` 250 (`AE#35124`, `AE#35127`), `fNonHighlightSpeechAtten:Audio` 12, `fDeathSoundMaxDistance` 1000 (`AE#37896`).
 
-Прогон 0.8.24: перенос работает. Снаружи песня барда была слышна (в пробе `carried` у реплик по 25–38 с), но только с начала новой песни. Почему песня обрывается и начинается заново на каждом переходе через дверь, — `docs/FINDINGS.md`, прогон 0.8.24.
+Run 0.8.24: the transformation works. The bard song was audible outside (`carried` on lines in the probe for 25–38 s each), but only from the beginning of a new song. Why the song stops and starts over on every door transition is covered in `docs/FINDINGS.md`, run 0.8.24.
 
-**Субтитры (0.8.25).** Их показывает менеджер субтитров:
-- `AE#52638` каждый кадр пишет в `SubtitleInfo + 0x18` квадрат расстояния: `AE#18517` от «мировой позиции» говорящего до позиции игрока. Мировую позицию (точку и пространство: ячейку интерьера или мир) даёт `AE#19784`;
-- `AE#52637` показывает только субтитры ближе `fMaxSubtitleDistance:Interface` (1250).
+**Subtitles (0.8.25).** They are displayed by the subtitle manager:
+- every frame, `AE#52638` writes the squared distance to `SubtitleInfo + 0x18`: `AE#18517` from the speaker's "world position" to the player position. World position (a point and a space: interior cell or world) is supplied by `AE#19784`;
+- `AE#52637` shows only subtitles closer than `fMaxSubtitleDistance:Interface` (1250).
 
-Говорящий в интерьере стоит в другом пространстве, поэтому его субтитров на улице не было. Вызов `AE#19784` для говорящего (`AE#52638 + 0x122`) перехвачен: говорящий из интерьера портала переносится через дверь в пространство игрока (`[Portal] bSubtitlesThroughDoor`).
+A speaker in the interior is in another space, so their subtitles were not visible outdoors. The `AE#19784` call for the speaker (`AE#52638 + 0x122`) is hooked: a speaker in the portal interior is transformed through the door into the player's space (`[Portal] bSubtitlesThroughDoor`).
 
-## 8. Захват F3, прогон 0.8.24
+## 8. F3 capture, run 0.8.24
 
-Два захвата по 3 с: снаружи у двери с порталом (`logs/run-0.8.24/CellLoadResearch.access-1.txt`, 561 000 обращений) и внутри (`access-2.txt`, 111 000). 174 кадра за 3 с.
+Two 3 s captures: outside at the door with the portal (`logs/run-0.8.24/CellLoadResearch.access-1.txt`, 561,000 accesses) and inside (`access-2.txt`, 111,000). 174 frames in 3 s.
 
-**Позиция игрока снаружи**, кто читает чаще всего:
+**Player position outside**, most frequent readers:
 
-| Обращений | Где | Что это |
+| Accesses | Where | What it is |
 |---:|---|---|
-| 64 469 + 35 857 | `AE#19824` (наш detour) из `AE#39637 + 0x119` и `AE#39632` | Квадрат расстояния до игрока в полном обновлении NPC (`AE#37347` → `AE#39108` → `AE#39637`): около 570 за кадр |
-| 10 017 | Наш `DistanceThroughDoor` | Тот же поток вызовов |
-| 4 176 | `AE#18889 + 0x1BB` | Обновление подключённого интерьера за кадр (24 за кадр) |
-| 1 044 | `AE#36661 + 0xFE` | Один из читателей `kNotVisible` (раздел 4) |
-| 656 | `AE#19784` из `AE#42742` | Мировая позиция для обработки списков актёров |
-| 376 | `AE#19823` из `AE#21405` | `GetDistance` из скриптовой функции |
+| 64,469 + 35,857 | `AE#19824` (our detour) from `AE#39637 + 0x119` and `AE#39632` | Squared distance to the player in full NPC update (`AE#37347` → `AE#39108` → `AE#39637`): about 570 per frame |
+| 10,017 | Our `DistanceThroughDoor` | Same call flow |
+| 4,176 | `AE#18889 + 0x1BB` | Per-frame update of the attached interior (24 per frame) |
+| 1,044 | `AE#36661 + 0xFE` | One of the `kNotVisible` readers (section 4) |
+| 656 | `AE#19784` from `AE#42742` | World position for actor-list processing |
+| 376 | `AE#19823` from `AE#21405` | `GetDistance` from a script function |
 
-Остальные места — по одному разу за кадр (174) или реже. Из 149 прямых чтений раздела 6 за 3 с сработали около 30.
+The remaining locations ran once per frame (174) or less often. Of the 149 direct reads in section 6, about 30 triggered in 3 s.
 
-**Камера мира снаружи:** 364 793 обращения из `AE#19384 + 0xAC` (затухание анимированных ссылок, уже перенесено в 0.8.19), 16 878 из `AE#31754` (небо), 8 874 из `AE#105490` (расстояние затухания `BSFadeNode`), 4 524 из `AE#38308` (навмеш, выключен в `Skyrim.ini`).
+**World camera outside:** 364,793 accesses from `AE#19384 + 0xAC` (fade of animated references, already transformed in 0.8.19), 16,878 from `AE#31754` (sky), 8,874 from `AE#105490` (`BSFadeNode` fade distance), 4,524 from `AE#38308` (navmesh, disabled in `Skyrim.ini`).
 
-Вывод: частых непокрытых проверок мало. Главная — `AE#39637` с ~570 вызовами за кадр, и она уже идёт через `GetDistance`. Следующие кандидаты — `AE#18889` и `AE#36661`.
+Conclusion: there are few frequent uncovered checks. The main one is `AE#39637` with about 570 calls per frame, and it already goes through `GetDistance`. The next candidates are `AE#18889` and `AE#36661`.
 
-## 9. Что дальше
+## 9. Next steps
 
-1. По данным F3 разобрать `AE#18889 + 0x1BB` и `AE#36661 + 0xFE`: что они делают с позицией игрока.
-2. Разобрать `AE#41381`, `AE#41246`, `AE#37286`, `AE#37361`.
-3. Заменить «всегда видим» проверкой пирамиды камеры портала, когда появится разделение на классы: сейчас NPC интерьера считаются видимыми, даже если дверь вне экрана.
+1. Using F3 data, analyze `AE#18889 + 0x1BB` and `AE#36661 + 0xFE`: what they do with the player position.
+2. Analyze `AE#41381`, `AE#41246`, `AE#37286`, `AE#37361`.
+3. Replace "always visible" with a portal-camera frustum check once class separation exists: currently interior NPCs are considered visible even if the door is off-screen.

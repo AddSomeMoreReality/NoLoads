@@ -1,38 +1,38 @@
-# T36. Типы NG в базе Ghidra: структуры, vtable, `this` и синглтоны
+# T36. NG types in the Ghidra base: structures, vtables, `this`, and singletons
 
-Этап 2, вспомогательная. Исполнитель — куратор базы. Ветка `task/T36-ghidra-types`. Код: `tools/ghidra/collect_types.py`, `apply_types.py`. Прогона нет. После T35, до T38/T39: карты игрока и загрузки ячеек читаются в разы легче с полями вместо `*(param_1 + 0xc0)`.
+Stage 2, auxiliary. Executor — the base curator. Branch `task/T36-ghidra-types`. Code: `tools/ghidra/collect_types.py`, `apply_types.py`. No run. After T35, before T38/T39: the player and cell-loading maps are read several times easier with fields instead of `*(param_1 + 0xc0)`.
 
-## Что есть
+## What there is
 
-- Заголовки NG (`lib/commonlibsse-ng`, v13.1.0): поля с комментариями смещений (`/* 1114 */`, `// 0C0`), `static_assert(sizeof(X) == …)`, базовые классы. Раскладки с отличиями SE/AE — `RUNTIME_DATA`, `GetAERuntimeData()`. У `TES` поля дальше `0x128` в AE сдвинуты (`CLAUDE.md`, раздел 7).
-- `collect_names.py` уже разбирает области видимости NG (классы, базы, виртуальные методы со слотами). Парсер C в Ghidra шаблоны C++23 NG не возьмёт.
+- NG headers (`lib/commonlibsse-ng`, v13.1.0): fields with offset comments (`/* 1114 */`, `// 0C0`), `static_assert(sizeof(X) == …)`, base classes. Layouts with SE/AE differences — `RUNTIME_DATA`, `GetAERuntimeData()`. For `TES`, fields beyond `0x128` are shifted in AE (`CLAUDE.md`, section 7).
+- `collect_names.py` already parses NG scopes (classes, bases, virtual methods with slots). Ghidra's C parser cannot take NG's C++23 templates.
 
-## Сделать
+## To do
 
-1. **Структуры:** свой разбор NG → JSON (класс, размер для AE, базы, поля: смещение, тип, имя). Источник смещения — комментарий. Если его нет, вычислить и сверить с `static_assert`. Неизвестные типы — `undefined`/массив байт нужной длины.
-   - Первыми: `TES`, `TESForm` → `TESObjectREFR` → `Actor` → `Character` → `PlayerCharacter`, `TESObjectCELL`, `TESWorldSpace`, `NiAVObject`/`NiNode`, `ProcessLists`, `PlayerCamera`, `Main`, `BSTEventSource<T>`.
-   - Потом все.
-2. **Vtable:** структура слотов по виртуальным методам NG (`SetParentCell` в слоте `0x98`), поле `vtable` у класса. Тогда вызов через vtable в псевдокоде получает имя.
-3. **Применение** (`apply_types.py`, PyGhidra, повторяемо):
-   - категория `/NG` в менеджере типов;
-   - `this` у методов с именем NG/curated (`__thiscall`, `Class*`);
-   - типы синглтонов (`PlayerCharacter::singleton` — `PlayerCharacter*`, `TES::singleton` — `TES*` и т. д.);
-   - сигнатуры из `decltype` NG там, где они есть.
-4. **Проверка:**
-   - псевдокод `AE#13316` показывает поля `TES` (`interiorCell` на `+0xC0`, `gridCells`, `interiorBuffer`);
-   - `AE#40466` — поля `PlayerCharacter`;
-   - размеры совпадают с `static_assert`.
-   - Список классов, где расходятся.
-5. **Отчёт:** число структур и полей, методы с `this`, расхождения размеров, время. Обновить `docs/GHIDRA.md`.
+1. **Structures:** own NG parsing → JSON (class, size for AE, bases, fields: offset, type, name). The offset source is the comment. If there is none, compute it and verify against `static_assert`. Unknown types — `undefined`/byte array of the needed length.
+   - First: `TES`, `TESForm` → `TESObjectREFR` → `Actor` → `Character` → `PlayerCharacter`, `TESObjectCELL`, `TESWorldSpace`, `NiAVObject`/`NiNode`, `ProcessLists`, `PlayerCamera`, `Main`, `BSTEventSource<T>`.
+   - Then everything.
+2. **Vtable:** slot structure from NG virtual methods (`SetParentCell` in slot `0x98`), a `vtable` field on the class. Then a call through a vtable in pseudocode gets a name.
+3. **Application** (`apply_types.py`, PyGhidra, repeatable):
+   - `/NG` category in the type manager;
+   - `this` on methods with an NG/curated name (`__thiscall`, `Class*`);
+   - singleton types (`PlayerCharacter::singleton` — `PlayerCharacter*`, `TES::singleton` — `TES*`, etc.);
+   - signatures from NG `decltype` where they exist.
+4. **Verification:**
+   - pseudocode of `AE#13316` shows `TES` fields (`interiorCell` at `+0xC0`, `gridCells`, `interiorBuffer`);
+   - `AE#40466` — `PlayerCharacter` fields;
+   - sizes match `static_assert`.
+   - List of classes where they diverge.
+5. **Report:** number of structures and fields, methods with `this`, size discrepancies, time. Update `docs/GHIDRA.md`.
 
-## Правила
+## Rules
 
-Типы — выводы из NG (MIT), в git можно JSON-описание, если нужно. Псевдокод — нет. После применения — `snapshot.py`.
+Types are conclusions from NG (MIT); a JSON description may go into git if needed. Pseudocode — no. After applying — `snapshot.py`.
 
-## Результат
+## Result
 
 `docs/tasks/results/T36.md`.
 
-## Конфликты
+## Conflicts
 
-T34, T35 — по очереди в чате куратора.
+T34, T35 — one at a time in the curator's chat.

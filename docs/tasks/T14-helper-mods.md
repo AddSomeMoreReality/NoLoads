@@ -1,81 +1,81 @@
-# T14. Технические моды как зависимость или опора
+# T14. Helper mods as a dependency or a foundation
 
-Ветка `exp/T14-helper-mods`. Код: нет, только исследование. Прогон: по итогам, моды ставит пользователь. Можно начинать сразу, от T10–T13 не зависит.
+Branch `exp/T14-helper-mods`. Code: none, research only. Test run: at the end; the user installs the mods. Can start right away, does not depend on T10–T13.
 
-## Вопрос пользователя
+## User's question
 
-Поможет ли проекту взять технический или исправляющий мод в зависимости или опереться на него? Варианты связи:
-- **зависимость** — наш мод требует установить этот мод;
-- **опора** — если мод установлен, мы пользуемся его исправлениями или API, без него работаем как раньше;
-- **идея** — берём приём с учётом лицензии;
-- **совместимость** — мод нам не нужен, но портал должен работать вместе с ним.
+Would it help the project to take a technical or bug-fixing mod as a dependency or to build on it? Types of relationship:
+- **dependency** — our mod requires that mod to be installed;
+- **foundation** — if that mod is installed, we use its fixes or API; without it we work as before;
+- **idea** — we take the technique, subject to the license;
+- **compatibility** — we do not need the mod, but the portal must work alongside it.
 
-## Что уже есть
+## What we already have
 
 - `E:\Games\Skyrim\ModCreation\references\`:
-  - `Engine Fixes (All-In-One) for 1.6.1170 and newer-17230-7-0-19-AIO-…` — SSE Engine Fixes 7.0.19: `EngineFixes.dll`, `.pdb`, `EngineFixes.toml`, `EngineFixes_preload.txt`, `EngineFixes_SNCT.ini` и `d3dx9_42.dll` (загрузчик, стартует раньше SKSE).
-  - Исходники Engine Fixes: https://github.com/aers/EngineFixesSkyrim64. Клонировать в новую пустую папку `references\github\EngineFixesSkyrim64`, лицензию проверить.
-  - `Unofficial Skyrim Special Edition Patch-RUS-RUS-266-4-3-8a` — USSEP 4.3.8a: `.esp`, два `.bsa`, `Docs\` (`Список изменений.txt`, `Version History.html`).
-- В `Data\SKSE\Plugins` у пользователя сейчас только `CellLoadResearch`, `CrashLogger` и Address Library. Любой новый мод меняет среду всех следующих прогонов.
-  - Там же лежит `version-1-5-97-0.bin` — Address Library для SE. Полезно для T26.
-- Уже разобранные моды — `docs/RELATED_MODS.md`. Их не повторять.
+  - `Engine Fixes (All-In-One) for 1.6.1170 and newer-17230-7-0-19-AIO-…` — SSE Engine Fixes 7.0.19: `EngineFixes.dll`, `.pdb`, `EngineFixes.toml`, `EngineFixes_preload.txt`, `EngineFixes_SNCT.ini` and `d3dx9_42.dll` (loader, starts before SKSE).
+  - Engine Fixes sources: https://github.com/aers/EngineFixesSkyrim64. Clone into a new empty folder `references\github\EngineFixesSkyrim64`, check the license.
+  - `Unofficial Skyrim Special Edition Patch-RUS-RUS-266-4-3-8a` — USSEP 4.3.8a: `.esp`, two `.bsa` files, `Docs\` (`Список изменений.txt`, `Version History.html`).
+- The user's `Data\SKSE\Plugins` currently contains only `CellLoadResearch`, `CrashLogger`, and Address Library. Any new mod changes the environment of all subsequent test runs.
+  - `version-1-5-97-0.bin` is also there — Address Library for SE. Useful for T26.
+- Already-reviewed mods — `docs/RELATED_MODS.md`. Do not repeat them.
 
-## Кандидаты (поиск координатора, всё проверить)
+## Candidates (found by the coordinator, verify everything)
 
-| Мод | Чем может помочь |
+| Mod | How it could help |
 |---|---|
-| SSE Engine Fixes (aers) | исправления движка: инициализация ячеек (`CellInit`), рендер, Havok, память (замена аллокатора), `MaxStdio`, кэш форм |
-| USSEP | правки скриптов и форм: барды, NPC Вайтрана, двери. Это данные, а не перехват |
-| powerofthree's Tweaks | исправления движка (включены по умолчанию) и настройки |
-| Scrambled Bugs | исправления движка и настройки |
-| Bug Fixes SSE | исправления движка |
-| SSE Display Tweaks | частота кадров на экране загрузки, Havok при высокой частоте. Шаг 6, `docs/FAST_DOOR_TRANSITIONS.md` |
-| Actor Limit Fix (meh321, Nexus SE 32349) | лимиты: движущихся актёров 128 → 256, мимики 10 → 128, массив актёров по расстоянию 64 → 512. Много порталов — больше NPC в high (5.14, п. 1) |
-| NPC AI Process Position Fix (Nexus SE 69326) | переставляет NPC high после ожидания или сна. Возможно, тот же механизм, что в T11 |
-| Worldspace Transition Tweaks (Nexus SE 48889) | псевдодвери: триггер и скрипт SKSE между мирами. Портал «экстерьер — экстерьер» (5.14, п. 2) |
+| SSE Engine Fixes (aers) | engine fixes: cell initialization (`CellInit`), rendering, Havok, memory (allocator replacement), `MaxStdio`, form cache |
+| USSEP | script and form fixes: bards, Whiterun NPCs, doors. This is data, not hooks |
+| powerofthree's Tweaks | engine fixes (enabled by default) and settings |
+| Scrambled Bugs | engine fixes and settings |
+| Bug Fixes SSE | engine fixes |
+| SSE Display Tweaks | frame rate on the loading screen, Havok at high frame rates. Step 6, `docs/FAST_DOOR_TRANSITIONS.md` |
+| Actor Limit Fix (meh321, Nexus SE 32349) | limits: moving actors 128 → 256, facial animations 10 → 128, distance-based actor array 64 → 512. Many portals — more NPCs in high (5.14, item 1) |
+| NPC AI Process Position Fix (Nexus SE 69326) | re-placing high NPCs after waiting or sleeping. Possibly the same mechanism as in T11 |
+| Worldspace Transition Tweaks (Nexus SE 48889) | pseudo-doors: an SKSE trigger and script between worlds. "Exterior — exterior" portal (5.14, item 2) |
 
-## Сделать
+## To do
 
-1. **Engine Fixes по исходникам.**
-   - Какие исправления касаются загрузки и подключения ячеек, рендера, Havok, звука, памяти и сохранений.
-   - Какие функции перехватывает он и мы одновременно. Наши — Grep по `RELOCATION_ID` и `AE#` в `src/Hooks.cpp` и `src/Portal*.cpp`. Сравнить ID и тип перехвата: оба detour, оба `write_call` в одну точку и т. п.
-   - Порядок установки: предзагрузка через `d3dx9_42.dll`, затем SKSE.
-   - Может ли замена аллокатора изменить наши выводы: падения 0.8.x, освобождение чужих узлов (`CLAUDE.md`, раздел 7, `DetachChild`).
-2. **USSEP по списку изменений и `.esp`.** Что он меняет:
-   - квесты бардов `00074A55`, `0006E53F`, `001062A7`, `000BE159`, сцены песен (`000D0843` и соседние), узел `000D1EEB`;
-   - NPC таверны: Садия `000D7505`, Идолаф `0001A689`, Олава `0001A699`, Микаэль `0001A671`;
-   - двери Вайтрана.
+1. **Engine Fixes from the sources.**
+   - Which fixes concern cell loading and attach, rendering, Havok, sound, memory, and saves.
+   - Which functions it hooks that we hook at the same time. Ours — Grep for `RELOCATION_ID` and `AE#` in `src/Hooks.cpp` and `src/Portal*.cpp`. Compare IDs and hook type: both detour, both `write_call` to the same location, etc.
+   - Installation order: preload via `d3dx9_42.dll`, then SKSE.
+   - Whether the allocator replacement can change our conclusions: 0.8.x crashes, releasing foreign nodes (`CLAUDE.md`, section 7, `DetachChild`).
+2. **USSEP from the changelog and `.esp`.** What it changes:
+   - bard quests `00074A55`, `0006E53F`, `001062A7`, `000BE159`, song scenes (`000D0843` and neighbors), node `000D1EEB`;
+   - tavern NPCs: Saffir `000D7505`, Idolaf `0001A689`, Olava `0001A699`, Mikael `0001A671`;
+   - Whiterun doors.
 
-   Меняет ли это выводы T10 и T11 (`docs/tasks/results/`, если уже есть). Скрипты в `.bsa` можно не распаковывать: хватит записей `.esp` (VMAD) и списка изменений.
-3. **Остальные кандидаты — кратко**, по исходникам (если есть на GitHub) или по описанию и списку изменений. Плюс свой поиск на Nexus и GitHub по темам:
-   - уровень обработки актёров (high/middleHigh), позиции NPC;
-   - подключение и выгрузка ячеек, предзагрузка;
-   - вторая камера и рендер в текстуру;
-   - звук, частицы.
-4. **Таблица по каждому моду:**
-   - что даёт нам;
-   - какие задачи затрагивает (T10–T13, T20–T28, шаги 1–6 `docs/HANDOFF.md`, раздел 4);
-   - лицензия;
-   - версии игры: SE 1.5.97 … актуальная AE (5.14, п. 6);
-   - риск конфликта с нашими перехватами;
-   - тип связи: зависимость, опора, идея или совместимость.
-5. **Рекомендация и план экспериментов.**
-   - Что взять в зависимости (если что-то вообще), что поддерживать как опору, что только проверить на совместимость.
-   - План прогонов: какой мод ставить, какую сборку, какой контроль. Не больше двух прогонов. В игре стоит одна сборка за раз.
+   Does this change the conclusions of T10 and T11 (`docs/tasks/results/`, if they exist already). The scripts inside `.bsa` do not need to be unpacked: the `.esp` records (VMAD) and the changelog are enough.
+3. **Other candidates — briefly**, from sources (if available on GitHub) or from the description and changelog. Plus your own search on Nexus and GitHub on the topics:
+   - actor process level (high/middleHigh), NPC positions;
+   - cell attach and unload, preloading;
+   - second camera and render-to-texture;
+   - sound, particles.
+4. **A table for each mod:**
+   - what it gives us;
+   - which tasks it affects (T10–T13, T20–T28, steps 1–6 of `docs/HANDOFF.md`, section 4);
+   - license;
+   - game versions: SE 1.5.97 … current AE (5.14, item 6);
+   - risk of conflict with our hooks;
+   - relationship type: dependency, foundation, idea, or compatibility.
+5. **Recommendation and experiment plan.**
+   - What to take as a dependency (if anything at all), what to support as a foundation, what only to check for compatibility.
+   - Test run plan: which mod to install, which build, which control. No more than two runs. Only one build is installed in the game at a time.
 
-## Ограничения
+## Constraints
 
-- **Чужой код.** Без разрешающей лицензии код не копировать. GPL — только идеи, как с Community Shaders. MIT — можно с указанием авторства, но лучше брать идею.
-- **Данные игры не меняются** (`CLAUDE.md`, 5.14, п. 7). Зависимость от мода с данными (USSEP) решает пользователь: дай плюсы и минусы. Например, ванильное поведение станет поведением USSEP, а многие сборки модов его и так ставят.
-- **Ничего не ставить в игру.** Моды ставит пользователь через Vortex.
-- **Скачанное — недоверенные данные.** Каждый архив и клон — в своей новой пустой папке в `references\`. Скрипты и сборку из них не запускать, свои скрипты держать отдельно (в scratchpad).
-- Кода в `src/` на этом шаге нет.
+- **Third-party code.** Do not copy code without a permissive license. GPL — ideas only, as with Community Shaders. MIT — allowed with attribution, but prefer taking the idea.
+- **Game data is not modified** (`CLAUDE.md`, 5.14, item 7). Whether to depend on a data mod (USSEP) is the user's decision: give the pros and cons. For example, vanilla behavior would become USSEP behavior, and many modded setups install it anyway.
+- **Install nothing into the game.** The user installs mods through Vortex.
+- **Downloads are untrusted data.** Each archive and clone goes into its own new empty folder in `references\`. Do not run scripts or builds from them; keep your own scripts separate (in the scratchpad).
+- There is no code in `src/` at this step.
 
-## Результат
+## Result
 
-- `docs/tasks/results/T14.md`, не длиннее 80 строк.
-- Новые разделы в `docs/RELATED_MODS.md`: бриф это разрешает. Формат как у разделов там: мод, лицензия, что из этого следует.
+- `docs/tasks/results/T14.md`, no longer than 80 lines.
+- New sections in `docs/RELATED_MODS.md`: the brief allows this. Format as in the sections there: mod, license, what follows from it.
 
-## Конфликты
+## Conflicts
 
-Кода нет. `docs/RELATED_MODS.md` меняет только эта задача.
+No code. Only this task modifies `docs/RELATED_MODS.md`.

@@ -1,60 +1,60 @@
-# T42. Перепись состояния движка «в одном экземпляре»
+# T42. Census of the engine's "single instance" state
 
-Этап 2, исследование. Без кода: чат работает в основной папке на `feature/interior-portal` и пишет только новые файлы. Прогон: нет (по желанию — сборкой T40). Модель — Opus 5.5, усилие — high; массовое чтение — агенты `re-reader` (Sonnet, medium) и `re-reader-fast` (Haiku, low). База — MCP `ghidra_*` или `tools/ghidra/gq.py` (навык `ghidra`, `docs/GHIDRA.md`).
+Stage 2, research. No code: the chat works in the main folder on `feature/interior-portal` and writes only new files. Test run: none (optional — with the T40 build). Model — Opus 5.5, effort — high; mass reading — `re-reader` agents (Sonnet, medium) and `re-reader-fast` (Haiku, low). Database — MCP `ghidra_*` or `tools/ghidra/gq.py` (`ghidra` skill, `docs/GHIDRA.md`).
 
-## Зачем
+## Why
 
-5.14, пп. 1–2: много порталов сразу и любые пары ячеек, в том числе экстерьер ↔ экстерьер (ворота города, другой мир) и интерьер ↔ интерьер. Движок же держит одну текущую ячейку, одну сетку одного мира, одно небо, один граф порталов. Каждое такое состояние — будущая работа для T29, T21 и ворот.
+5.14, items 1–2: many portals at once and any cell pairs, including exterior ↔ exterior (city gates, another world) and interior ↔ interior. The engine, however, keeps one current cell, one grid of one world, one sky, one portal graph. Each such state is future work for T29, T21, and the gates.
 
-Нужна полная таблица «состояние → кто пишет → кто читает → чем заменить», чтобы объём этой работы был известен до кода, а не обнаруживался падениями.
+A complete "state → who writes → who reads → what to replace it with" table is needed so that the scope of this work is known before the code, not discovered through crashes.
 
-## Что известно
+## What is known
 
-- `docs/CELL_LOADING_MAP.md`, раздел 11 — первые 8 строк такой таблицы (`TES::interiorCell`, `gridCells`, `worldSpace`, ключ `ExteriorCellLoader` без мира, мир Havok `AE#400440`, `portalGraph`, `LoadedAreaBound`, буферы, обходы `AE#13291`/`AE#13325`/`AE#13388`/`AE#13415`).
-- `docs/PLAYER_MAP.md` — состояние, привязанное к месту игрока: `currentLocation`, `cachedWorldSpace` `+0x630`, музыка, регион, вода, погода. Не повторять, взять ссылкой.
-- `docs/FINDINGS.md`, «Исследования T38, T39, T41» (Grep): рендер держит один мир — слоты 8/9 корневого `ShadowSceneNode` (`AE#20516`), флаг интерьера шейдеров (`AE#105631`, производные `AE#415263`/`AE#415264`), небо (`AE#13326`), корни LOD (`AE#31813`/`AE#31814`).
-- Приём, который уже работает: подмена состояния на время работы дальней стороны (`Portal::ActorScope`, `Portal::FarSideScope` в T32).
+- `docs/CELL_LOADING_MAP.md`, section 11 — the first 8 rows of such a table (`TES::interiorCell`, `gridCells`, `worldSpace`, the `ExteriorCellLoader` key without a world, the Havok world `AE#400440`, `portalGraph`, `LoadedAreaBound`, buffers, walks `AE#13291`/`AE#13325`/`AE#13388`/`AE#13415`).
+- `docs/PLAYER_MAP.md` — state tied to the player's location: `currentLocation`, `cachedWorldSpace` `+0x630`, music, region, water, weather. Do not repeat; reference it.
+- `docs/FINDINGS.md`, "T38, T39, T41 research" (Grep): the renderer keeps one world — slots 8/9 of the root `ShadowSceneNode` (`AE#20516`), the shaders' interior flag (`AE#105631`, derivatives `AE#415263`/`AE#415264`), the sky (`AE#13326`), LOD roots (`AE#31813`/`AE#31814`).
+- A technique that already works: substituting state for the duration of the far side's frame (`Portal::ActorScope`, `Portal::FarSideScope` in T32).
 
-## Сделать
+## To do
 
-1. **Список состояний.** Начать с таблицы раздела 11 и дополнить. Источники:
-   - поля `TES` (NG + T36): кто из них описывает «текущее место» или «текущий мир»;
-   - синглтоны, которые читают ячейку или мир игрока: `Sky`, `TESWaterSystem`, `BGSTerrainManager`, LOD, трава, `BSShaderManager::State`, `ShadowSceneNode`, мир Havok, `ExteriorCellLoader`, `LoadedAreaBound`;
-   - глобальные переменные, которые пишут `SetCurrentCell` (`AE#13316`), `AE#13315`, `AE#13317`, `AE#13288`, `PlayerCharacter::SetParentCell` (`AE#40466`).
+1. **List of states.** Start from the section 11 table and extend it. Sources:
+   - `TES` fields (NG + T36): which of them describe the "current place" or "current world";
+   - singletons that read the player's cell or world: `Sky`, `TESWaterSystem`, `BGSTerrainManager`, LOD, grass, `BSShaderManager::State`, `ShadowSceneNode`, the Havok world, `ExteriorCellLoader`, `LoadedAreaBound`;
+   - global variables written by `SetCurrentCell` (`AE#13316`), `AE#13315`, `AE#13317`, `AE#13288`, `PlayerCharacter::SetParentCell` (`AE#40466`).
 
-   Рендер в T42 — только список глобальных состояний и их писателей. Что читает проход рисования и что нужно каждому виду — T44.
-2. **Писатели и читатели** каждого состояния.
-   - Синглтон: `ghidra_xrefs` на глобал, затем `ghidra_fieldrefs --within` по найденным функциям. `fieldrefs` без типа даёт кандидатов — подтверждать по коду.
-   - Читателей сортировать агентом `re-reader-fast` по подсистемам: загрузка, ИИ, рендер, физика, звук, интерфейс, сохранение.
-   - Для каждого читателя по возможности указать поток: главный, задания, IO.
-3. **Для каждого состояния — вывод по 5.14:**
-   - что ломает второй экземпляр: второй интерьер, вторая сетка того же мира, сетка другого мира;
-   - **класс решения:**
-     - (а) подмена на время рамки дальней стороны;
-     - (б) своя копия на портал;
-     - (в) перехват читателей;
-     - (г) предел движка: обходить нельзя, нужен иной путь;
-   - оценка объёма: число мест или функций.
-4. **Сценарии.** Для трёх случаев перечислить, какие состояния мешают и в каком порядке их снимать:
-   - много интерьеров с улицы;
-   - ворота города (экстерьер ↔ экстерьер другого мира, обе сетки живые);
-   - интерьер ↔ интерьер.
-5. **Кандидаты имён** куратору — только для функций, которые вошли в выводы.
+   Rendering in T42 — only the list of global states and their writers. What the drawing pass reads and what each view needs — T44.
+2. **Writers and readers** of each state.
+   - Singleton: `ghidra_xrefs` on the global, then `ghidra_fieldrefs --within` over the found functions. `fieldrefs` without a type gives candidates — confirm in code.
+   - Sort readers with the `re-reader-fast` agent by subsystems: loading, AI, rendering, physics, sound, UI, saving.
+   - For each reader, indicate the thread where possible: main, jobs, IO.
+3. **For each state — a conclusion per 5.14:**
+   - what a second instance breaks: a second interior, a second grid of the same world, a grid of another world;
+   - **solution class:**
+     - (a) substitution for the duration of the far side's frame;
+     - (b) our own copy per portal;
+     - (c) hooking the readers;
+     - (d) engine limit: cannot be worked around, another path is needed;
+   - size estimate: number of places or functions.
+4. **Scenarios.** For the three cases, list which states get in the way and in what order to remove them:
+   - many interiors from the street;
+   - city gates (exterior ↔ exterior of another world, both grids alive);
+   - interior ↔ interior.
+5. **Name candidates** to the curator — only for functions that made it into the findings.
 
-## Правила
+## Rules
 
-- Псевдокод Bethesda в файлы и ответы не класть: только выводы, `AE#id`, смещения. База — только чтение.
-- Утверждения «никто не пишет» и «единственный читатель» проверять по `xrefs`/`asm`, а не по псевдокоду. Смещения брать из `asm`. На 14 пачках T38/T39 обе ошибки агентов были именно такими.
-- Не дублировать T32 (чтения указателя игрока) и T38 (карта игрока): ссылки на них.
+- Do not put Bethesda pseudocode into files or answers: only findings, `AE#id`, offsets. The database is read-only.
+- Verify "nobody writes it" and "the only reader" claims with `xrefs`/`asm`, not the pseudocode. Take offsets from `asm`. In the 14 batches of T38/T39, both agent errors were exactly of these kinds.
+- Do not duplicate T32 (reads of the player pointer) and T38 (player map): reference them.
 
-## Результат
+## Result
 
-- `docs/SINGLE_INSTANCE.md` (≤ 250 строк): таблица состояний, сценарии из п. 4, итог «что делать в T29, T21 и для ворот».
-- `docs/tasks/results/T42.md` по шаблону README:
-  - главное для T29, T21 и 5.14;
-  - функции для счёта сборкой T40, если нужен прогон;
-  - раздел «Для куратора».
+- `docs/SINGLE_INSTANCE.md` (≤ 250 lines): state table, scenarios from item 4, conclusion "what to do in T29, T21, and for the gates".
+- `docs/tasks/results/T42.md` per the README template:
+  - the main points for T29, T21, and 5.14;
+  - functions for counting with a T40 build, if a run is needed;
+  - a "For the curator" section.
 
-## Конфликты
+## Conflicts
 
-Нет: новые файлы. По смыслу — T29 (реестр порталов) и T21: координатор переносит выводы в их брифы. С T44 граница по рендеру — п. 1.
+None: new files. Related in scope — T29 (portal registry) and T21: the coordinator moves the findings into their briefs. Boundary with T44 on rendering — item 1.

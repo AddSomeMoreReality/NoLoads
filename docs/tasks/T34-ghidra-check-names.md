@@ -1,50 +1,50 @@
-# T34. База Ghidra: проверка расхождений и имена для безымянных функций
+# T34. Ghidra base: checking discrepancies and naming anonymous functions
 
-Этап 2, вспомогательная. **Исполнитель — куратор базы** (только он меняет проект Ghidra). Ветка `task/T34-ghidra-names`, worktree куратора. Код: `tools/ghidra/` (`collect_names.py`, `apply_names.py`, новые сборщики), `curated_names.txt`, `docs/GHIDRA.md`. Прогона нет. Основание — `docs/tasks/results/T33.md`, `docs/GHIDRA.md`.
+Stage 2, auxiliary. **Executor — the base curator** (only he modifies the Ghidra project). Branch `task/T34-ghidra-names`, curator's worktree. Code: `tools/ghidra/` (`collect_names.py`, `apply_names.py`, new collectors), `curated_names.txt`, `docs/GHIDRA.md`. No game run. Based on `docs/tasks/results/T33.md`, `docs/GHIDRA.md`.
 
-## Что известно (T33)
+## What is known (T33)
 
-- Анализаторы RTTI и исключений MSVC **уже работают**: `analyze.ps1` ставит компилятор `visualstudio:unknown`. Функций 173 124, у 97 474 из них только имя `AE_<id>`, у 66 723 — имя анализа Ghidra (Function ID, разбор исключений).
-- Найденные расхождения:
-  - ссылок на `AE#403521` в Ghidra 2 829, в переписи T31 — 2 843 (14 мест Ghidra не дизассемблировала);
-  - 36 ссылок из кода вне функций;
-  - 6 безымянных функций (`FUN_`);
-  - 23 конфликта NG (один ID у двух обёрток), 15 функций ICF без имени;
-  - RTTI против NG: 184 vtable и 176 RTTI отличаются написанием шаблонов, сверка неполная;
-  - первый анализ дал ложные имена Function ID (`Concurrency::…::scalar_deleting_destructor` на деструкторах Bethesda).
+- The MSVC RTTI and exception analyzers **already work**: `analyze.ps1` sets the compiler to `visualstudio:unknown`. There are 173 124 functions; 97 474 of them have only the name `AE_<id>`, and 66 723 have a Ghidra analysis name (Function ID, exception parsing).
+- Discrepancies found:
+  - references to `AE#403521` in Ghidra: 2 829, in the T31 census: 2 843 (14 places Ghidra did not disassemble);
+  - 36 references from code outside functions;
+  - 6 anonymous functions (`FUN_`);
+  - 23 NG conflicts (one ID for two wrappers), 15 ICF functions without a name;
+  - RTTI vs NG: 184 vtables and 176 RTTI differ only in template spelling, the comparison is incomplete;
+  - the first analysis produced false Function ID names (`Concurrency::…::scalar_deleting_destructor` on Bethesda destructors).
 
-## Сделать
+## To do
 
-1. **Расхождения.**
-   - 14 пропущенных мест: перепись (`tools/re/scan_player_access.py`) против `gq.py xrefs AE#403521`. Для каждого — почему пропущено; дизассемблировать и создать функцию, если `.pdata` её подтверждает.
-   - 36 ссылок вне функций и 6 `FUN_` — то же.
-   - Нормализацию RTTI довести до 0 ложных расхождений (`uchar`, `class_`/`struct_`, `near`). Настоящие расхождения выписать.
-2. **Утверждения документов.** Скрипт: каждое `AE#a+0xNN` рядом с `` `call AE#b` `` / `AE#b` в `docs/*.md` сверить с инструкцией в базе. Выдать список несовпадений (файл:строка), документы не править — список для координатора.
-3. **Ложные имена Function ID.** Функция из слота vtable класса Bethesda или с ID, известным NG, не может быть функцией STL/CRT. Найти такие имена и переименовать по слоту. Правило записать в `apply_names.py`. Итог — сколько имён анализа осталось и почему им можно верить.
-4. **Новые источники имён** (каждый — сборщик в `tools/ghidra/`, повторяемый с нуля, со счётом в отчёте):
-   - **слоты vtable** всех классов RTTI: безымянная функция в слоте получает `Класс::vf_0xNN` (класс — самый базовый с той же функцией в слоте);
-   - **нативные функции Papyrus**: регистрация по строкам имени класса и функции → `Papyrus::<Класс>::<Функция>`;
-   - **консольные команды**: таблица `SCRIPT_FUNCTION` (в NG есть структура и ID таблицы) → `ConsoleCommand::<Имя>` для обработчиков;
-   - **строки с `Класс::Метод`** (сообщения об ошибках, проверки), на которые ссылается ровно одна функция, — кандидаты, только в комментарий;
-   - **сторонние таблицы ID → имя**: исходники SKSE64 2.2.6 (адреса для 1.6.1170), TiltedEvolution (Skyrim Together Reborn), форки CommonLibSSE (po3, alandtse), база meh321. Сначала лицензия: имя — факт, код не копировать. Источник и лицензию записать в `docs/GHIDRA.md`. Только в комментарий, пока не подтверждены вторым источником;
-   - кандидаты T37 (Creation Kit) и T41 (моды мультиплеера), когда будут готовы.
-5. **Отчёт:** имена по источникам, сколько `AE_<id>` осталось среди функций, вызываемых чаще всего (по числу вызывающих: топ-500).
+1. **Discrepancies.**
+   - 14 missed places: the census (`tools/re/scan_player_access.py`) vs `gq.py xrefs AE#403521`. For each — why it was missed; disassemble and create the function if `.pdata` confirms it.
+   - 36 references outside functions and 6 `FUN_` — same treatment.
+   - Bring RTTI normalization to 0 false discrepancies (`uchar`, `class_`/`struct_`, `near`). List the real discrepancies.
+2. **Document claims.** Script: verify every `AE#a+0xNN` appearing next to `` `call AE#b` `` / `AE#b` in `docs/*.md` against the instruction in the base. Produce a list of mismatches (file:line); do not edit the documents — the list is for the coordinator.
+3. **False Function ID names.** A function from a vtable slot of a Bethesda class, or with an ID known to NG, cannot be an STL/CRT function. Find such names and rename them by slot. Record the rule in `apply_names.py`. Outcome — how many analysis names remain and why they can be trusted.
+4. **New sources of names** (each — a collector in `tools/ghidra/`, repeatable from scratch, with a count in the report):
+   - **vtable slots** of all RTTI classes: an anonymous function in a slot gets `Class::vf_0xNN` (the class — the most base one that has the same function in the slot);
+   - **native Papyrus functions**: registration by class-name and function-name strings → `Papyrus::<Class>::<Function>`;
+   - **console commands**: the `SCRIPT_FUNCTION` table (NG has the structure and the table ID) → `ConsoleCommand::<Name>` for handlers;
+   - **strings of the form `Class::Method`** (error messages, checks) referenced by exactly one function — candidates, comment only;
+   - **third-party ID → name tables**: SKSE64 2.2.6 sources (addresses for 1.6.1170), TiltedEvolution (Skyrim Together Reborn), CommonLibSSE forks (po3, alandtse), the meh321 database. License first: a name is a fact, do not copy code. Record the source and license in `docs/GHIDRA.md`. Comment only, until confirmed by a second source;
+   - T37 (Creation Kit) and T41 (multiplayer mods) candidates, when they are ready.
+5. **Report:** names by source, how many `AE_<id>` remain among the most-called functions (by number of callers: top-500).
 
-## Правила
+## Rules
 
-- Псевдокод и проект в git не класть (`docs/GHIDRA.md`). В git — сборщики, `curated_names.txt` и выводы.
-- Каждый шаг — скрипт, повторяемый с нуля: после `analyze.ps1` → `collect_names.py` → `apply_names.py` база должна получиться та же.
-- После правок — `snapshot.py`; пока он идёт, сервер запросов стоит.
+- Do not put pseudocode and the project into git (`docs/GHIDRA.md`). Into git go the collectors, `curated_names.txt`, and conclusions.
+- Every step is a script, repeatable from scratch: after `analyze.ps1` → `collect_names.py` → `apply_names.py`, the base must come out the same.
+- After edits — `snapshot.py`; while it runs, the query server is down.
 
-## Результат
+## Result
 
 `docs/tasks/results/T34.md`:
-- расхождения с причинами;
-- несовпадения документов (файл:строка);
-- имена по источникам до и после;
-- лицензии сторонних источников;
-- что осталось безымянным среди важных функций.
+- discrepancies with causes;
+- document mismatches (file:line);
+- names by source, before and after;
+- licenses of third-party sources;
+- what remains anonymous among the important functions.
 
-## Конфликты
+## Conflicts
 
-T35, T36 — те же `tools/ghidra/`, делать по очереди в одном чате куратора. Документы не правит.
+T35, T36 — same `tools/ghidra/`, do them one at a time in the curator's chat. Does not edit documents.

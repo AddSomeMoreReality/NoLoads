@@ -1,82 +1,82 @@
-# Карта движка (бывший раздел 3 `CLAUDE.md`)
+# Engine map (former section 3 of `CLAUDE.md`)
 
-Источник — заголовки CommonLibSSE-NG v13.1.0. Текст перенесён без изменений; номера подразделов 3.x сохранены. Правила и окружение — `CLAUDE.md`.
+Source — CommonLibSSE-NG v13.1.0 headers. The text is copied unchanged; the subsection numbers 3.x are kept. Rules and environment — `CLAUDE.md`.
 
-**С 08.11.2026 по машинному коду (база Ghidra):** путь от двери до `kAttached`, потоки, буферы, состояния ячейки, экран загрузки — `docs/CELL_LOADING_MAP.md` (T39); игрок, его поля, глобалы и подсистемы — `docs/PLAYER_MAP.md` (T38). Поток 3.6 там подтверждён и уточнён: очередь `AE#40442` → `AE#40438` → `AE#40744` → `SetCurrentCell`/`AE#13317` → `SetParentCell`. Длины буферов (3.2) — INI `uInterior/uExterior Cell Buffer`.
+**Since 08.11.2026, based on machine code (Ghidra base):** the path from the door to `kAttached`, threads, buffers, cell states, loading screen — `docs/CELL_LOADING_MAP.md` (T39); the player, his fields, globals, and subsystems — `docs/PLAYER_MAP.md` (T38). Thread 3.6 is confirmed and refined there: the `AE#40442` queue → `AE#40438` → `AE#40744` → `SetCurrentCell`/`AE#13317` → `SetParentCell`. Buffer lengths (3.2) — INI `uInterior/uExterior Cell Buffer`.
 
-## 3. Что уже известно: карта движка
+## 3. What is already known: the engine map
 
-Источник — заголовки CommonLibSSE-NG v13.1.0. IDs даны как SE / **AE**; для 1.6.1170 используются AE-ID через `RELOCATION_ID(se, ae)` или `REL::VariantID`.
+Source — CommonLibSSE-NG v13.1.0 headers. IDs are given as SE / **AE**; for 1.6.1170 the AE IDs are used via `RELOCATION_ID(se, ae)` or `REL::VariantID`.
 
-### 3.1 Понятия
+### 3.1 Concepts
 
-- **Загрузка идёт по ячейкам (`TESObjectCELL`), не по локациям.**
-  - Экстерьерная ячейка — квадрат 4096×4096 единиц в `TESWorldSpace`. У мира есть `cellMap`, `persistentCell` и `skyCell`.
-  - Интерьер — самостоятельная `TESObjectCELL`. Список интерьеров — `TESDataHandler::interiorCells`.
-- **`BGSLocation`** — логическая метка (`parentLoc`, `cleared`). Привязана к ячейкам через `TESObjectCELL::GetLocation()` (18474 / **18905**). Сама ничего не грузит, но влияет на `OnLocationChange` и выбор экрана загрузки.
-- **Состояния ячейки (`TESObjectCELL::CellState`):** `kUnloaded=0, kUnloading=1, kDataLoaded=2, kBuilding3D=3, kUnattached=4, kDetaching=5, kAttaching=6, kAttached=7`. `IsAttached()` проверяет `== kAttached`.
-- Данные загруженной ячейки — `TESObjectCELL::loadedData` (`LOADED_CELL_DATA`): `cell3D`, `encounterZone`, счётчики `queuedRefCount` / `criticalQueuedRefCount` / `queuedDistantRefCount` и `refsFullyLoaded`.
+- **Loading happens per cell (`TESObjectCELL`), not per location.**
+  - An exterior cell is a 4096×4096 unit square in a `TESWorldSpace`. A world has `cellMap`, `persistentCell`, and `skyCell`.
+  - An interior is a standalone `TESObjectCELL`. The list of interiors is `TESDataHandler::interiorCells`.
+- **`BGSLocation`** — a logical label (`parentLoc`, `cleared`). Bound to cells via `TESObjectCELL::GetLocation()` (18474 / **18905**). It loads nothing by itself, but affects `OnLocationChange` and the loading-screen selection.
+- **Cell states (`TESObjectCELL::CellState`):** `kUnloaded=0, kUnloading=1, kDataLoaded=2, kBuilding3D=3, kUnattached=4, kDetaching=5, kAttaching=6, kAttached=7`. `IsAttached()` checks `== kAttached`.
+- The data of a loaded cell — `TESObjectCELL::loadedData` (`LOADED_CELL_DATA`): `cell3D`, `encounterZone`, counters `queuedRefCount` / `criticalQueuedRefCount` / `queuedDistantRefCount`, and `refsFullyLoaded`.
 
-### 3.2 `RE::TES` (синглтон 516923 / **403450**)
+### 3.2 `RE::TES` (singleton 516923 / **403450**)
 
-Поля до 0x128 одинаковы во всех runtime:
+Fields up to 0x128 are the same in all runtimes:
 
-| Поле | Смещение | Смысл |
+| Field | Offset | Meaning |
 |---|---|---|
-| `gridCells` (`GridCellArray*`) | 0x78 | сетка экстерьера `length × length`, `length` берётся из `uGridsToLoad` |
-| `currentGridX/Y` | 0xB0/0xB4 | центр сетки |
-| `currentQueuedX/Y` | 0xB8/0xBC | **гипотеза:** центр, поставленный в очередь (предзагрузка) |
-| `interiorCell` | 0xC0 | текущий интерьер или null |
-| `interiorBuffer` / `exteriorBuffer` (`TESObjectCELL**`) | 0xC8/0xD0 | кэш покинутых ячеек; **длина массивов не подтверждена** |
+| `gridCells` (`GridCellArray*`) | 0x78 | exterior grid `length × length`; `length` is taken from `uGridsToLoad` |
+| `currentGridX/Y` | 0xB0/0xB4 | center of the grid |
+| `currentQueuedX/Y` | 0xB8/0xBC | **hypothesis:** the center that has been queued (preload) |
+| `interiorCell` | 0xC0 | current interior or null |
+| `interiorBuffer` / `exteriorBuffer` (`TESObjectCELL**`) | 0xC8/0xD0 | cache of vacated cells; **array lengths unconfirmed** |
 | `saveGridX/Y` | 0xE0/0xE4 | |
 | `sky` | 0x100 | |
 
-На 1.6.1170 (≥ 1.6.1130) действует `AE_RUNTIME_DATA` с 0x128: `gridBufferDistanceX/Y`, `allowUnusedPurge`. `RUNTIME_DATA2` начинается с **0x148** (`worldSpace`, `playerCharacter`, `loadedAreaBound`, ...).
+On 1.6.1170 (≥ 1.6.1130) `AE_RUNTIME_DATA` applies from 0x128: `gridBufferDistanceX/Y`, `allowUnusedPurge`. `RUNTIME_DATA2` starts at **0x148** (`worldSpace`, `playerCharacter`, `loadedAreaBound`, ...).
 
-**Всё, что дальше 0x128, читай только через `GetAERuntimeData()` и `GetRuntimeData2()`. Прямой доступ к этим полям запрещён.**
+**Read everything past 0x128 only through `GetAERuntimeData()` and `GetRuntimeData2()`. Direct access to these fields is forbidden.**
 
-### 3.3 Ключевые функции
+### 3.3 Key functions
 
-| Функция | SE | **AE** | Тип |
+| Function | SE | **AE** | Type |
 |---|---|---|---|
-| `TES::SetCurrentCell(TESObjectCELL*, const NiPoint3&, float)` — по комментарию в заголовке, ядро всех переходов (интерьер, `coc`, загрузка мира) | 13171 | **13316** | обычная |
-| `TES::PurgeBufferedCells()` — аналог консольной `pcb` | 13159 | **13299** | обычная |
-| `TES::GetCell(const NiPoint3&)` | 13177 | **13322** | обычная |
-| `ExteriorCellLoader` синглтон | 514741 | **400899** | указатель |
-| `ExteriorCellLoader::QueueCellLoad(TESWorldSpace*, int16 x, int16 y, bool ?)` | 18150 | **18541** | обычная |
-| `IOManager` синглтон | 524542 | **411121** | указатель |
-| `PlayerCharacter::CenterOnCell_Impl(const char*, TESObjectCELL*)` — это `coc` | 39365 | **40437** | обычная |
-| `TESObjectREFR::MoveTo_Impl(const ObjectRefHandle&, TESObjectCELL*, TESWorldSpace*, const NiPoint3& pos, const NiPoint3& rot)` | 56227 | **56626** | обычная |
-| `BGSSaveLoadManager::LoadMostRecentSaveGame()` | 34856 | **35766** | обычная |
+| `TES::SetCurrentCell(TESObjectCELL*, const NiPoint3&, float)` — per the header comment, the core of all transitions (interior, `coc`, world load) | 13171 | **13316** | regular |
+| `TES::PurgeBufferedCells()` — the analog of the console `pcb` | 13159 | **13299** | regular |
+| `TES::GetCell(const NiPoint3&)` | 13177 | **13322** | regular |
+| `ExteriorCellLoader` singleton | 514741 | **400899** | pointer |
+| `ExteriorCellLoader::QueueCellLoad(TESWorldSpace*, int16 x, int16 y, bool ?)` | 18150 | **18541** | regular |
+| `IOManager` singleton | 524542 | **411121** | pointer |
+| `PlayerCharacter::CenterOnCell_Impl(const char*, TESObjectCELL*)` — this is `coc` | 39365 | **40437** | regular |
+| `TESObjectREFR::MoveTo_Impl(const ObjectRefHandle&, TESObjectCELL*, TESWorldSpace*, const NiPoint3& pos, const NiPoint3& rot)` | 56227 | **56626** | regular |
+| `BGSSaveLoadManager::LoadMostRecentSaveGame()` | 34856 | **35766** | regular |
 
-**Виртуальные функции** (хук через `REL::Relocation<std::uintptr_t>{ RE::VTABLE_X[0] }.write_vfunc(idx, thunk)`):
+**Virtual functions** (hook via `REL::Relocation<std::uintptr_t>{ RE::VTABLE_X[0] }.write_vfunc(idx, thunk)`):
 
-| Класс / vtable | Индекс | Функция |
+| Class / vtable | Index | Function |
 |---|---|---|
 | `TESObjectDOOR` (`VTABLE_TESObjectDOOR[0]`) | 0x37 | `Activate(TESObjectREFR* target, TESObjectREFR* activator, uint8, TESBoundObject*, int32)` |
-| `GridCellArray` (`VTABLE_GridCellArray[0]`) | 1 / 2 / 3 / 4 / 5 / 6 / 7 / 8 | `DetachAll` / `KillAll` / `SetCenter(x,y)` / `Shift(x,y)` (из базового `GridArray`) / `Detach(x,y)` / `ClearItem` / `MoveItem` / `SwapItem` |
-| `CellLoaderTask` (`VTABLE_CellLoaderTask[0]`) | 1 / 2 / 3 / 4 / 6 | `Run` (фоновый поток) / `Finish` / `Cancel` / `GetDescription` / `PostProcess` |
-| `PlayerCharacter` (`VTABLE_PlayerCharacter[0]`) | 0xAD | `Actor::Update(float)` — поэтапный тик для автотеста |
+| `GridCellArray` (`VTABLE_GridCellArray[0]`) | 1 / 2 / 3 / 4 / 5 / 6 / 7 / 8 | `DetachAll` / `KillAll` / `SetCenter(x,y)` / `Shift(x,y)` (from base `GridArray`) / `Detach(x,y)` / `ClearItem` / `MoveItem` / `SwapItem` |
+| `CellLoaderTask` (`VTABLE_CellLoaderTask[0]`) | 1 / 2 / 3 / 4 / 6 | `Run` (background thread) / `Finish` / `Cancel` / `GetDescription` / `PostProcess` |
+| `PlayerCharacter` (`VTABLE_PlayerCharacter[0]`) | 0xAD | `Actor::Update(float)` — stepwise tick for the automated test |
 
-**Поля `CellLoaderTask`** (через `GetRuntimeData()`): `loader`, `world`, `cell`, `x`, `y`, `state`, `interior`.
+**`CellLoaderTask` fields** (via `GetRuntimeData()`): `loader`, `world`, `cell`, `x`, `y`, `state`, `interior`.
 
-Флаг `interior` по комментарию в заголовке выбирает путь загрузки интерьера. Значит, **интерьеры тоже могут грузиться через `CellLoaderTask`** — это гипотеза H7.
+The `interior` flag, per the header comment, selects the interior-loading path. This means **interiors can also be loaded through `CellLoaderTask`** — this is hypothesis H7.
 
-### 3.4 Данные телепорта
+### 3.4 Teleport data
 
-- **`ExtraTeleport` → `DoorTeleportData`:** `linkedDoor` (`ObjectRefHandle`), `position`, `rotation`, `flags`. Есть у загрузочных дверей.
+- **`ExtraTeleport` → `DoorTeleportData`:** `linkedDoor` (`ObjectRefHandle`), `position`, `rotation`, `flags`. Present on load doors.
 - **`PlayerCharacter::GetPlayerRuntimeData().queuedTargetLoc` (`PLAYER_TARGET_LOC`):** `world`, `interior`, `location`, `angle`, `arrivalFunc`, `arrivalFuncData`, `furnitureRef`, `fastTravelMarker`, `resetWeather`, `allowAutoSave`, `isValid`.
-- **Там же:**
+- **Also there:**
   - `currentLocation` (`BGSLocation*`);
   - `playerFlags.travelUseDoor`, `playerFlags.fastTraveling`, `playerFlags.isLoading`.
-- **`LoadingMenu`** (`MENU_NAME = "Loading Menu"`) хранит `currentLocation`, `loadScreens`, `loadScreen`. В `LoadingMenuData` есть `currentLocation`.
+- **`LoadingMenu`** (`MENU_NAME = "Loading Menu"`) holds `currentLocation`, `loadScreens`, `loadScreen`. `LoadingMenuData` has `currentLocation`.
 
-### 3.5 События
+### 3.5 Events
 
-| Событие | Источник | Поля |
+| Event | Source | Fields |
 |---|---|---|
-| `PositionPlayerEvent` | `player->AsPositionPlayerEventSource()` | `type`: `kPre=0, kPreUpdatePackages=1, kPostUpdatePackages=2, kPost=3, kFinish=4`. Его слушают и сами `TES`, и `Main` |
-| `BGSActorCellEvent` | `player->AsBGSActorCellEventSource()` | `actor`, `cellID`, `flags` (`kEnter=0` / `kLeave=1`, это значение, а не битовая маска) |
+| `PositionPlayerEvent` | `player->AsPositionPlayerEventSource()` | `type`: `kPre=0, kPreUpdatePackages=1, kPostUpdatePackages=2, kPost=3, kFinish=4`. Listened to by both `TES` itself and `Main` |
+| `BGSActorCellEvent` | `player->AsBGSActorCellEventSource()` | `actor`, `cellID`, `flags` (`kEnter=0` / `kLeave=1`; this is a value, not a bitmask) |
 | `TESCellAttachDetachEvent` | `ScriptEventSourceHolder` | `reference`, `attached` |
 | `TESCellFullyLoadedEvent` | `ScriptEventSourceHolder` | `cell` |
 | `TESMoveAttachDetachEvent` | `ScriptEventSourceHolder` | `movedRef`, `isCellAttached` |
@@ -85,24 +85,23 @@
 | `TESLoadGameEvent` | `ScriptEventSourceHolder` | |
 | `MenuOpenCloseEvent` | `RE::UI` | `menuName`, `opening` |
 
-### 3.6 Реконструированный поток перехода через дверь (подтверждён и уточнён по коду в `docs/CELL_LOADING_MAP.md`, разделы 2 и 13)
+### 3.6 Reconstructed door-transition flow (confirmed and refined against code in `docs/CELL_LOADING_MAP.md`, sections 2 and 13)
 
 ```
 TESObjectDOOR::Activate → ExtraTeleport → queuedTargetLoc (isValid=1)
 → LoadingMenu open
 → PositionPlayerEvent kPre
-→ TES::SetCurrentCell (старое → буфер, новое грузится и attach)
+→ TES::SetCurrentCell (old → buffer, new one loads and attaches)
 → kPreUpdatePackages → kPostUpdatePackages → kPost → kFinish
 → TESCellFullyLoadedEvent / BGSActorCellEvent / TESActorLocationChangeEvent
 → LoadingMenu close
 ```
 
-Пеший переход по экстерьеру (тоже не подтверждён):
+On-foot transition across the exterior (also unconfirmed):
 
 ```
-GridCellArray::SetCenter → Detach крайних ячеек → QueueCellLoad
-→ CellLoaderTask::Run (IO-поток) → Finish / PostProcess (главный поток)
+GridCellArray::SetCenter → Detach of the edge cells → QueueCellLoad
+→ CellLoaderTask::Run (IO thread) → Finish / PostProcess (main thread)
 ```
 
 ---
-

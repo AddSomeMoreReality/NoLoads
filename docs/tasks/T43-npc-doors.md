@@ -1,60 +1,60 @@
-# T43. Как NPC проходят через двери с загрузкой
+# T43. How NPCs pass through doors with loading
 
-Этап 2, исследование. Без кода: чат работает в основной папке на `feature/interior-portal` и пишет только новые файлы. Прогон: нет (по желанию — сборкой T40). Модель — Opus 5.5, усилие — high; массовое чтение — агенты `re-reader` (Sonnet, medium) и `re-reader-fast` (Haiku, low). База — MCP `ghidra_*` или `tools/ghidra/gq.py` (навык `ghidra`, `docs/GHIDRA.md`). Старые трассы — `logs/run-*`, сводка — `tools/run_digest.py`.
+Stage 2, research. No code: the chat works in the main folder on `feature/interior-portal` and writes only new files. Test run: none (optional — with the T40 build). Model — Opus 5.5, effort — high; mass reading — `re-reader` agents (Sonnet, medium) and `re-reader-fast` (Haiku, low). Database — MCP `ghidra_*` or `tools/ghidra/gq.py` (`ghidra` skill, `docs/GHIDRA.md`). Old traces — `logs/run-*`, summary — `tools/run_digest.py`.
 
-## Зачем
+## Why
 
-Шаг 6 плана (`docs/HANDOFF.md`, раздел 4) и 5.14, п. 2: NPC проходят через портал так же, как игрок, — в обе стороны и без телепорта. Сейчас NPC пользуется дверью, как в ванили: подходит, активирует дверь и появляется у двери на той стороне.
+Step 6 of the plan (`docs/HANDOFF.md`, section 4) and 5.14, item 2: NPCs pass through the portal the same way the player does — both directions, no teleport. Currently an NPC uses the door as in vanilla: walks up, activates the door, and appears at the door on the other side.
 
-T20 (вход игрока) и T21 (живая улица) упираются в то, как игра ведёт NPC между ячейками. Код этого пути ещё не читали.
+T20 (player entry) and T21 (a living street) depend on how the game moves NPCs between cells. This path's code has not been read yet.
 
-## Что известно (в игре)
+## What is known (in-game)
 
-- `TESObjectDOOR::Activate` (`AE#17922`) приходит **не на главном потоке**: 44 вызова из 6 рабочих потоков, 39 — NPC в незагруженных ячейках по всему Скайриму (`docs/FINDINGS.md`, H1).
-- NPC в middleHigh активирует дверь издалека: Идолаф — с 660 единиц (`Character::AE_37878` → `TESObjectREFR::ActivateRef` `AE#19796`).
-- Не в high игра ведёт NPC по пути крупными шагами: `AE#37892+0xA3` → `AE#37877+0xDA` → `TESObjectREFR::AE_37313+0xA0` → `SetPosition`.
-- При подъёме в high NPC «догоняет» место: `Actor::MoveToHigh` (`AE#37621+0x34D`) → `AE#37618+0x9DC` → `Actor::SetPosition` (`AE#37309`).
-- Прыжки на 23–27 тыс. единиц — NPC, прошедшие загрузочные двери (FINDINGS, «Прогон 0.8.26» и «Прогон 0.8.27»).
-- `ActorHold` (T11) держит NPC портала в high (detour `Character::AE_37503`). Это убрало перестановки на переходах игрока, но не проход NPC через дверь.
-- Пути: `Pathing::GetPathingCell` (`AE#30682`), `PathingDoor` (`AE#30811`…), `Pathing::GetPathingDoorFromCollision` (`AE#30691`), `ExtraTeleport::GetLinkedDoor` (`AE#20301`), `TESObjectREFR::GetTeleportData` (`AE#20216`).
+- `TESObjectDOOR::Activate` (`AE#17922`) arrives **off the main thread**: 44 calls from 6 worker threads, 39 — NPCs in unloaded cells across Skyrim (`docs/FINDINGS.md`, H1).
+- An NPC in middleHigh activates the door from afar: Idolaf — from 660 units (`Character::AE_37878` → `TESObjectREFR::ActivateRef` `AE#19796`).
+- Not in high, the game leads the NPC along the path in large steps: `AE#37892+0xA3` → `AE#37877+0xDA` → `TESObjectREFR::AE_37313+0xA0` → `SetPosition`.
+- On rising to high the NPC "catches up" to the place: `Actor::MoveToHigh` (`AE#37621+0x34D`) → `AE#37618+0x9DC` → `Actor::SetPosition` (`AE#37309`).
+- Jumps of 23–27 thousand units — NPCs that passed loading doors (FINDINGS, "Run 0.8.26" and "Run 0.8.27").
+- `ActorHold` (T11) keeps the portal's NPC in high (detour on `Character::AE_37503`). This removed repositioning on player transitions, but not the NPC passing through a door.
+- Paths: `Pathing::GetPathingCell` (`AE#30682`), `PathingDoor` (`AE#30811`…), `Pathing::GetPathingDoorFromCollision` (`AE#30691`), `ExtraTeleport::GetLinkedDoor` (`AE#20301`), `TESObjectREFR::GetTeleportData` (`AE#20216`).
 
-## Сделать
+## To do
 
-1. **Путь в другую ячейку.**
-   - Как ИИ строит путь через загрузочную дверь: какие данные берёт (связанная дверь, маркер телепорта, треугольники навмеша у двери), где хранит путь, кто и на каком потоке его считает.
-   - Что происходит с путём на той стороне.
-2. **Проход в high.** Цепочка от подхода к двери до появления на той стороне:
-   - кто зовёт `Activate` и почему не на главном потоке;
-   - как NPC переносится: `MoveTo`, базовый `TESObjectREFR::SetParentCell` (`AE#19818`) или своё;
-   - задержки и затемнение;
-   - события: смена ячейки и локации актёра, `OnCellAttach`/`OnCellDetach`, Story Manager.
-3. **Проход вне high** (middleHigh, low, незагруженная ячейка): цепочки выше, ветвление по уровню обработки, что делается при выгруженной ячейке назначения.
-4. **Что нужно бесшовному проходу.** Когда NPC пересекает плоскость двери-портала, он должен сменить ячейку без `Activate` и телепорта. Разобрать:
-   - минимальный набор вызовов;
-   - что не должно сработать (перенос к маркеру связанной двери);
-   - как продолжится путь в новой ячейке;
-   - как это совместить с `ActorHold`;
-   - какие события скриптов обязаны прийти один раз.
+1. **Path into another cell.**
+   - How the AI builds a path through a loading door: what data it takes (the linked door, the teleport marker, navmesh triangles at the door), where it stores the path, who computes it and on which thread.
+   - What happens to the path on the other side.
+2. **Passage in high.** The chain from approaching the door to appearing on the other side:
+   - who calls `Activate` and why not on the main thread;
+   - how the NPC is moved: `MoveTo`, the base `TESObjectREFR::SetParentCell` (`AE#19818`), or its own;
+   - delays and the fade-out;
+   - events: the actor's cell and location change, `OnCellAttach`/`OnCellDetach`, Story Manager.
+3. **Passage outside high** (middleHigh, low, unloaded cell): the chains above, branching by process level, what happens when the destination cell is unloaded.
+4. **What a seamless passage needs.** When an NPC crosses the plane of a door-portal, it must change cells without `Activate` and a teleport. Break down:
+   - the minimal set of calls;
+   - what must not fire (the move to the linked door's marker);
+   - how the path continues in the new cell;
+   - how to combine this with `ActorHold`;
+   - which script events must fire exactly once.
 
-   В обе стороны: интерьер → улица, улица → интерьер, интерьер ↔ интерьер. Каждый пункт помечать **по коду** или **предположение**.
-5. **Точки перехвата** только в движке (5.14, п. 7: квесты, пакеты и формы не правим): функция, место, что меняет перехват, поток. Кандидаты для сборки T40.
-6. **Кандидаты имён** куратору — только для функций из выводов.
+   Both directions: interior → street, street → interior, interior ↔ interior. Mark every item **from code** or **assumption**.
+5. **Hook points** in the engine only (5.14, item 7: quests, packages, and forms are not edited): function, location, what the hook changes, thread. Candidates for the T40 build.
+6. **Name candidates** to the curator — only for functions from the findings.
 
-## Правила
+## Rules
 
-- Псевдокод Bethesda в файлы и ответы не класть: только выводы, `AE#id`, смещения. База — только чтение.
-- Утверждения «вызова нет» и «только для игрока» проверять по `xrefs`/`asm`, смещения брать из `asm`.
-- «Это поведение игры» доказывается контрольным прогоном (`CLAUDE.md`, раздел 7). В старых трассах сначала искать контроль без портала (F8 выключен).
-- Поведение пакетов и сцен часто задают скрипты: исходники — `<Game>\Data\Source\Scripts`, только читать.
+- Do not put Bethesda pseudocode into files or answers: only findings, `AE#id`, offsets. The database is read-only.
+- Verify "there is no call" and "player-only" claims with `xrefs`/`asm`; take offsets from `asm`.
+- "This is game behavior" is proven by a control run (`CLAUDE.md`, section 7). In old traces, first look for a control without the portal (F8 disabled).
+- Package and scene behavior is often defined by scripts: sources are in `<Game>\Data\Source\Scripts`, read-only.
 
-## Результат
+## Result
 
-- `docs/NPC_DOORS.md` (≤ 200 строк): цепочки для high и не high, потоки, состав бесшовного прохода, точки перехвата.
-- `docs/tasks/results/T43.md` по шаблону README:
-  - главное для T20, T21 и шага 6;
-  - список ID для T40;
-  - раздел «Для куратора».
+- `docs/NPC_DOORS.md` (≤ 200 lines): chains for high and non-high, threads, seamless passage composition, hook points.
+- `docs/tasks/results/T43.md` per the README template:
+  - the main points for T20, T21, and step 6;
+  - list of IDs for T40;
+  - a "For the curator" section.
 
-## Конфликты
+## Conflicts
 
-Нет: новые файлы. По смыслу — T20 (`InteriorSim`, вход), T21, T11 (`ActorHold`): координатор переносит выводы в их брифы.
+None: new files. Related in scope — T20 (`InteriorSim`, entry), T21, T11 (`ActorHold`): the coordinator moves the findings into their briefs.

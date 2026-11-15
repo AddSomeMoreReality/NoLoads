@@ -1,38 +1,38 @@
-# T12. Своя цветокоррекция картинки портала
+# T12. Dedicated color grading for the portal image
 
-Ветка `exp/T12-portal-color`. Код: рендер портала. Нужен прогон. Анализ снимков (пункт 1) можно делать до T02.
+Branch `exp/T12-portal-color`. Code: portal rendering. A game run is required. Screenshot analysis (item 1) can be done before T02.
 
-## Что известно
+## What is known
 
-- **Прогон 0.8.24.** Через портал интерьер ярче и серее, чем изнутри, пламя тусклое.
-- **Прогон 0.8.25.**
-  - F2 подменяет данные `ImageSpaceManager` на снятые внутри, на весь кадр, где идёт проход портала (`Portal::ToggleInteriorImageSpace`, `g_interiorLook` в `src/PortalImage.cpp`).
-  - С F2 картинка портала совпала с внутренней, но перекрасился весь Вайтран. `imageSpace.swaps` = `held`.
-  - Вывод: картинку портала окрашивает уличная тональная компрессия.
-- **Порядок отрисовки.**
-  1. Проход портала рисует интерьер в свою текстуру `R16G16B16A16_FLOAT`.
-  2. Квадрат с этой текстурой рисуется в HDR-кадр улицы `kMAIN`.
-  3. Весь кадр проходит ImageSpace улицы: адаптация глаза, Рейнхард с точкой белого, bloom, насыщенность, оттенок, контраст.
+- **Run 0.8.24.** Through the portal, the interior is brighter and grayer than from inside, and the flame is dim.
+- **Run 0.8.25.**
+  - F2 replaces `ImageSpaceManager` data with data captured inside, for the entire frame in which the portal pass runs (`Portal::ToggleInteriorImageSpace`, `g_interiorLook` in `src/PortalImage.cpp`).
+  - With F2, the portal image matched the interior, but all of Whiterun changed color. `imageSpace.swaps` = `held`.
+  - Conclusion: the exterior tone mapping colors the portal image.
+- **Render order.**
+  1. The portal pass renders the interior into its own `R16G16B16A16_FLOAT` texture.
+  2. A quad with this texture is drawn into the exterior HDR frame `kMAIN`.
+  3. The entire frame passes through the exterior ImageSpace: eye adaptation, Reinhard with white point, bloom, saturation, tint, contrast.
 
-  Формулы — `ISHDR.hlsl` в `E:\Games\Skyrim\ModCreation\references\github\community-shaders\package\Shaders\`. Лицензия GPL-3: код не копировать, брать только формулы как факт.
-- **Снимки** в `logs/run-0.8.25/`, формат 10 (`R16G16B16A16_FLOAT`), 2560×1600:
-  - `main-1.dds` — HDR-кадр изнутри у очага;
-  - `portal-1.dds` и `main-2.dds` — снаружи;
-  - `portal-2.dds` и `main-3.dds` — снаружи с F2.
+  Formulas — `ISHDR.hlsl` in `E:\Games\Skyrim\ModCreation\references\github\community-shaders\package\Shaders\`. GPL-3 license: do not copy code; use the formulas only as factual information.
+- **Captures** in `logs/run-0.8.25/`, format 10 (`R16G16B16A16_FLOAT`), 2560×1600:
+  - `main-1.dds` — HDR frame from inside near the hearth;
+  - `portal-1.dds` and `main-2.dds` — outside;
+  - `portal-2.dds` and `main-3.dds` — outside with F2.
 
-  `tools/portal_dump_to_png.py` переводит их в PNG. Скриншоты пользователя: `E:\Games\Skyrim\The Elder Scrolls V - Skyrim\ScreenShot4.png` (изнутри), `ScreenShot5.png` (снаружи, 0.8.24). numpy 2.1 установлен.
-- **Данные ImageSpace:** `RE::ImageSpaceManager::GetSingleton()->GetImageSpaceData()`, структура `ImageSpaceData` (0xA0): `baseData` (hdr, cinematic, tint, dof), `modData`, `baseAmount`, `modAmount`. Адаптация глаза живёт не в этих данных, её ещё надо найти.
+  `tools/portal_dump_to_png.py` converts them to PNG. User screenshots: `E:\Games\Skyrim\The Elder Scrolls V - Skyrim\ScreenShot4.png` (inside), `ScreenShot5.png` (outside, 0.8.24). numpy 2.1 is installed.
+- **ImageSpace data:** `RE::ImageSpaceManager::GetSingleton()->GetImageSpaceData()`, `ImageSpaceData` structure (0xA0): `baseData` (hdr, cinematic, tint, dof), `modData`, `baseAmount`, `modAmount`. Eye adaptation is not stored in this data and still needs to be located.
 
-## Сделать
+## Tasks
 
-1. **Офлайн по снимкам.** Совпадают ли HDR-значения портала с внутренними (стена, пламя)? То есть отличается сам рендер или только тональная компрессия.
-2. **Выбрать способ**, чтобы портал выглядел как изнутри, а улица — как улица:
-   - **а) предкомпенсация.** После прохода свой пиксельный шейдер переводит текстуру портала так, чтобы уличная компрессия дала то же, что интерьерная: `x' = T_улица⁻¹(T_интерьер(x))`. Параметры обеих компрессий и адаптаций берутся каждый кадр. Bloom останется уличным;
-   - **б) квадрат после ImageSpace улицы.** Квадрат рисуется в LDR с глубиной кадра, а картинка портала проходит свою компрессию в своей текстуре.
+1. **Offline analysis of captures.** Do the portal HDR values match the interior values (wall, flame)? In other words, does the rendering itself differ, or only the tone mapping?
+2. **Choose a method** so that the portal looks like the interior and the exterior still looks like the exterior:
+   - **a) precompensation.** After the pass, a custom pixel shader transforms the portal texture so that exterior tone mapping produces the same result as interior tone mapping: `x' = T_exterior⁻¹(T_interior(x))`. Parameters for both tone mappings and adaptations are obtained every frame. Bloom remains the exterior bloom;
+   - **b) quad after exterior ImageSpace.** The quad is drawn in LDR with frame depth, while the portal image undergoes its own tone mapping in its own texture.
 
-   Сравнить варианты по качеству, TAA, сложности, совместимости с ENB и Community Shaders и по «любой камере» (`CLAUDE.md`, 5.14, п. 4). Шейдер можно компилировать `D3DCompile` (`d3dcompiler_47.dll` есть в Windows) или заранее.
-3. **Реализовать выбранный вариант.** F2 становится переключателем «своя цветокоррекция портала вкл/выкл», подмена на весь экран убирается.
+   Compare the options by quality, TAA, complexity, compatibility with ENB and Community Shaders, and the “any camera” requirement (`CLAUDE.md`, 5.14, item 4). The shader can be compiled with `D3DCompile` (`d3dcompiler_47.dll` is available in Windows) or in advance.
+3. **Implement the selected option.** F2 becomes a “dedicated portal color grading on/off” toggle, and the full-screen substitution is removed.
 
-## Конфликты
+## Conflicts
 
-Рендер портала — с T13. После T02 это разные файлы.
+Portal rendering — with T13. After T02 these are separate files.

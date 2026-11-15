@@ -1,139 +1,139 @@
-# Ghidra: база SkyrimSE.exe и инструменты псевдокода
+# Ghidra: SkyrimSE.exe database and pseudocode tools
 
-Куратор базы — отдельный чат (T33, T35). Только он меняет проект Ghidra (имена, типы, комментарии) и чинит `tools/ghidra/`. Исполнители базу только читают: MCP-инструменты `ghidra_*` или `gq.py`. Нужно имя, тип или разбор функции — запрос куратору через пользователя.
+The database curator is a separate chat (T33, T35). Only the curator modifies the Ghidra project (names, types, comments) and repairs `tools/ghidra/`. Executors only read the database: MCP tools `ghidra_*` or `gq.py`. If you need a name, type, or function analysis, send a request to the curator through the user.
 
-## Правила
+## Rules
 
-- **Проект, псевдокод и экспорт C — код Bethesda.** В git и в `docs/` не класть: только выводы, адреса и короткие цитаты инструкций. Вывод `gq.py` — в свой scratchpad. В `.gitignore`: `*.gpr`, `*.rep/`, `*.gbf`, `*.gzf`, `ghidra_out/`.
-- Имена из документов проекта — только комментарии (`[clr] docs AE#…`), имя NG они не заменяют.
-- Сервер держит 0,4–1,2 ГБ ОЗУ (растёт с индексами `search` и числом разобранных функций) и сам выходит через 20 мин простоя; `gq.py stop` освобождает сразу.
+- **The project, pseudocode, and C export are Bethesda code.** Do not put them in git or `docs/`: only conclusions, addresses, and short instruction quotations. Write `gq.py` output to your own scratchpad. `.gitignore` contains: `*.gpr`, `*.rep/`, `*.gbf`, `*.gzf`, `ghidra_out/`.
+- Names from project documents are comments only (`[clr] docs AE#…`); they do not replace the NG name.
+- The server uses 0.4–1.2 GB RAM (growing with `search` indexes and the number of analyzed functions) and exits automatically after 20 minutes of inactivity; `gq.py stop` releases it immediately.
 
-## Где что
+## Locations
 
-| Что | Где |
+| What | Where |
 |---|---|
-| Ghidra 12.2, JDK 25 | `E:\Ghidra\ghidra_12.2_PUBLIC`; Java выбрана в окне Ghidra и запомнена в `%APPDATA%\ghidra\ghidra_12.2_PUBLIC\java_home.save` (`D:\Java`), `launch.properties` не менялся |
-| PyGhidra | venv `E:\Ghidra\pyghidra-venv` (pyghidra 3.2.0, JPype 1.5.2 из `Ghidra\Features\PyGhidra\pypkg\dist`) |
-| Основной проект (куратор) | `E:\Games\Skyrim\ModCreation\My attempts\SkyrimSE-1.6.1170\` (1,5 ГБ), программа `/SkyrimSE.exe` |
-| Копия для чтения (сервер) | `...\My attempts\SkyrimSE-1.6.1170-ro\` — делает `snapshot.py` |
-| Журналы сервера, имена, отчёты | `%TEMP%\clr-ghidra\` (`server.log`, `mcp.log`, `names-1.6.1170.json`, `*.report.txt`) |
-| Таблица имён без сервера | `%TEMP%\clr-ghidra\names-<версия>.tsv`: `AE#id`, RVA, имя, источник — `grep "^AE#13316<TAB>"` или по имени |
-| Сторонние источники имён | `%TEMP%\clr-ghidra\thirdparty\` (клоны `git --depth 1`, не в git) |
-| Кэш псевдокода и индексы поиска | `%TEMP%\clr-ghidra\cache\<версия>-<снимок>\` (снимок — хэш файлов базы копии; новая копия — новая папка) |
-| Вывод MCP-инструментов | `%TEMP%\clr-ghidra\out\mcp-<дата>-<pid>\`, хранится 7 дней |
-| Пути и версии | `tools/ghidra/gconfig.py`, переопределяются переменными `CLR_GHIDRA_*` |
+| Ghidra 12.2, JDK 25 | `E:\Ghidra\ghidra_12.2_PUBLIC`; Java is selected in the Ghidra window and remembered in `%APPDATA%\ghidra\ghidra_12.2_PUBLIC\java_home.save` (`D:\Java`), `launch.properties` was not changed |
+| PyGhidra | venv `E:\Ghidra\pyghidra-venv` (pyghidra 3.2.0, JPype 1.5.2 from `Ghidra\Features\PyGhidra\pypkg\dist`) |
+| Main project (curator) | `E:\Games\Skyrim\ModCreation\My attempts\SkyrimSE-1.6.1170\` (1.5 GB), program `/SkyrimSE.exe` |
+| Read-only copy (server) | `...\My attempts\SkyrimSE-1.6.1170-ro\` — created by `snapshot.py` |
+| Server logs, names, reports | `%TEMP%\clr-ghidra\` (`server.log`, `mcp.log`, `names-1.6.1170.json`, `*.report.txt`) |
+| Name table without the server | `%TEMP%\clr-ghidra\names-<version>.tsv`: `AE#id`, RVA, name, source — `grep "^AE#13316<TAB>"` or search by name |
+| Third-party name sources | `%TEMP%\clr-ghidra\thirdparty\` (`git --depth 1` clones, not in git) |
+| Pseudocode cache and search indexes | `%TEMP%\clr-ghidra\cache\<version>-<snapshot>\` (the snapshot is a hash of the copy's database files; a new copy means a new directory) |
+| MCP tool output | `%TEMP%\clr-ghidra\out\mcp-<date>-<pid>\`, retained for 7 days |
+| Paths and versions | `tools/ghidra/gconfig.py`, overridden by `CLR_GHIDRA_*` variables |
 
-## Исполнителю: MCP `ghidra` и `tools/ghidra/gq.py`
+## For executors: MCP `ghidra` and `tools/ghidra/gq.py`
 
-Цели: `AE#13316`, `AE#13316+0x65C`, `0x14019D490` (VA), `0x19D490` (RVA), имя `TES::SetCurrentCell[+0x10]`.
+Targets: `AE#13316`, `AE#13316+0x65C`, `0x14019D490` (VA), `0x19D490` (RVA), name `TES::SetCurrentCell[+0x10]`.
 
-| Вопрос | MCP | CLI `python tools/ghidra/gq.py …` |
+| Question | MCP | CLI `python tools/ghidra/gq.py …` |
 |---|---|---|
-| Псевдокод, строка с `+0x65C` помечена `//>>>` | `ghidra_decompile(targets, marks?, addr_prefix?, max_lines?)` | `decomp AE#13316+0x65C [--addr] --out <sp>` |
-| Дизассемблер со смещениями и именами | `ghidra_asm` | `asm AE#19130 --out <sp>` |
-| Вызовы, слоты vtable, чтения/записи данных | `ghidra_xrefs` | `xrefs AE#40466 --out <sp>` |
-| Имя, размер, число вызывающих | `ghidra_info` | `info AE#36629 AE#40411` |
-| `[reg+0x1D0]` в функциях, читающих игрока | `ghidra_fieldrefs(offset, users_of / within / all, access)` | `fieldrefs 0x1D0 --users-of AE#403521 --out <sp>` |
-| Символы по regex имени, строки, места ссылок | `ghidra_search(name_regex / string_regex, kinds?)` | `search --name SetParentCell --string "^sLoad"` |
-| Дерево вызовов вверх или вниз | `ghidra_callgraph(target, callers/callees, depth, max_nodes)` | `callgraph AE#13316 --callers --depth 2` |
-| Слоты класса: свой, унаследованный, переопределённый | `ghidra_vtable(class, offset?)` | `vtable PlayerCharacter` |
-| Раскладка типа, таблица слотов | `ghidra_struct(name)` | `struct TES`, `struct PlayerCharacter_vftable` |
-| Состояние сервера | `ghidra_status` | `status`, `stop` |
+| Pseudocode, line with `+0x65C` marked `//>>>` | `ghidra_decompile(targets, marks?, addr_prefix?, max_lines?)` | `decomp AE#13316+0x65C [--addr] --out <sp>` |
+| Disassembly with offsets and names | `ghidra_asm` | `asm AE#19130 --out <sp>` |
+| Calls, vtable slots, data reads/writes | `ghidra_xrefs` | `xrefs AE#40466 --out <sp>` |
+| Name, size, caller count | `ghidra_info` | `info AE#36629 AE#40411` |
+| `[reg+0x1D0]` in functions that read the player | `ghidra_fieldrefs(offset, users_of / within / all, access)` | `fieldrefs 0x1D0 --users-of AE#403521 --out <sp>` |
+| Symbols by name regex, strings, reference locations | `ghidra_search(name_regex / string_regex, kinds?)` | `search --name SetParentCell --string "^sLoad"` |
+| Call tree upward or downward | `ghidra_callgraph(target, callers/callees, depth, max_nodes)` | `callgraph AE#13316 --callers --depth 2` |
+| Class slots: own, inherited, overridden | `ghidra_vtable(class, offset?)` | `vtable PlayerCharacter` |
+| Type layout, slot table | `ghidra_struct(name)` | `struct TES`, `struct PlayerCharacter_vftable` |
+| Server status | `ghidra_status` | `status`, `stop` |
 
-- **MCP** (`tools/ghidra/mcp_server.py`, stdio, stdlib): короткая функция возвращается текстом, длинная — файлом и выдержкой ±10 строк вокруг пометок с номерами строк файла (дочитывать Read с `offset`). Ответ печатает время в Ghidra и ожидание декомпилятора. Подключение лежит в git: `.mcp.json` (сервер `ghidra`), `.claude/skills/ghidra` (навык), `.claude/agents/` (`re-reader` на Sonnet, `re-reader-fast` на Haiku); см. ниже.
-- **CLI** — тот же сервер; `--out` — свой scratchpad.
-- Первый вызов поднимает сервер (`gserver.py`): 7–8 с. Запросы идут параллельно; декомпиляторов в пуле 3 (`CLR_GHIDRA_DECOMPILERS`), псевдокод кэшируется в памяти и на диске по адресу функции и снимку базы.
-- Время (T35, тёплый сервер): MCP добавляет 20–30 мс; `decomp` 0,1–0,7 с, из кэша 0,02–0,05 с; 48 функций без кэша — 3,5 с по одной, 1,5 с в 3 потока; `search` — 6 с на первый индекс имён или строк, дальше 0,1 с; `vtable PlayerCharacter` (14 таблиц) — 0,2 с; `xrefs` до 1 с; `fieldrefs --users-of AE#403521` — 9 с.
-- Сервер от старых инструментов (протокол ниже `gq.PROTOCOL`) новый клиент останавливает и поднимает заново.
-- Заголовок файла псевдокода: адрес, все `AE#`, имя, сигнатура, комментарии куратора (`[clr] ng: файл NG`, `[clr] curated: …`, `[clr] docs …`), строки файла с пометками.
-- `fieldrefs` ищет операнд `[рег + смещение]` без учёта типа — это кандидаты, проверяй псевдокодом. `R`/`W` — чтение/запись, `A` — `lea`.
-- `callgraph`: вниз — только прямые вызовы и хвостовые `jmp`, косвенные (vtable) считаются; вверх — вызовы, `jmp` и слоты vftable, где лежит функция. `search` не ищет метки `AE_<id>` (для них есть `AE#id`); ссылки из таблиц исключений (`.pdata`, `UNWIND_INFO`) не считает.
-- `vtable` читает RTTI MSVC: `CompleteObjectLocator` → смещение подобъекта, `ClassHierarchyDescriptor` → базы. Слот сравнивается с первичной таблицей базы на том же смещении: `inherited`, `override of …`, `new in …`.
-- Источник имени — в `info` и заголовке. Надёжны имена NG, `curated` и `AE_<id>`. Имена анализа Ghidra (66 723: Function ID, разбор исключений) верны для STL/CRT/XAudio2, но на коде Bethesda бывают ложными; `FID_conflict:…` — неоднозначные.
-- Безымянные функции названы `AE_<id>`.
-- **Типы NG (T36):** классы этой сборки лежат в `/NG/RE` (5 433 структуры `RE::`, смещения — раскладка MSVC сборки «только AE»). У методов с именами NG `this` типизирован, поля названы (`this->interiorCell`), вызов через типизированный объект — `this->vfptr->SetParentCell`. Поля `unkXXX` — пробелы самого NG. Через нетипизированный указатель вызов остаётся `(**(code **)(*p + 0x4c0))`: слот = смещение / 8, смотри `vtable`.
+- **MCP** (`tools/ghidra/mcp_server.py`, stdio, stdlib): a short function is returned as text; a long one is returned as a file plus an excerpt of ±10 lines around marks with file line numbers (read the rest with Read using `offset`). The response reports time spent in Ghidra and waiting for the decompiler. The connection configuration is in git: `.mcp.json` (`ghidra` server), `.claude/skills/ghidra` (skill), `.claude/agents/` (`re-reader` on Sonnet, `re-reader-fast` on Haiku); see below.
+- **CLI** uses the same server; `--out` specifies your own scratchpad.
+- The first call starts the server (`gserver.py`): 7–8 s. Requests run in parallel; the pool has 3 decompilers (`CLR_GHIDRA_DECOMPILERS`), and pseudocode is cached in memory and on disk by function address and database snapshot.
+- Timing (T35, warm server): MCP adds 20–30 ms; `decomp` takes 0.1–0.7 s, 0.02–0.05 s from cache; 48 uncached functions take 3.5 s sequentially and 1.5 s across 3 threads; `search` takes 6 s to build the first name or string index, then 0.1 s; `vtable PlayerCharacter` (14 tables) takes 0.2 s; `xrefs` up to 1 s; `fieldrefs --users-of AE#403521` takes 9 s.
+- If the server belongs to older tools (protocol below `gq.PROTOCOL`), the new client stops it and starts it again.
+- Pseudocode file header: address, all `AE#`, name, signature, curator comments (`[clr] ng: NG file`, `[clr] curated: …`, `[clr] docs …`), file lines with marks.
+- `fieldrefs` searches for a `[reg + offset]` operand without regard to type — these are candidates; verify them using pseudocode. `R`/`W` means read/write, `A` means `lea`.
+- `callgraph`: downward includes only direct calls and tail `jmp`, and counts indirect (vtable) calls; upward includes calls, `jmp`, and vftable slots containing the function. `search` does not find `AE_<id>` labels (use `AE#id` for those); it does not count references from exception tables (`.pdata`, `UNWIND_INFO`).
+- `vtable` reads MSVC RTTI: `CompleteObjectLocator` → subobject offset, `ClassHierarchyDescriptor` → bases. A slot is compared with the base's primary table at the same offset: `inherited`, `override of …`, `new in …`.
+- The name source is shown in `info` and the header. NG, `curated`, and `AE_<id>` names are reliable. Ghidra analysis names (66,723: Function ID, exception analysis) are correct for STL/CRT/XAudio2 but can be false for Bethesda code; `FID_conflict:…` indicates ambiguity.
+- Unnamed functions are named `AE_<id>`.
+- **NG types (T36):** classes for this build are in `/NG/RE` (5,433 `RE::` structures, offsets use the MSVC layout of the “AE only” build). Methods with NG names have typed `this`, named fields (`this->interiorCell`), and calls through a typed object appear as `this->vfptr->SetParentCell`. `unkXXX` fields are gaps in NG itself. A call through an untyped pointer remains `(**(code **)(*p + 0x4c0))`: slot = offset / 8; see `vtable`.
 
-### Подключение MCP
+### MCP connection
 
-С 08.11.2026 `.mcp.json` и `.claude/` (навык, агенты) лежат в git и действуют в каждом чате, открытом в корне репозитория или worktree. Источник правды — эти файлы, отдельных шаблонов нет. `.claude/settings.local.json` личный и в git не идёт.
+Since 08.11.2026, `.mcp.json` and `.claude/` (skill, agents) are in git and apply in every chat opened at the repository root or a worktree. These files are the source of truth; there are no separate templates. `.claude/settings.local.json` is personal and is not committed to git.
 
-- Claude Code спрашивает одобрение сервера `ghidra` при первом запуске чата; список и состояние — `/mcp`. Новый или изменённый `.mcp.json` подхватывает только новый чат.
-- Субагенты получают инструменты `mcp__ghidra__*`, только если сервер подключён в главном чате. Без них агенты `re-reader*` ничего не прочтут (07.11.2026 так и было): тогда запускай `general-purpose` с `python tools/ghidra/gq.py` через Bash.
-- Только для одной папки без git: `claude mcp add --scope local ghidra -- python tools/ghidra/mcp_server.py`.
-- Проверка: `python tools/ghidra/mcp_server.py --selftest` — запускает MCP-сервер дочерним процессом, вызывает инструменты и 3 декомпиляции параллельно.
+- Claude Code asks for approval of the `ghidra` server on the first launch in a chat; `/mcp` shows the list and status. Only a new chat picks up a new or changed `.mcp.json`.
+- Subagents receive `mcp__ghidra__*` tools only if the server is connected in the main chat. Without them, `re-reader*` agents cannot read anything (this happened on 07.11.2026): in that case, run `general-purpose` with `python tools/ghidra/gq.py` through Bash.
+- For a single directory without git only: `claude mcp add --scope local ghidra -- python tools/ghidra/mcp_server.py`.
+- Check: `python tools/ghidra/mcp_server.py --selftest` — starts the MCP server as a child process, invokes tools, and runs 3 decompilations in parallel.
 
-### Как добавить инструмент
+### How to add a tool
 
-1. Метод класса `Ghidra` в `gserver.py`, возвращающий `dict(text=…)` (длинный текст — `self.write_text(out, имя, строки, предел)`), и ветка в `dispatch()`. Методы работают параллельно и только читают программу; общие индексы строятся под `self.index_lock`, декомпилятор — только через `decompiled_rows()`.
-2. Подкоманда в `gq.py` и запись в `TOOLS` в `mcp_server.py` (имя `ghidra_…`, описание, JSON-схема, обработчик; для простого текста — `t_text("cmd", поле="аргумент")`).
-3. Если старый сервер команды не знает — поднять `PROTOCOL` в `gserver.py` и `gq.py`. Если меняется вид строк кэша псевдокода — `CACHE_FORMAT`.
-4. `python tools/ghidra/gq.py stop`, затем `--selftest` и вызов новой команды.
+1. Add a `Ghidra` class method in `gserver.py` that returns `dict(text=…)` (long text via `self.write_text(out, name, lines, limit)`), and a branch in `dispatch()`. Methods run in parallel and only read the program; shared indexes are built under `self.index_lock`, and the decompiler is accessed only through `decompiled_rows()`.
+2. Add a subcommand in `gq.py` and an entry in `TOOLS` in `mcp_server.py` (name `ghidra_…`, description, JSON schema, handler; for plain text, `t_text("cmd", field="argument")`).
+3. If the old server does not know the command, increment `PROTOCOL` in `gserver.py` and `gq.py`. If the pseudocode cache row format changes, increment `CACHE_FORMAT`.
+4. Run `python tools/ghidra/gq.py stop`, then `--selftest` and invoke the new command.
 
-## Куратору
+## For the curator
 
-Правки — только скриптами, повторяемыми с нуля:
-1. Анализ: `powershell -File tools\ghidra\analyze.ps1 -LogDir <scratchpad>` (окно Ghidra закрыто; 12 мин, куча 10 ГБ). Два вызова `analyzeHeadless`:
-   - импорт `-noanalysis` с `scripts\ClrAnalysisOptions.java`: компилятор `visualstudio:unknown` (загрузчик PE оставляет `unknown`, и тогда анализаторы RTTI и исключений MSVC не запускаются) и выключенный **Create Address Tables** (в окне с кучей 8 ГБ он упал с `OutOfMemoryError`, 05.11.2026);
-   - `-process` в новом процессе: набор анализаторов выбирается при открытии программы, уже с MSVC.
-2. Имена: `python tools/ghidra/collect_names.py` (5–20 с), затем `E:\Ghidra\pyghidra-venv\Scripts\python.exe tools/ghidra/apply_names.py` (окно закрыто). Повтор на готовой базе — 30 с; на свежем анализе фаза 0 создаёт около 12 600 функций и идёт до 1,5 ч (каждая новая функция перестраивает соседние тела).
-3. Типы NG (T36): `python tools/ghidra/collect_types.py` (MSVC, 30 с), затем `E:\Ghidra\pyghidra-venv\Scripts\python.exe tools/ghidra/apply_types.py` (окно закрыто; 35 с). Подробно — ниже.
-4. Копия для чтения: `python tools/ghidra/snapshot.py` (останавливает сервер, секунды). Кэш псевдокода и индексы старой копии остаются в `%TEMP%\clr-ghidra\cache\` под старым снимком; их можно удалить.
+Make changes only with scripts that can be repeated from scratch:
+1. Analysis: `powershell -File tools\ghidra\analyze.ps1 -LogDir <scratchpad>` (Ghidra window closed; 12 min, 10 GB heap). Two `analyzeHeadless` invocations:
+   - import with `-noanalysis` and `scripts\ClrAnalysisOptions.java`: compiler `visualstudio:unknown` (the PE loader leaves `unknown`, which prevents the MSVC RTTI and exception analyzers from running) and **Create Address Tables** disabled (with an 8 GB heap in the window, it crashed with `OutOfMemoryError`, 05.11.2026);
+   - `-process` in a new process: analyzers are selected when opening the program, now with MSVC.
+2. Names: `python tools/ghidra/collect_names.py` (5–20 s), then `E:\Ghidra\pyghidra-venv\Scripts\python.exe tools/ghidra/apply_names.py` (window closed). Repeating on a prepared database takes 30 s; on a fresh analysis, phase 0 creates about 12,600 functions and takes up to 1.5 h (each new function rebuilds neighboring bodies).
+3. NG types (T36): `python tools/ghidra/collect_types.py` (MSVC, 30 s), then `E:\Ghidra\pyghidra-venv\Scripts\python.exe tools/ghidra/apply_types.py` (window closed; 35 s). Details below.
+4. Read-only copy: `python tools/ghidra/snapshot.py` (stops the server, seconds). The old copy's pseudocode cache and indexes remain in `%TEMP%\clr-ghidra\cache\` under the old snapshot; they can be deleted.
 
-- **Свои выводы** (имя по разбору) — строкой в `tools/ghidra/curated_names.txt` (в git), затем `apply_names.py --project-dir <проект>-pre-types`, `apply_types.py --restore`, `snapshot.py`: копия без типов должна знать новые имена, иначе `--restore` их потеряет. Ручное имя в окне Ghidra (`USER_DEFINED`) `apply_names.py` не трогает, но `analyze.ps1` его сотрёт.
-- Окно Ghidra: открыть основной проект, после правок сохранить и закрыть, затем шаг 4.
-- **Проверки (T34, только чтение основного проекта, окно закрыто):**
-  - `check_base.py [--ref-id 403521]` (1–2 мин): RIP-ссылки на ID по байтам против ссылок Ghidra, начала `.pdata` без функций, код вне функций, `FUN_`, имена по источникам, 500 самых вызываемых функций без имени;
-  - `check_docs.py`: утверждения `AE#a+0xNN` → / call / `<` / из `AE#b` в `docs/*.md` против инструкции в базе. Документы не правит, список — `%TEMP%\clr-ghidra\check-docs-<версия>.txt`.
+- **Your own conclusions** (a name based on analysis) — add a line to `tools/ghidra/curated_names.txt` (in git), then run `apply_names.py --project-dir <project>-pre-types`, `apply_types.py --restore`, `snapshot.py`: the copy without types must know the new names, otherwise `--restore` will lose them. `apply_names.py` does not touch a manual name in the Ghidra window (`USER_DEFINED`), but `analyze.ps1` will erase it.
+- Ghidra window: open the main project, save and close after changes, then perform step 4.
+- **Checks (T34, read-only access to the main project, window closed):**
+  - `check_base.py [--ref-id 403521]` (1–2 min): RIP references to an ID by bytes versus Ghidra references, `.pdata` starts without functions, code outside functions, `FUN_`, names by source, 500 most-called unnamed functions;
+  - `check_docs.py`: assertions `AE#a+0xNN` → / call / `<` / from `AE#b` in `docs/*.md` against the instruction in the database. It does not edit documents; the list is `%TEMP%\clr-ghidra\check-docs-<version>.txt`.
 
-## Типы NG (T36)
+## NG types (T36)
 
-Компилятор — парсер: заголовки NG собираются MSVC **для одного runtime** (`ENABLE_SKYRIM_AE` для 1.6.x, `ENABLE_SKYRIM_SE` для 1.5.97). Тогда NG раскладывает классы ровно под него (`TES` = 0x2C0 с полями, которые сборка SE+AE прячет за `GetRuntimeData()`), и каждый `STATIC_ASSERT_SIZE` проверяет размер этого runtime. Флаги и пути — из `build/.deps` сборки плагина основной папки (собрать плагин хотя бы раз), MSVC — `gconfig.VCVARS`.
+The compiler is the parser: NG headers are compiled by MSVC **for a single runtime** (`ENABLE_SKYRIM_AE` for 1.6.x, `ENABLE_SKYRIM_SE` for 1.5.97). NG then lays out classes exactly for that runtime (`TES` = 0x2C0 with fields that the SE+AE build hides behind `GetRuntimeData()`), and every `STATIC_ASSERT_SIZE` checks the size for that runtime. Flags and paths come from `build/.deps` of the plugin build in the main directory (build the plugin at least once); MSVC comes from `gconfig.VCVARS`.
 
-- `collect_types.py` → `%TEMP%\clr-ghidra\types\<версия>\`:
-  - проход 1 — `/d1reportAllClassLayout`: размеры, базы, vftable с именами методов (16 087 классов, 3 005 таблиц);
-  - проход 2 — DLL с функцией на каждый класс `RE::` (3 228) → `NG.pdb` с полными типами полей;
-  - из заголовков (парсер `collect_names.py`) — статические методы (548) и синглтоны (80: где указатель, где сам объект).
-- `apply_types.py` (основной проект; первый запуск копирует его в `<проект>-pre-types`, повтор — `--restore`, потому что Ghidra не удаляет `/NG`, когда типы уже используются):
-  1. загрузчик PDB Ghidra, «только типы», раскладка с иерархией классов → `/NG`; предпочтительный корень пространств имён программы — `/NG/RE`, поэтому класс `TES` находит структуру для `this`;
-  2. безымянные базы → `super_<База>`; заглушка NG `_padPlayerRuntimeData` (0x3E0, 0x808) → `PLAYER_RUNTIME_DATA` того же размера;
-  3. `/NG/vftables/<Класс>_vftable` (1 793 таблицы, 31 495 слотов, имена — из отчёта MSVC); у классов со своей первичной таблицей (1 435) цепочка первичных баз развёрнута в плоские поля, и `vfptr` на +0 указывает на таблицу класса;
-  4. `__thiscall` — функциям в пространстве имён класса со структурой в `/NG/RE`: виртуальным (6 910) и с именем NG/curated, кроме статических (479);
-  5. синглтоны — 79 (`TES` → `TES*`, `PlayerCharacter` → `PlayerCharacter*`, `BSTimer` — сам объект); `RenderTargetManager` — объект, вопреки NG (`SINGLETON_DEPTH_FIX`, `CLAUDE.md`, раздел 7);
-  6. сверка: все 5 433 структуры `RE::` равны размерам MSVC.
-- Раскладка AE в NG — для 1.6.629–1.6.1170: у `PlayerCharacter` нет базы 1.7.99 (`BSTEventSink<BSSystemEvent>`), у `TES` — блок 1.6.1130+ (`AE_RUNTIME_DATA`). Для 1.7.x нужна своя запись в `gconfig.VERSIONS` и проверка.
-- Не сделано: `SkyrimVM::_padVMRuntimeData` (0x554) не равна `VM_RUNTIME_DATA` (0x558) — оставлена заглушкой; сигнатуры из `decltype` NG (типы параметров) не применяются.
+- `collect_types.py` → `%TEMP%\clr-ghidra\types\<version>\`:
+  - pass 1 — `/d1reportAllClassLayout`: sizes, bases, vftables with method names (16,087 classes, 3,005 tables);
+  - pass 2 — a DLL with one function per `RE::` class (3,228) → `NG.pdb` with complete field types;
+  - from headers (`collect_names.py` parser) — static methods (548) and singletons (80: which are pointers and which are objects).
+- `apply_types.py` (main project; the first run copies it to `<project>-pre-types`, subsequent runs use `--restore`, because Ghidra does not delete `/NG` when types are already in use):
+  1. Ghidra PDB loader, “types only”, layout with class hierarchy → `/NG`; the preferred root of the program's namespaces is `/NG/RE`, so the `TES` class finds the structure for `this`;
+  2. unnamed bases → `super_<Base>`; NG placeholder `_padPlayerRuntimeData` (0x3E0, 0x808) → `PLAYER_RUNTIME_DATA` of the same size;
+  3. `/NG/vftables/<Class>_vftable` (1,793 tables, 31,495 slots, names from the MSVC report); for classes with their own primary table (1,435), the primary-base chain is expanded into flat fields, and `vfptr` at +0 points to the class table;
+  4. `__thiscall` — for functions in a class namespace with a structure in `/NG/RE`: virtual functions (6,910) and functions with an NG/curated name, except static ones (479);
+  5. singletons — 79 (`TES` → `TES*`, `PlayerCharacter` → `PlayerCharacter*`, `BSTimer` — the object itself); `RenderTargetManager` is an object, contrary to NG (`SINGLETON_DEPTH_FIX`, `CLAUDE.md`, section 7);
+  6. verification: all 5,433 `RE::` structures match MSVC sizes.
+- The AE layout in NG is for 1.6.629–1.6.1170: `PlayerCharacter` lacks the 1.7.99 base (`BSTEventSink<BSSystemEvent>`), and `TES` lacks the 1.6.1130+ block (`AE_RUNTIME_DATA`). 1.7.x needs its own entry in `gconfig.VERSIONS` and verification.
+- Not done: `SkyrimVM::_padVMRuntimeData` (0x554) does not equal `VM_RUNTIME_DATA` (0x558) — left as a placeholder; signatures from NG `decltype` (parameter types) are not applied.
 
-## Имена: источники и приоритет
+## Names: sources and priority
 
-`collect_names.py` разбирает `lib/commonlibsse-ng` основной папки (NG v13.1.0, MIT), документы и Address Library:
+`collect_names.py` parses `lib/commonlibsse-ng` in the main directory (NG v13.1.0, MIT), documents, and Address Library:
 
-1. **curated** — `curated_names.txt`: имена, установленные куратором; методам даётся `this`.
-   **reviewed** — `reviewed_names.txt`: имена, которые куратор проверил по коду (часто их предлагает `re-reader-fast`). Ниже curated, выше NG и сторонних таблиц, `this` не даётся. Комментарий `[clr] reviewed: …` — короткое доказательство.
-2. **ng-reloc** — `RELOCATION_ID(se, ae)` в функциях NG → `Класс::Метод`; тип `decltype(&X::Y)` даёт `X::Y`. Данные: `Класс::singleton`, иначе `Класс::Метод_переменная`. `REL::ID` без пары SE/AE пропускается.
-3. **ng-vfunc** — виртуальные методы заголовков NG (комментарий слота `// 98`, `// SE/AE 0x82`) через `VTABLE_*[0]`. Имя — самого базового класса, у которого в слоте та же функция; общие для разных методов функции (ICF) без имени.
-4. **ng-table** — `VTABLE_*`, `RTTI_*`, `NiRTTI_*`: сверяются с RTTI Ghidra, метка — только если у Ghidra её нет.
-5. **AE_<id>** — метка на каждый адрес Address Library; функция без имени получает имя `AE_<id>`.
-6. **rtti-vslot** (T34, `rtti.py`): свой разбор RTTI MSVC в `.exe` (8 558 vftable). Безымянная функция в слоте → `vf_0xNN` в пространстве имён символа `vftable` Ghidra того класса, который самый базовый с той же функцией в этом слоте. Классы `std::`, `Concurrency::` и неразобранные шаблоны не называются; функция в слотах нескольких несвязанных классов получает только комментарий.
-7. **papyrus** (`papyrus.py`): регистрации нативных функций по двум шаблонам байт (`lea r8,[класс]; lea rdx,[имя]; call` + обработчик в `[obj+0x50]` или в `r9`, затем `call [rax+0xC0]`) → `Papyrus::<Класс>::<Функция>`.
-8. **console** (`name_sources.py`): таблицы `SCRIPT_FUNCTION` NG (`AE#361120` — 0x2E0 скриптовых, `AE#365650` — 0x1B4 консольных, записи по 0x50) → `ScriptCommand::`, `ConsoleCommand::`, `Condition::` (функция условия +0x40). Общий для нескольких команд обработчик — комментарий.
-9. **Сторонние таблицы** (`thirdparty.py`, только AE; `collect_names.py --no-thirdparty` выключает, `--update-thirdparty` обновляет клоны). Берутся только имена и ID, код не копируется, данные — вне git:
+1. **curated** — `curated_names.txt`: names established by the curator; methods receive `this`.
+   **reviewed** — `reviewed_names.txt`: names the curator verified against code (often proposed by `re-reader-fast`). Below curated, above NG and third-party tables; no `this` is assigned. Comment `[clr] reviewed: …` contains a short proof.
+2. **ng-reloc** — `RELOCATION_ID(se, ae)` in NG functions → `Class::Method`; type `decltype(&X::Y)` yields `X::Y`. Data: `Class::singleton`, otherwise `Class::Method_variable`. `REL::ID` without an SE/AE pair is skipped.
+3. **ng-vfunc** — virtual methods in NG headers (slot comment `// 98`, `// SE/AE 0x82`) through `VTABLE_*[0]`. The name comes from the most base class with the same function in that slot; functions shared by different methods (ICF) remain unnamed.
+4. **ng-table** — `VTABLE_*`, `RTTI_*`, `NiRTTI_*`: checked against Ghidra RTTI; a label is applied only if Ghidra has none.
+5. **AE_<id>** — a label at every Address Library address; an unnamed function receives the name `AE_<id>`.
+6. **rtti-vslot** (T34, `rtti.py`): custom MSVC RTTI parsing in the `.exe` (8,558 vftables). An unnamed function in a slot → `vf_0xNN` in the namespace of the Ghidra `vftable` symbol for the most base class with the same function in that slot. `std::`, `Concurrency::`, and unparsed template classes are not named; a function in slots of several unrelated classes receives only a comment.
+7. **papyrus** (`papyrus.py`): native-function registrations by two byte patterns (`lea r8,[class]; lea rdx,[name]; call` + handler in `[obj+0x50]` or in `r9`, then `call [rax+0xC0]`) → `Papyrus::<Class>::<Function>`.
+8. **console** (`name_sources.py`): NG `SCRIPT_FUNCTION` tables (`AE#361120` — 0x2E0 script functions, `AE#365650` — 0x1B4 console functions, 0x50-byte entries) → `ScriptCommand::`, `ConsoleCommand::`, `Condition::` (condition function +0x40). A handler shared by several commands receives a comment.
+9. **Third-party tables** (`thirdparty.py`, AE only; `collect_names.py --no-thirdparty` disables them, `--update-thirdparty` updates the clones). Only names and IDs are taken; code is not copied, and data stays outside git:
 
-   | Источник | Лицензия | Что даёт | Совпадение с NG |
+   | Source | License | What it provides | Match with NG |
    |---|---|---|---|
-   | AddressLibraryDatabase (meh321), `skyrimae.rename` | файла лицензии нет; README: общая база имён для ID Address Library | 42 180 ID: 24 524 имени, 17 656 «только класс» (`sub`, `FuncN`, заглушки IDA) | 4 086 из 4 560 (90 %); остальное — синонимы (`IsEqual`/`IsNotEqual`, `_Impl`) |
-   | po3 CommonLibSSE, ветка `dev-1.6.1170` | MIT | 1 066 ID (`REL::ID(n)` = ID AE) | 1 019 из 1 049 (97 %) |
-   | TiltedEvolution, `POINTER_SKYRIMSE` | GPL-3.0 | 255 ID с именами переменных | 14 из 106 — только комментарий |
+   | AddressLibraryDatabase (meh321), `skyrimae.rename` | no license file; README: shared name database for Address Library IDs | 42,180 IDs: 24,524 names, 17,656 “class only” (`sub`, `FuncN`, IDA placeholders) | 4,086 of 4,560 (90%); the rest are synonyms (`IsEqual`/`IsNotEqual`, `_Impl`) |
+   | po3 CommonLibSSE, `dev-1.6.1170` branch | MIT | 1,066 IDs (`REL::ID(n)` = AE ID) | 1,019 of 1,049 (97%) |
+   | TiltedEvolution, `POINTER_SKYRIMSE` | GPL-3.0 | 255 IDs with variable names | 14 of 106 — comment only |
 
-   Приоритет: NG, curated, Papyrus и команды выше; po3 — как NG; AddressLibraryDatabase выше `Unk_` NG и `vf_0xNN`; «только класс» → `Класс::AE_<id>` для функций, которым никто не дал имени. Комментарий `[clr] name from …` показывает источник, `[clr] elsewhere: …` — несовпадающие имена других источников. Имя из сторонних таблиц ставит функцию в класс, но не даёт `this`: метод может быть статическим.
-10. **docs** — `` `Класс::Метод` `` вплотную к `AE#id` в `docs/*.md` и комментариях `src/` → плашка-комментарий.
+   Priority: NG, curated, Papyrus, and commands above; po3 treated as NG; AddressLibraryDatabase above NG `Unk_` and `vf_0xNN`; “class only” → `Class::AE_<id>` for functions that no other source named. Comment `[clr] name from …` shows the source, and `[clr] elsewhere: …` shows differing names from other sources. A name from third-party tables places a function in a class but does not assign `this`: the method may be static.
+10. **docs** — `` `Class::Method` `` immediately adjacent to `AE#id` in `docs/*.md` and `src/` comments → plate comment.
 
-- **Строки `Класс::Метод`** в данных: если строку использует ровно одна функция — комментарий `[clr] string names …`.
-- **Фаза 0** `apply_names.py` создаёт пропущенные функции: начала `.pdata` (кроме цепочек `UNW_FLAG_CHAININFO`), адреса кода в данных (8-байтные указатели), цели `lea reg,[rip+x]` в коде (если Ghidra разобрала там `LEA`), ID Address Library после `int3`/`ret`, адреса имён. Функция, созданная раньше на сырых байтах (тело 1 байт), пересоздаётся.
-- **Function ID:** любое наше имя заменяет имя анализа (старое остаётся меткой). Имена MFC (`CWinApp`, `CMFC*`, `CTaskDialog`…) ложны — игра не использует MFC: функция получает `AE_<id>`, имя MFC — метка и комментарий. Остаются: функлеты исключений `Unwind@`/`Catch@` (из таблиц исключений, точны), CRT/`std`/`Concurrency`/XAudio2 (статически влинкованы), `FID_conflict` (неоднозначны).
-- **Сверка RTTI с NG** (`norm()`): написание шаблонов (`unsigned_char`/`uchar`, `class_`, `const`, `near`, `__ptr64`, анонимные пространства, локальные классы функций) не считается расхождением.
+- **`Class::Method` strings** in data: if exactly one function uses the string, add comment `[clr] string names …`.
+- **Phase 0** of `apply_names.py` creates missing functions: `.pdata` starts (except `UNW_FLAG_CHAININFO` chains), code addresses in data (8-byte pointers), targets of `lea reg,[rip+x]` in code (if Ghidra analyzed `LEA` there), Address Library IDs after `int3`/`ret`, and name addresses. A function previously created on raw bytes (1-byte body) is recreated.
+- **Function ID:** any of our names replaces an analysis name (the old one remains a label). MFC names (`CWinApp`, `CMFC*`, `CTaskDialog`…) are false — the game does not use MFC: the function receives `AE_<id>`, and the MFC name becomes a label and comment. The following remain: exception funclets `Unwind@`/`Catch@` (from exception tables, accurate), CRT/`std`/`Concurrency`/XAudio2 (statically linked), `FID_conflict` (ambiguous).
+- **RTTI comparison with NG** (`norm()`): differences in template spelling (`unsigned_char`/`uchar`, `class_`, `const`, `near`, `__ptr64`, anonymous namespaces, function-local classes) are not considered mismatches.
 
-Счёт и конфликты — в отчётах `%TEMP%\clr-ghidra\names-*.report.txt`, `apply-*.report.txt`; сводка — `docs/tasks/results/T33.md`.
+Counts and conflicts are in `%TEMP%\clr-ghidra\names-*.report.txt`, `apply-*.report.txt`; summary in `docs/tasks/results/T33.md`.
 
-## Другие версии (5.14, п. 6)
+## Other versions (5.14, item 6)
 
-`gconfig.VERSIONS` — запись на сборку: `runtime` (`se`/`ae` — половина `RELOCATION_ID` и префикс меток `SE_`/`AE_`), `.exe`, таблица Address Library (`version-1-5-97-0.bin` — формат 1, `versionlib-*.bin` — формат 2), имя проекта. `analyze.ps1` принимает пути параметрами. Имена из документов есть только для AE.
+`gconfig.VERSIONS` has one entry per build: `runtime` (`se`/`ae` — the half of `RELOCATION_ID` and the `SE_`/`AE_` label prefix), `.exe`, Address Library table (`version-1-5-97-0.bin` — format 1, `versionlib-*.bin` — format 2), project name. `analyze.ps1` accepts paths as parameters. Names from documents exist only for AE.

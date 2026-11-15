@@ -1,94 +1,94 @@
-# Передача работы: CellLoadResearch 0.8.31
+# Handoff: CellLoadResearch 0.8.31
 
-Состояние на 04.11.2026. Документ нужен, чтобы продолжить работу в новом чате, не читая прошлую переписку. Правила, окружение и требования к финальному моду (5.14) — `CLAUDE.md`.
+State as of 04.11.2026. This document exists so work can be continued in a new chat without reading the previous conversation. Rules, environment, and the final mod requirements (5.14) — `CLAUDE.md`.
 
-Пометки достоверности: **в игре** — подтвердил пользователь или трасса; **по коду игры** — найдено в машинном коде, в игре не проверено; **предположение** — не проверено ничем.
+Reliability tags: **verified in game** — confirmed by the user or a trace; **from game code** — found in machine code, not checked in game; **assumption** — not verified by anything.
 
-## 1. Где мы сейчас
+## 1. Where we are now
 
-**Проект.** SKSE-плагин для Skyrim AE 1.6.1170 на CommonLibSSE-NG v13.1.0. Таверна Bannered Mare живёт, пока игрок на улице, и видна через свою дверь, как через проём (портал: интерьер рисуется второй камерой в текстуру на месте двери).
+**Project.** An SKSE plugin for Skyrim AE 1.6.1170 on CommonLibSSE-NG v13.1.0. The Bannered Mare tavern stays alive while the player is on the street and is visible through its door, as if through an opening (portal: the interior is rendered by a second camera into a texture in place of the door).
 
-**Цель пользователя** (NoLoads): переходы через двери без экрана загрузки. Промежуточная — «полноценный портал» (`docs/FEATURES.md`, 5.13): свет, звук, снаряды, NPC и игрок проходят через дверь.
+**User's goal** (NoLoads): door transitions without a loading screen. The intermediate goal is a "full-featured portal" (`docs/FEATURES.md`, 5.13): light, sound, projectiles, and NPCs and the player pass through the door.
 
-**Работает в игре (0.8.31):**
-- интерьер виден через дверь с любой точки улицы, обновляется каждый кадр; своя цветокоррекция (T12): вблизи огонь, свет и яркость как изнутри;
-- NPC внутри ходят, анимированы, освещены, ИИ полный; на переходах удерживаются в high, прыжков нет (T11);
-- песня барда и субтитры снаружи; на выходе песня не обрывается;
-- свет факела игрока проходит внутрь; звук интерьера слышен снаружи (без учёта стен);
-- интерьер подключён как соседняя ячейка (`kAttached`), вход в него — 70 мс экрана загрузки;
-- вход и выход не роняют игру, зависаний нет, F11 безопасен (с 0.8.29);
-- совместим с Engine Fixes 7.0.20 (прогон 0.8.31).
+**Works in game (0.8.31):**
+- the interior is visible through the door from anywhere on the street, updates every frame; it has its own color correction (T12): up close, fire, light, and brightness look as if from inside;
+- NPCs inside walk around, are animated, lit, and have full AI; they are held in high on transitions, no popping (T11);
+- the bard's song and subtitles play outside; the song does not cut off on exit;
+- the player's torch light passes inside; the interior's sound is audible outside (walls not accounted for);
+- the interior is attached as a neighboring cell (`kAttached`); entering it costs 70 ms of loading screen;
+- entering and exiting do not crash the game, no hangs, F11 is safe (since 0.8.29);
+- compatible with Engine Fixes 7.0.20 (run 0.8.31).
 
-**Не работает / открыто:**
-- песня барда обрывается на входе через 1–2 с: `BardSongStarter` по `CLOC`. Решение — фильтр Story Manager, задача T16;
-- NPC на входе меняют направление движения (T20); Идолаф с улицы переставляется внутрь на первом входе: улица не удерживается (T21);
-- картинка портала вдали светлее и в серой пелене; дым пропадает, когда очаг не виден через портал (T17);
-- портал стоит на ближайшей двери при каждом запуске (нужен реестр порталов, T29);
-- с Engine Fixes новые сохранения не видны в списке загрузки (предположение: его `bEnableAchievementsWithMods`, флаг в имени сохранения `0` вместо `1`; контроль без нашего плагина не сделан, `docs/FINDINGS.md`, «Прогон 0.8.31»);
-- не сделано: свет в обе стороны, вид изнутри наружу, снаряды, проход игрока без загрузки, автономность (раздел 5), README.
+**Does not work / open:**
+- the bard's song cuts off 1–2 s after entering: `BardSongStarter` on `CLOC`. The fix is a Story Manager filter, task T16;
+- NPCs change direction of movement on entering (T20); Idolaf outside is teleported inside on the first entry: the street is not held (T21);
+- the portal image is brighter and grey-hazed in the distance; smoke disappears when the hearth is not visible through the portal (T17);
+- the portal lands on the nearest door at every launch (a portal registry is needed, T29);
+- with Engine Fixes, new saves do not appear in the load list (assumption: its `bEnableAchievementsWithMods`, a `0` flag in the save name instead of `1`; no control run without our plugin was done, `docs/FINDINGS.md`, "Run 0.8.31");
+- not done: light in both directions, view from inside out, projectiles, player passage without loading, autonomy (section 5), README.
 
-**Этап 0 (0.8.26):** короткие `CLAUDE.md` и `HANDOFF.md`, `tools/run_digest.py`, `Portal.cpp` разрезан на `Portal*.cpp`.
+**Stage 0 (0.8.26):** short `CLAUDE.md` and `HANDOFF.md`, `tools/run_digest.py`, `Portal.cpp` split into `Portal*.cpp`.
 
-**Этап 1 закрыт (0.8.27–0.8.31).** Выводы — `docs/FINDINGS.md` («Прогон 0.8.27» … «Прогон 0.8.31»), результаты — `docs/tasks/results/T10.md`–`T15.md`.
-- T10 + T11: удержание NPC портала в high (`ActorHold`), обрыв песни на выходе исправлен.
-- T12 + T13: цветокоррекция портала (`PortalGrade.cpp`), туман интерьера от плоскости двери, модель квада 1. Зависание 0.8.28 на F11 — обход `renderTargets` за настоящими целями (`CLAUDE.md`, раздел 7).
-- T14: технические моды не берём в зависимости; Engine Fixes — только совместимость (5.14, п. 8).
-- T15: смена локации — только `PlayerCharacter::SetParentCell`; правило R8 без FormID для T16 (`docs/LOCATION_TRIGGERS.md`).
+**Stage 1 closed (0.8.27–0.8.31).** Conclusions — `docs/FINDINGS.md` ("Run 0.8.27" … "Run 0.8.31"), results — `docs/tasks/results/T10.md`–`T15.md`.
+- T10 + T11: holding the portal's NPCs in high (`ActorHold`), the song cutting off on exit fixed.
+- T12 + T13: portal color correction (`PortalGrade.cpp`), interior fog from the door plane, quad model 1. The 0.8.28 hang on F11 — iterating `renderTargets` past the real targets (`CLAUDE.md`, section 7).
+- T14: we do not take technical mods as dependencies; Engine Fixes — compatibility only (5.14, item 8).
+- T15: location change — only via `PlayerCharacter::SetParentCell`; rule R8 without a FormID for T16 (`docs/LOCATION_TRIGGERS.md`).
 
-## 2. Ближайший план
+## 2. Nearest plan
 
-Работа идёт задачами для отдельных чатов: `docs/tasks/README.md` (этапы, брифы, ветки, правила). Результаты — `docs/tasks/results/`.
+Work proceeds as tasks for separate chats: `docs/tasks/README.md` (stages, briefs, branches, rules). Results — `docs/tasks/results/`.
 
-**Этап 2 — основа мода, переходы без загрузок:** T28 (готова, 0.8.32) → T20, T16, T32 (перепись чтений игрока по итогам T31) → T22 (после T32) → T29 (одна) → T21; T30 и T31 (исследования) готовы. **Этап 3 — улучшения:** T17, T23, T24, T25, T26, T27. Брифы T16, T17, T20, T22, T29, T32 готовы, T21 — после T20 и T29.
+**Stage 2 — mod foundation, transitions without loading:** T28 (ready, 0.8.32) → T20, T16, T32 (rewrite of player reads per T31 results) → T22 (after T32) → T29 (one) → T21; T30 and T31 (research) are ready. **Stage 3 — improvements:** T17, T23, T24, T25, T26, T27. Briefs T16, T17, T20, T22, T29, T32 are ready, T21 — after T20 and T29.
 
-**Вспомогательные задачи этапа 2 — база Ghidra и карты движка** (`docs/tasks/PLAN-T34-T41.md`, 07.11.2026). Готовы у куратора базы: T35 (MCP `ghidra_*`, навык, агенты `re-reader`/`re-reader-fast`), T36 (типы NG), T34 (имена, в том числе 167 `reviewed`). T37 (Creation Kit) **отложена** (пользователь, 08.11.2026): ради имён не окупается, привязка «функция → файл `.cpp`» — только если неясные кучки ID станут мешать задаче. 08.11.2026 готовы T41 (`docs/MULTIPLAYER_MODS.md`), T38 (`docs/PLAYER_MAP.md`), T39 (`docs/CELL_LOADING_MAP.md`), выводы — `docs/FINDINGS.md`, «Исследования T38, T39, T41»; массовое чтение по их спискам — `docs/tasks/results/T38-T39-batches.md` (все 14 пачек готовы, около 230 кандидатов имён для куратора — там же и в `results/T38.md`, `T39.md`, `T41.md`; чат-координатор исследований — `docs/tasks/PROMPT-research-coordinator.md`). T40 (сборка-зонд) — отдельным чатом, прогон один на обе; бриф обновлён 08.11.2026: объединённый список 151 ID, вопросы В1–В3 (задания загрузки параллельно главному потоку, двойной `Update` игрока, `DetachAll` не на главном), ветка от `exp/T32-player-reads`, если T32 не слита. Следующие исследования без кода (брифы 08.11.2026, читать код под задачу и на шаг раньше неё): T42 — состояние «в одном экземпляре» (для T29, T21, ворот), T43 — проход NPC через двери (для T20, T21, шага 6), T44 — карта отрисовки и проход с камерой-параметром (для T17, T29, 5.14, пп. 4–5). 09.11.2026 все три готовы (`SINGLE_INSTANCE.md`, `NPC_DOORS.md`, `RENDER_VIEW_MAP.md`; FINDINGS, «Исследования T42, T43, T44»; пачки — `results/T42-T44-batches.md`). Главное: ворота — предел движка (одна сетка, один мир, один мир Havok на все экстерьеры); подключённый интерьер не видят `TES::Pick`/`GetCell`/`Pathing` — перехват по ячейке актёра; бесшовный проход NPC — путь ванильной двери (`SetPosition` + `MoveRefToNewSpace`) на главном потоке, повторный `ActivateDoor` ходока гасить; вложенный проход рендера невозможен, виды — по очереди, рекурсия «N−1»; наш `WriteCall` на `+0x17E` должен принимать чужой переходник (зеркала). Главное для этапа 2: все переходы игрока идут через `AE#40438` → `AE#40744`; `SetParentCell` — единственный писатель локации игрока и переключатель климата, травы, коллизии камеры; буфер ячеек `TES` меняется и из заданий (`PostProcess` → `AE#13434` → `AE#13721`).
+**Stage 2 support tasks — Ghidra base and engine maps** (`docs/tasks/PLAN-T34-T41.md`, 07.11.2026). Ready at the base curator's: T35 (MCP `ghidra_*`, skill, `re-reader`/`re-reader-fast` agents), T36 (NG types), T34 (names, including 167 `reviewed`). T37 (Creation Kit) is **deferred** (user, 08.11.2026): not worth it just for names; "function → `.cpp` file" binding only if unclear ID clusters start blocking a task. On 08.11.2026, T41 (`docs/MULTIPLAYER_MODS.md`), T38 (`docs/PLAYER_MAP.md`), T39 (`docs/CELL_LOADING_MAP.md`) are ready, conclusions — `docs/FINDINGS.md`, "Researches T38, T39, T41"; bulk reading by their lists — `docs/tasks/results/T38-T39-batches.md` (all 14 batches ready, about 230 name candidates for the curator — there and in `results/T38.md`, `T39.md`, `T41.md`; the research chat coordinator — `docs/tasks/PROMPT-research-coordinator.md`). T40 (probe build) — a separate chat, one run for both; brief updated 08.11.2026: combined list of 151 IDs, questions Q1–Q3 (queueing loads in parallel with the main thread, double `Update` of the player, `DetachAll` not on main), branch from `exp/T32-player-reads` if T32 is not merged. Next code-less researches (briefs 08.11.2026, read code for a task and one step ahead of it): T42 — the "single instance" state (for T29, T21, gates), T43 — NPC passage through doors (for T20, T21, step 6), T44 — render map and pass with a camera parameter (for T17, T29, 5.14, items 4–5). On 09.11.2026 all three are ready (`SINGLE_INSTANCE.md`, `NPC_DOORS.md`, `RENDER_VIEW_MAP.md`; FINDINGS, "Researches T42, T43, T44"; batches — `results/T42-T44-batches.md`). The main points: gates are the engine's limit (one grid, one world, one Havok world for all exteriors); an attached interior is invisible to `TES::Pick`/`GetCell`/`Pathing` — interception is by the actor's cell; a seamless NPC passage is the vanilla door path (`SetPosition` + `MoveRefToNewSpace`) on the main thread, with the walker's repeated `ActivateDoor` suppressed; a nested render pass is impossible, views go one at a time, recursion "N−1"; our `WriteCall` at `+0x17E` must accept a foreign trampoline (mirrors). The main points for stage 2: all player transitions go through `AE#40438` → `AE#40744`; `SetParentCell` is the only writer of the player's location and the switcher of climate, grass, and camera collision; the `TES` cell buffer changes from job threads too (`PostProcess` → `AE#13434` → `AE#13721`).
 
-**Решения пользователя (04.11.2026):**
-- T16: сначала R8 в игре, затем политика по тегам (T30). Приветствия хозяина и трактирщика (`WIGreeting`, `WITavern`) должны остаться, R8 их гасит. 05.11.2026 принята политика T30: гасится только `BardSongStarter` и только при идущей песне; обе политики — в одной сборке T16, выбор строкой INI;
-- прогоны этапа — без Engine Fixes, с ним — общая сборка в конце этапа;
-- контроль сохранений с Engine Fixes (без нашего плагина, затем с `bEnableAchievementsWithMods = false`) ещё не сделан: войдёт в прогон с Engine Fixes в конце этапа;
-- 05.11.2026: T32 шаг 1 дополнен видами обращений к игроку и проверкой конструктора игрока (второй объект игрока в рамке, «А + Д»). Исполнитель T32 ждёт команды пользователя;
-- 05.11.2026: Ghidra 12.2 стоит в `E:\Ghidra\ghidra_12.2_PUBLIC`, JDK 25 — `D:\Java`. Проект, имена и инструменты псевдокода — задача T33, отдельный чат-куратор базы (`docs/tasks/T33-ghidra-base.md`). Проект и псевдокод в git не класть.
+**User decisions (04.11.2026):**
+- T16: first R8 in game, then the tag policy (T30). The innkeeper's and tavern greetings (`WIGreeting`, `WITavern`) must stay; R8 suppresses them. On 05.11.2026 the T30 policy was accepted: only `BardSongStarter` is suppressed, and only while a song is playing; both policies in one T16 build, selected by an INI string;
+- stage runs — without Engine Fixes; with it — a common build at the end of the stage;
+- the save control with Engine Fixes (without our plugin, then with `bEnableAchievementsWithMods = false`) is not done yet: it will go into the Engine Fixes run at the end of the stage;
+- 05.11.2026: T32 step 1 is supplemented with views of accesses to the player and a check of the player constructor (a second player object in a frame, "A + D"). The T32 executor waits for the user's command;
+- 05.11.2026: Ghidra 12.2 is installed at `E:\Ghidra\ghidra_12.2_PUBLIC`, JDK 25 — `D:\Java`. The project, names, and pseudocode tools are task T33, a separate base-curator chat (`docs/tasks/T33-ghidra-base.md`). Do not commit the project or pseudocode to git.
 
-**Git:** коммиты и слияния делает только пользователь (`CLAUDE.md`, начало). Worktree этапа 1 удалены.
+**Git:** commits and merges are done by the user only (`CLAUDE.md`, beginning). Stage 1 worktrees are deleted.
 
-## 3. Документы
+## 3. Documents
 
-| Нужно | Файл |
+| Purpose | File |
 |---|---|
-| Устройство кода, потоки, перехваты, инструменты, ложные пути, недостатки, цикл версии | `docs/ARCHITECTURE.md` |
-| Модули, INI, портал по подсистемам | `docs/FEATURES.md` |
-| Карта движка | `docs/ENGINE_MAP.md` |
-| Исходное задание, гипотезы, трасса | `docs/ORIGINAL_TASK.md` |
-| История версий и прогонов | `docs/HISTORY.md` |
-| Выводы по прогонам | `docs/FINDINGS.md` |
-| Версии игры | `docs/PORTABILITY.md` |
-| Расстояния и видимость | `docs/DISTANCE_CHECKS.md` |
-| Похожие и технические моды | `docs/RELATED_MODS.md` |
-| Реакции на смену локации | `docs/LOCATION_TRIGGERS.md` |
+| Code structure, threads, hooks, tools, false leads, shortcomings, release cycle | `docs/ARCHITECTURE.md` |
+| Modules, INI, portal by subsystems | `docs/FEATURES.md` |
+| Engine map | `docs/ENGINE_MAP.md` |
+| Original task, hypotheses, trace | `docs/ORIGINAL_TASK.md` |
+| Version and run history | `docs/HISTORY.md` |
+| Run conclusions | `docs/FINDINGS.md` |
+| Game versions | `docs/PORTABILITY.md` |
+| Distances and visibility | `docs/DISTANCE_CHECKS.md` |
+| Similar and technical mods | `docs/RELATED_MODS.md` |
+| Reactions to location change | `docs/LOCATION_TRIGGERS.md` |
 
-## 4. План «полноценного портала»
+## 4. "Full-featured portal" plan
 
-Порядок утвердил пользователь. Шаги разложены по задачам `docs/tasks/README.md`.
+The order was approved by the user. Steps are broken down into tasks in `docs/tasks/README.md`.
 
-**Шаг 1. Расстояния через дверь — T22.** Сделано: `lodDistance` контроллера (0.8.17), затухание анимированных ссылок (0.8.19), видимость NPC, камера мира и `GetDistance` (0.8.24). Осталось (`docs/DISTANCE_CHECKS.md`, раздел 9): `AE#37277`; точка глаза в `BSAnimationUpdateData` (`optionalEyePosition`, `AE#38054`); потребители камеры `AE#36609` (`AE#37690`, `AE#38308`, `AE#43851`); уровень обработки в `ProcessLists` вместо `PromoteActors`; расстояния для звука. Критерий: NPC далеко от двери упрощаются так же, как на улице на том же расстоянии.
+**Step 1. Distances through the door — T22.** Done: `lodDistance` of the controller (0.8.17), animated reference fade-out (0.8.19), NPC visibility, world camera, and `GetDistance` (0.8.24). Remaining (`docs/DISTANCE_CHECKS.md`, section 9): `AE#37277`; the eye point in `BSAnimationUpdateData` (`optionalEyePosition`, `AE#38054`); consumers of the camera `AE#36609` (`AE#37690`, `AE#38308`, `AE#43851`); processing level in `ProcessLists` instead of `PromoteActors`; distances for sound. Criterion: an NPC far from the door simplifies the same way as on the street at the same distance.
 
-**Шаг 2. Свет в обе стороны — T24.** Лампы интерьера освещают улицу у двери, уличные — интерьер. Основа: `AddRestricted`, `MirrorPlayerLights`. Число источников на фигуру ограничено (`AE#107784`).
+**Step 2. Light in both directions — T24.** Interior lamps light the street near the door, street lamps light the interior. Basis: `AddRestricted`, `MirrorPlayerLights`. The number of sources per figure is limited (`AE#107784`).
 
-**Шаг 3. Звук через проём — T23.** С 0.8.24 место звука переносится через дверь, без учёта стен. Нужно приглушение через проём.
+**Step 3. Sound through the opening — T23.** Since 0.8.24 the sound position is moved through the door, walls not accounted for. Attenuation through the opening is needed.
 
-**Шаг 4. Вид изнутри наружу — T29, T21.** Нужна живая сетка экстерьера, пока игрок внутри (сейчас `kUnattached`, H12), и второй портал. До этого состояние портала — в класс и реестр (T29, `docs/ARCHITECTURE.md`, 8.3).
+**Step 4. View from inside out — T29, T21.** A live exterior grid is needed while the player is inside (currently `kUnattached`, H12), plus a second portal. Before that, the portal state goes into a class and a registry (T29, `docs/ARCHITECTURE.md`, 8.3).
 
-**Шаг 5. Снаряды — T25.** Пересечение прямоугольника двери, перенос ссылки с преобразованием позиции и скорости, тело в другой мир Havok. Скрытая дверь сохраняет коллизию.
+**Step 5. Projectiles — T25.** Intersection with the door rectangle, reference transfer with position and velocity transform, body in the other Havok world. A hidden door keeps its collision.
 
-**Шаг 6. NPC и игрок без экрана загрузки — T20 и дальше.** Опора: вход в подключённый интерьер 70 мс, затемнения убираются настройками (`docs/FAST_DOOR_TRANSITIONS.md`), пауза 0.65 с до затемнения. Переход должен вызывать `SetParentCell` игрока ровно один раз (T15).
+**Step 6. NPCs and the player without a loading screen — T20 and beyond.** Foundation: entering the attached interior takes 70 ms, fades are removed by settings (`docs/FAST_DOOR_TRANSITIONS.md`), a 0.65 s pause before the fade. The transition must call the player's `SetParentCell` exactly once (T15).
 
-## 5. Что нужно для автономности
+## 5. What autonomy requires
 
-Портал пока не автономен, это отдельная работа вне шагов 1–6:
-- включается вручную (F8), если не задан `iStartStage=1`;
-- один интерьер на всю сессию: `sInteriorCell` в INI;
-- одна дверь: `NearestDoorTo` при запуске. У интерьера с двумя наружными дверями портал переходит на ближайшую при каждом запуске;
-- нет правила, какие интерьеры держать и когда отпускать.
+The portal is not autonomous yet; that is separate work outside steps 1–6:
+- activated manually (F8), if `iStartStage=1` is not set;
+- one interior per session: `sInteriorCell` in the INI;
+- one door: `NearestDoorTo` at launch. For an interior with two exterior doors, the portal moves to the nearest one at every launch;
+- no rule on which interiors to keep and when to release them.
 
-Предлагаемый порядок: реестр порталов (T29), автозапуск для одного интерьера, выбор интерьера по ближайшей двери, затем все двери.
+Proposed order: portal registry (T29), autostart for one interior, interior selection by the nearest door, then all doors.

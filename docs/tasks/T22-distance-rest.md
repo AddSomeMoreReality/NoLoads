@@ -1,45 +1,45 @@
-# T22. Оставшиеся проверки расстояния через дверь
+# T22. Remaining distance checks through the door
 
-Этап 2. Ветка `exp/T22-distance-rest`, worktree `..\CLR-T22`. Код: свой модуль перехватов (правило T28 в `Hooks.h`), `PortalActors.cpp`. Прогон: да. Начинать **после T32** (перепись чтений игрока и место игрока в рамке; решение пользователя от 05.11.2026): T22 берёт её дамп и рамку и делает то, что T32 не покрывает (линия видимости, камера, уровень обработки). Шаг 1 плана «полноценного портала» (`docs/HANDOFF.md`, раздел 4).
+Stage 2. Branch `exp/T22-distance-rest`, worktree `..\CLR-T22`. Code: own hook module (the T28 rule in `Hooks.h`), `PortalActors.cpp`. Run: yes. Start **after T32** (the census of player reads and the player's place in the frame; user's decision of 05.11.2026): T22 takes its dump and frame and does what T32 does not cover (line of sight, camera, processing level). Step 1 of the "full portal" plan (`docs/HANDOFF.md`, section 4).
 
-## Что известно
+## What is known
 
-- `docs/DISTANCE_CHECKS.md` (разделы 4–9; полный список — `_APPENDIX`, читать Grep по ID). Перенесено к 0.8.24: `kNotVisible`, камера мира `AE#36609` в рамке обновления актёра (`Portal::ActorScope`), `GetDistance`/квадрат (`AE#19823`, `AE#19824`), место звука (`AE#68007`), субтитры, LOD контроллера (`AE#78274`), затухание (`AE#105486`).
-- **Сейчас NPC интерьера получают всё полностью**, где бы ни стоял игрок: урезанное обновление `AE#37277` обойдено (0.8.14), `InteriorSim` раз в секунду поднимает всех в high (`PromoteActors`), `ActorHold` (T11) держит high на переходах (detour `AE#37503`).
-- **Осталось** (`docs/HANDOFF.md`, раздел 4, шаг 1; `DISTANCE_CHECKS.md`, раздел 9):
-  - `AE#37277` — урезанное обновление по расстоянию, а не «всегда полное»;
-  - точка глаза в `BSAnimationUpdateData` (`optionalEyePosition`, `AE#38054`);
-  - потребители камеры мира `AE#36609` вне рамки актёра: `AE#37690` (попадание), `AE#38308` (навмеш, выключен в ванили), `AE#43851` (взрывы — шаг 5, только записать);
-  - уровень обработки через `ProcessLists` (`AE#37503` считает нужный уровень) вместо `PromoteActors`;
-  - расстояния для звука (затухание по пути через дверь; приглушение стенами — T23);
-  - по данным F3 (`logs/run-0.8.24/CellLoadResearch.access-*.txt`): `AE#18889 + 0x1BB`, `AE#36661 + 0xFE`, затем `AE#41381`, `AE#41246`, `AE#37286`, `AE#37361`;
-  - **обнаружение игрока NPC за порталом** (08.11.2026, `docs/FINDINGS.md`, «Исследования T38, T39, T41»): `DoDetectionJob` (`AE#42742`) меряет расстояние не через `GetDistance`, а парой `AE#19784`/`AE#18517` (`+0x4E0…+0x520`), при разных ячейках — `FLT_MAX`. Наш перехват `AE#19784` работает только в субтитрах. Skyrim Together гасит обнаружение в `AE#42704` (`DoDetectionJob+0x6D2`) — точка для сравнения. Прямые чтения места игрока ИИ — `results/T38-T39-batches.md`, «T38, пачка 3».
-- **Критерий:** NPC далеко от двери упрощаются так же, как NPC улицы на том же расстоянии от игрока.
+- `docs/DISTANCE_CHECKS.md` (sections 4–9; full list — `_APPENDIX`, read via Grep by ID). Moved by 0.8.24: `kNotVisible`, world camera `AE#36609` in the actor update frame (`Portal::ActorScope`), `GetDistance`/square (`AE#19823`, `AE#19824`), sound location (`AE#68007`), subtitles, controller LOD (`AE#78274`), fading (`AE#105486`).
+- **Right now interior NPCs get everything in full wherever the player stands:** the truncated update `AE#37277` is bypassed (0.8.14), `InteriorSim` promotes everyone to high once per second (`PromoteActors`), `ActorHold` (T11) keeps them high on transitions (detour `AE#37503`).
+- **Remaining** (`docs/HANDOFF.md`, section 4, step 1; `DISTANCE_CHECKS.md`, section 9):
+  - `AE#37277` — distance-based truncated update, not "always full";
+  - the eye point in `BSAnimationUpdateData` (`optionalEyePosition`, `AE#38054`);
+  - consumers of world camera `AE#36609` outside the actor frame: `AE#37690` (hit), `AE#38308` (navmesh, disabled in vanilla), `AE#43851` (explosions — step 5, record only);
+  - processing level via `ProcessLists` (`AE#37503` computes the required level) instead of `PromoteActors`;
+  - distances for sound (attenuation along the path through the door; muffling by walls — T23);
+  - from F3 data (`logs/run-0.8.24/CellLoadResearch.access-*.txt`): `AE#18889 + 0x1BB`, `AE#36661 + 0xFE`, then `AE#41381`, `AE#41246`, `AE#37286`, `AE#37361`;
+  - **NPC player detection behind the portal** (08.11.2026, `docs/FINDINGS.md`, "T38, T39, T41 research"): `DoDetectionJob` (`AE#42742`) measures distance not via `GetDistance`, but with the pair `AE#19784`/`AE#18517` (`+0x4E0…+0x520`), with different cells — `FLT_MAX`. Our hook `AE#19784` works only in subtitles. Skyrim Together disables detection in `AE#42704` (`DoDetectionJob+0x6D2`) — a point for comparison. Direct reads of the player position by AI — `results/T38-T39-batches.md`, "T38, batch 3".
+- **Criterion:** NPCs far from the door simplify the same way as street NPCs at the same distance from the player.
 
-- **LOS через `TES::Pick`** (`AE#13371`): берёт `interiorCell` или центр сетки и не видит подключённый интерьер; зовут и из заданий (`docs/SINGLE_INSTANCE.md`, 4).
+- **LOS via `TES::Pick`** (`AE#13371`): takes `interiorCell` or the grid center and does not see the attached interior; called by quests too (`docs/SINGLE_INSTANCE.md`, 4).
 
-## Сделать
+## To do
 
-1. **Исследование** (dumpbin, `tools/name_functions.py`, данные F3 0.8.24). По каждому месту: что оно делает с позицией игрока или камерой, нужно ли порталу, как перенести. Таблица в результате.
-2. **Расстояние через дверь — одна функция.** «Расстояние от наблюдателя до объекта по другую сторону портала» = минимум по порталам, которые связывают стороны (5.14, пп. 1–2), от глаза, перенесённого через дверь. Наблюдатель — параметр (игрок, камера), а не глобальная камера игрока (п. 4). Сейчас портал один, реестр — T29: функция принимает портал или обходит то, что даёт `Portal`.
-3. **Уровень обработки по расстоянию.** `AE#37503` для актёра портала считает уровень по расстоянию через дверь, как для улицы. `PromoteActors` и `AE#37277` перестают давать всем полный уровень. Удержание T11 на переходах сохраняется: на экране загрузки и 10 с после перехода NPC остаются high, если были high.
-4. Остальные места — по итогам исследования. Каждое исправление — под выключателем INI (`[Portal]` или `[Distance]`), по умолчанию включено; 0 — поведение 0.8.31.
-5. **Трасса:** в статусе портала — распределение NPC по уровням и по расстоянию через дверь, число урезанных обновлений. Для сравнения с улицей — то же для NPC улицы в радиусе 4096.
+1. **Research** (dumpbin, `tools/name_functions.py`, F3 data 0.8.24). For each place: what it does with the player position or camera, whether the portal needs it, how to transplant. Table in the result.
+2. **Distance through the door — one function.** "Distance from the observer to an object on the other side of the portal" = minimum over the portals that connect the sides (5.14, items 1–2), from the eye transplanted through the door. The observer is a parameter (player, camera), not the global player camera (item 4). There is one portal now, the registry is T29: the function takes a portal or iterates what `Portal` provides.
+3. **Distance-based processing level.** `AE#37503` for a portal actor computes the level by distance through the door, as for the street. `PromoteActors` and `AE#37277` stop giving everyone the full level. T11 hold on transitions is preserved: on the loading screen and for 10 s after the transition NPCs stay high if they were high.
+4. Other places — based on the research. Each fix — under an INI switch (`[Portal]` or `[Distance]`), enabled by default; 0 = 0.8.31 behavior.
+5. **Trace:** in the portal status — distribution of NPCs by level and by distance through the door, number of truncated updates. For comparison with the street — the same for street NPCs within radius 4096.
 
-## Безопасность
+## Safety
 
-- Перехваты в заданиях игры: только атомарное состояние портала, без блокировок (`CLAUDE.md`, раздел 7). Обход — по `ActorHold` или по `Space` портала.
-- `docs/DISTANCE_CHECKS.md`, раздел 6: «бесконечно далеко» → «рядом» меняет логику ИИ. Записывай в трассу, кто стал ближе 1000 единиц через дверь.
-- Новые адреса — в `docs/PORTABILITY.md`.
+- Hooks in game jobs: only the atomic state of the portal, no locks (`CLAUDE.md`, section 7). Bypass — via `ActorHold` or the portal's `Space`.
+- `docs/DISTANCE_CHECKS.md`, section 6: "infinitely far" → "nearby" changes AI logic. Record in the trace who came closer than 1000 units through the door.
+- New addresses — into `docs/PORTABILITY.md`.
 
-## Как проверить в игре
+## How to verify in the game
 
-1. F8, у двери таверны: NPC внутри ходят, анимированы, как в 0.8.31.
-2. Отойти от двери на 2000, 4000, 6000 единиц (≈ 30, 60, 90 м), постоять по 20 с, F11 не нужен. В трассе уровни NPC интерьера меняются с расстоянием так же, как у NPC улицы на том же расстоянии.
-3. Вернуться к двери: NPC снова high, без прыжков (`actor.jump`, `actor.snap`).
-4. Войти и выйти 2 раза: прыжков нет, песня на выходе не обрывается (T10/T11 не сломаны).
-5. Контроль: выключатели T22 в 0 — поведение 0.8.31.
+1. F8 enabled. At the tavern door: NPCs inside walk, animated, as in 0.8.31.
+2. Step away from the door to 2000, 4000, 6000 units (≈ 30, 60, 90 m), stand 20 s each, F11 not needed. In the trace the levels of interior NPCs change with distance the same as street NPCs at the same distance.
+3. Return to the door: NPCs are high again, no jumps (`actor.jump`, `actor.snap`).
+4. Enter and exit twice: no jumps, the song on exit does not break off (T10/T11 not broken).
+5. Control: T22 switches at 0 — 0.8.31 behavior.
 
-## Конфликты
+## Conflicts
 
-`InteriorSim.cpp` (`PromoteActors`), `ActorHold.cpp` (`AE#37503`) — с T20. `PortalActors.cpp` — с T29. Сливать до T29.
+`InteriorSim.cpp` (`PromoteActors`), `ActorHold.cpp` (`AE#37503`) — with T20. `PortalActors.cpp` — with T29. Merge before T29.

@@ -1,313 +1,313 @@
-# T38, T39. Массовое чтение по спискам — итоги пачек
+# T38, T39. Bulk reading by lists — batch results
 
-Координатор исследований, 08.11.2026. Пачки — из `results/T38.md` и `results/T39.md` («Пачки для массового чтения»). Читал агент `re-reader` (Sonnet 5.5 / medium) по базе Ghidra; координатор сверил выборочно (пометка «сверено»). Только выводы и адреса, без псевдокода. Кандидаты имён — в конце файла, для куратора.
+Research coordinator, 08.11.2026. The batches are from `results/T38.md` and `results/T39.md` ("Batches for bulk reading"). Read by the `re-reader` agent (Sonnet 5.5 / medium) against the Ghidra base; the coordinator spot-checked (marked "verified"). Conclusions and addresses only, no pseudocode. Name candidates are at the end of the file, for the curator.
 
-## T38, пачка 10. Камера и ввод (24 ID)
+## T38, batch 10. Camera and input (24 IDs)
 
-Вопрос: что камера берёт у игрока (5.14, п. 4 — любая камера).
+Question: what the camera takes from the player (5.14, item 4 — any camera).
 
-| ID | Имя | Что делает; что берёт у игрока |
+| ID | Name | What it does; what it takes from the player |
 |---|---|---|
-| `AE#50724` | `FirstPersonState::Update` | кадр вида от первого лица; позиция, сидение, бой, узел головы — всё из `PlayerCharacter::singleton`; `+0x684` → `AE#50832` |
-| `AE#33120` | `DragonCameraState::UpdateRotation` | вращение камеры на драконе; позиция игрока, `PlayerCamera::SetCameraTarget(player)` |
-| `AE#50832` | `PlayerCamera::CheckCameraCollision` | укорачивает камеру по миру Havok ячейки цели (`target+0x60` → `GetbhkWorld`); цель — по хэндлу `this+0x3C`, игрок только в состояниях 0, `0xB`, VATS |
-| `AE#50738` | `FirstPersonState::AE_50738` | переменная графа поворота головы игрока; один вызов из `AE#50724+0x2B1` |
-| `AE#50725` | `FirstPersonState::GetRotation` | матрица вращения: узел камеры + поворот игрока + `sittingRotation` |
-| `AE#50833` | `PlayerCamera::AE_50833` | создаёт сферу коллизии камеры (`this+0x128`) и кладёт её в `bhkWorld` ячейки цели; синглтона игрока не читает. **Единственный вызов — `SetParentCell+0x271`** (сверено) |
-| `AE#50785` | `PlayerCamera::AE_50785` | точка фокуса: позиция цели по хэндлу (`+0x54`) + высота `AE#37477` или узел состояния; кэш `this+0x144`, замок `+0x134` |
-| `AE#50794`, `AE#50800`, `AE#50799`, `AE#50792` | `PlayerCamera` | поворот сидя, ввод взгляда, смещение узла, сброс указателей состояния; игрока не читают |
-| `AE#50781` | `PlayerCamera::ctor` | пишет синглтон, 13 состояний, цель = пусто |
-| `AE#50838` | `PlayerCamera::SetCameraTarget` | `this+0x3C` = хэндл ссылки |
-| `AE#50830`, `AE#50831` | `PlayerCamera` | создать / удалить фантом коллизии `this+0x120` |
-| `AE#36661` | — | не камера: собирает ссылки в радиусе от позиции игрока в глобальный массив |
-| `AE#42371`, `AE#42350`, `AE#42344` | `PlayerControls` | флаги движения игрока, действие по списку целей, признак обработчика |
-| `AE#42423`, `AE#42420` | `JumpHandler`, `ActivateHandler::ProcessButton` | прыжок, активация — всё на игроке |
-| `AE#39762` | `RunActionAnimationLoadedCallback::vf_0x1` | не камера: действие после загрузки анимации, ветка для игрока под ИИ |
-| `AE#53021` | `MapCamera::AE_53021` | фокус карты: в интерьере — `exteriorPosition` игрока, снаружи — его позиция |
-| `AE#21550` | `Condition::GetVatsTargetHeight` | высота цели VATS относительно игрока |
+| `AE#50724` | `FirstPersonState::Update` | first-person view frame; position, sitting, combat, head node — all from `PlayerCharacter::singleton`; `+0x684` → `AE#50832` |
+| `AE#33120` | `DragonCameraState::UpdateRotation` | camera rotation on a dragon; player position, `PlayerCamera::SetCameraTarget(player)` |
+| `AE#50832` | `PlayerCamera::CheckCameraCollision` | shortens the camera by the target cell's Havok world (`target+0x60` → `GetbhkWorld`); the target is by handle `this+0x3C`, the player only in states 0, `0xB`, VATS |
+| `AE#50738` | `FirstPersonState::AE_50738` | player head-turn graph variable; a single call from `AE#50724+0x2B1` |
+| `AE#50725` | `FirstPersonState::GetRotation` | rotation matrix: camera node + player rotation + `sittingRotation` |
+| `AE#50833` | `PlayerCamera::AE_50833` | creates the camera collision sphere (`this+0x128`) and puts it into the target cell's `bhkWorld`; does not read the player singleton. **Only call — `SetParentCell+0x271`** (verified) |
+| `AE#50785` | `PlayerCamera::AE_50785` | focus point: target position by handle (`+0x54`) + `AE#37477` height or the state node; cache `this+0x144`, lock `+0x134` |
+| `AE#50794`, `AE#50800`, `AE#50799`, `AE#50792` | `PlayerCamera` | sitting rotation, look input, node offset, state pointer reset; do not read the player |
+| `AE#50781` | `PlayerCamera::ctor` | writes the singleton, 13 states, target = empty |
+| `AE#50838` | `PlayerCamera::SetCameraTarget` | `this+0x3C` = reference handle |
+| `AE#50830`, `AE#50831` | `PlayerCamera` | create / destroy the collision phantom `this+0x120` |
+| `AE#36661` | — | not a camera: collects references within a radius of the player position into a global array |
+| `AE#42371`, `AE#42350`, `AE#42344` | `PlayerControls` | player movement flags, action by target list, handler flag |
+| `AE#42423`, `AE#42420` | `JumpHandler`, `ActivateHandler::ProcessButton` | jump, activation — all on the player |
+| `AE#39762` | `RunActionAnimationLoadedCallback::vf_0x1` | not a camera: action after animation load, branch for the player under AI |
+| `AE#53021` | `MapCamera::AE_53021` | map focus: in an interior — the player's `exteriorPosition`, outside — his position |
+| `AE#21550` | `Condition::GetVatsTargetHeight` | VATS target height relative to the player |
 
-**Вывод для 5.14, п. 4.** Чужой камере игра нужна только для коллизии и состояний `PlayerCamera`. Камера не читает ячейку или мир напрямую: она берёт `parentCell` цели (`+0x60`) и его `bhkWorld`. Поза камеры приходит из состояний (`FirstPersonState` и др.) через синглтоны `PlayerCamera` и игрока. Портальной камере нужна своя поза (узел `NiCamera`, матрица), а не эти состояния. Коллизия камеры одна и привязана к одному `bhkWorld`, переносится только в `SetParentCell` (`AE#50833`). Для чистой отрисовки с заданной позой она не нужна. Кто строит матрицу вида и выбирает ячейки для отсечения — вне пачки (рендер, T27).
+**Conclusion for 5.14, item 4.** The game needs a foreign camera only for collision and the `PlayerCamera` states. The camera does not read the cell or the world directly: it takes the target's `parentCell` (`+0x60`) and its `bhkWorld`. The camera pose comes from the states (`FirstPersonState` etc.) through the `PlayerCamera` and player singletons. A portal camera needs its own pose (`NiCamera` node, matrix), not these states. Camera collision is a single one bound to one `bhkWorld`, moved only in `SetParentCell` (`AE#50833`). It is not needed for clean rendering with a given pose. Who builds the view matrix and picks cells for culling is outside the batch (render, T27).
 
-## T38, пачка 3. ИИ и обнаружение (29 ID)
+## T38, batch 3. AI and detection (29 IDs)
 
-Вопрос: где ИИ берёт место игрока, а где его личность, какой радиус. Личность везде — сравнение с `PlayerCharacter::singleton`; хэндл и 0x14 в пачке не встречаются.
+Question: where AI takes the player's location, where his identity, and what radius. Identity everywhere — comparison with `PlayerCharacter::singleton`; the handle and 0x14 do not appear in the batch.
 
-**Расстояние до игрока — два пути:**
-- **`TESObjectREFR::GetDistanceBetweenSquared` (`AE#19824`)** зовёт `SameWorldspace` (`AE#19494`, `+0x47`, сверено) и возвращает `FLT_MAX`, если миры разные; при интерьере нужна та же ячейка. Через него идут `AE#39632` (приветствие, радиус `AE#370892`), `AE#39637` (ИИ high: пакет, бой, диалог), `AE#39639`, `AE#39648` (пакеты путешествия: 800), `AE#39652` (тревога, `AE#371146`), `AE#41334` (свидетель преступления), `AE#41348` (350), `AE#41402` (`AreHostileActorsNear`, `AE#375160/163/166`), `AE#41403`, `AE#41442` (`CommentOnPlayerAction`: 350, 400). **Наш detour `AE#19824` (`HooksPortal.cpp:375`, 0.8.24) этот путь уже переносит через дверь.**
-- **`DoDetectionJob` (`AE#42742`, задания `BSJobs`) — свой путь:** `AE#19784` (позиция + ключ «ячейка интерьера или мир») для наблюдателя (`+0x4E0`) и игрока (`+0x4F0`), `AE#18517` на `+0x4FD` (`FLT_MAX` при разных ключах); то же наблюдатель↔цель (`+0x513`, `+0x520`) (сверено). По агенту, дальше 8192 или в другой ячейке — `CalculateDetection` пропускается, состояние «не обнаружен». **Наш плагин подменяет `AE#19784` только в субтитрах (`AE#52638+0x122`)** — NPC за порталом игрока не обнаруживают. Задача для T22/T32.
+**Distance to the player — two paths:**
+- **`TESObjectREFR::GetDistanceBetweenSquared` (`AE#19824`)** calls `SameWorldspace` (`AE#19494`, `+0x47`, verified) and returns `FLT_MAX` if the worlds differ; with an interior the same cell is required. Through it go `AE#39632` (greeting, radius `AE#370892`), `AE#39637` (AI high: package, combat, dialogue), `AE#39639`, `AE#39648` (travel packages: 800), `AE#39652` (alert, `AE#371146`), `AE#41334` (crime witness), `AE#41348` (350), `AE#41402` (`AreHostileActorsNear`, `AE#375160/163/166`), `AE#41403`, `AE#41442` (`CommentOnPlayerAction`: 350, 400). **Our detour of `AE#19824` (`HooksPortal.cpp:375`, 0.8.24) already carries this path across the door.**
+- **`DoDetectionJob` (`AE#42742`, `BSJobs` jobs) — its own path:** `AE#19784` (position + "interior cell or world" key) for the observer (`+0x4E0`) and the player (`+0x4F0`), `AE#18517` on `+0x4FD` (`FLT_MAX` for different keys); same for observer↔target (`+0x513`, `+0x520`) (verified). Per the agent, beyond 8192 or in another cell — `CalculateDetection` is skipped, state "not detected". **Our plugin only replaces `AE#19784` in subtitles (`AE#52638+0x122`)** — NPCs behind the portal do not detect the player. Task for T22/T32.
 
-**Прямое чтение места игрока** (`data.location` `+0x54`, `parentCell` `+0x60`): `AE#39322` (сфера обхода в диалоге), `AE#39391` (может ли NPC заговорить: глубина воды по `parentCell`), `AE#39673` (реакция на игрока: цель — позиция игрока), `AE#37618` (свободное место рядом: игрок добавлен к препятствиям отдельно от `highActorHandles`, радиус 256), `AE#40818`/`AE#40821`/`AE#40826` (трекер путешествия игрока, 700, 6144), `AE#40829` (актёры вокруг игрока, `AE#381586`).
+**Direct reads of the player location** (`data.location` `+0x54`, `parentCell` `+0x60`): `AE#39322` (dialogue avoidance sphere), `AE#39391` (can the NPC start a conversation: water depth by `parentCell`), `AE#39673` (reaction to the player: target — player position), `AE#37618` (free spot nearby: the player is added to the obstacles separately from `highActorHandles`, radius 256), `AE#40818`/`AE#40821`/`AE#40826` (player travel tracker, 700, 6144), `AE#40829` (actors around the player, `AE#381586`).
 
-**Только личность:** `AE#39644` (процедуры пакетов; **если игрок — участник пакета, пишет его настоящую позицию** `SetPosition`/`StopMoving` — подмена места не должна перенаправлять записи), `AE#39651`, `AE#39675`, `AE#40816`, `AE#40725` (ездовое), `AE#40522`, `AE#39814` (`Job_Non_render_safe_AI`, главный поток), `AE#41384` (ни место, ни личность).
+**Identity only:** `AE#39644` (package procedures; **if the player is a package participant, writes his real position** `SetPosition`/`StopMoving` — the location substitution must not redirect these writes), `AE#39651`, `AE#39675`, `AE#40816`, `AE#40725` (mount), `AE#40522`, `AE#39814` (`Job_Non_render_safe_AI`, main thread), `AE#41384` (neither location nor identity).
 
-**`AE#41369` (задание `UpdateActor`, vfunc `0xAD` на `+0x2A6`):** явной проверки игрока нет; список задач заполняет `AE#41367` из `ProcessLists::highActorHandles`. Игрока, по агенту, в этом списке нет: `AE#37618` добавляет его к препятствиям вручную, а ИИ игрока идёт своим путём (`PlayerCharacter::Update+0x1479` → `AE#40748` → `AE#39108` → `AE#39637`). Уверенность средняя; проверит T40 (открытый вопрос T38 о двойном `Update`). ИИ NPC — на потоках заданий, ИИ игрока — на главном.
+**`AE#41369` (`UpdateActor` job, vfunc `0xAD` on `+0x2A6`):** there is no explicit player check; the task list is filled by `AE#41367` from `ProcessLists::highActorHandles`. Per the agent, the player is not in this list: `AE#37618` adds him to the obstacles manually, and the player's AI goes its own way (`PlayerCharacter::Update+0x1479` → `AE#40748` → `AE#39108` → `AE#39637`). Medium confidence; T40 will verify (open question T38 about the double `Update`). NPC AI runs on job threads, player AI on the main thread.
 
-**Вывод для T22, T32 (подмена места игрока в рамке дальней стороны):** покрыть `AE#19824` (уже), пару `AE#19784`/`AE#18517` в `DoDetectionJob` (нет), прямые чтения `data.location`/`parentCell` из списка выше (нет). Рамка — `thread_local`: обнаружение и ИИ NPC идут в заданиях. Не прочитаны: `RequestDetectionLevel`, `Character::AE_37762`, `AE_37533`, `GetLineOfSightImplementation`, `AE_40493`, `AE_37250`; значения радиусов из настроек.
+**Conclusion for T22, T32 (player location substitution within the far-side frame):** cover `AE#19824` (done), the `AE#19784`/`AE#18517` pair in `DoDetectionJob` (not), direct reads of `data.location`/`parentCell` from the list above (not). The frame is `thread_local`: detection and NPC AI run in jobs. Not read: `RequestDetectionLevel`, `Character::AE_37762`, `AE_37533`, `GetLineOfSightImplementation`, `AE_40493`, `AE_37250`; radius values from settings.
 
-## T38, пачка 4. Код актёра: ветки «если это игрок» (25 ID)
+## T38, batch 4. Actor code: "if this is the player" branches (25 IDs)
 
-Вопрос: что меняет сравнение с игроком и что сломается (а) у NPC за порталом, (б) у игрока на дальней стороне портала. Сравнения — указатели `AE#403521` и `AE#401069`; хэндл и 0x14 не встречаются (кроме `formID == 7` — базовый NPC игрока в `AE#24669`). Смещения веток агент сопоставил по порядку чтения псевдокода — приблизительно.
+Question: what the comparison with the player changes and what breaks (a) for NPCs behind the portal, (b) for the player on the far side of the portal. Comparisons — pointers `AE#403521` and `AE#401069`; the handle and 0x14 do not appear (except `formID == 7` — the player's base NPC in `AE#24669`). The agent matched branch offsets by the order of reading the pseudocode — approximate.
 
-| ID | Что делает; ветка игрока |
+| ID | What it does; the player branch |
 |---|---|
-| `AE#37348` | `Actor::Update`: **`+0x1D0` `cmp this, player`** → для не-игрока `+0x1E4` позиция камеры игрока (`AE#50785`) → `+0x1F3` `AE#78274` пишет расстояние до камеры в контроллер `+0x29C` (сверено). **Уже перехвачено:** `CharControllerLodDistance` (`HooksPortal.cpp:383`, 0.8.17). Ещё: подкрадывание игрока передаётся спутникам, утопление только у игрока |
-| `AE#37347` | ИИ NPC за кадр: спутники, преступления, сон игрока меняет `dt`; игрок → `AE#39108`, остальные → `AE#39109` |
-| `AE#37356`, `AE#37507` | движение от анимации (для любого актёра, из `AE#37350+0xFB`); `Actor::Move`: прыжок и падение — у игрока через `PlayerControls`, у NPC через `BGSActionData` |
-| `AE#37896` | `Actor::KillImpl`: ребёнок умирает только если игрок; убийство спутника засчитывается игроку; **`+0x1106` — расстояние NPC↔игрок при `gSceneComplexCounter != 0`** |
-| `AE#37422`, `AE#37425`, `AE#37426`, `AE#19827`, `AE#14864` | кража, нападение, убийство (`crimeCounts`, награда, `RequestDetectionLevel(свидетель, игрок)`); «преступна ли активация» (владелец ячейки назначения двери); сбор урожая |
-| `AE#17922` | `TESObjectDOOR::Activate`: игрок — замок, тюрьма, затемнение через `AE#14284`; **NPC с телепорт-двери переносится сразу** (`MoveRefToNewSpace`, без затемнения, `+0x558`) |
-| `AE#17924`, `AE#17927` | после затемнения: ставит телепорт игрока (`AE#40442`, колбэк `AE#17927`); после телепорта: поправка позиции и поворота, ландшафт или ячейка, звук |
-| `AE#19796`, `AE#17887`, `AE#24715` | `ActivateRef`, контейнер, NPC: игрок открывает меню, NPC действует сразу |
-| `AE#38001`, `AE#38002`, `AE#38805`, `AE#34145`, `AE#24669` | экипировка (сообщения HUD только игроку), крик, проверка заклинания, смена расы |
-| `AE#38586` | применение попадания: скрытая атака, критический удар, стаггер, камера убийства |
-| `AE#18102`, `AE#34452` | выстрел оружием (у игрока — луч и узел его 3D); запуск снаряда заклинания: **ячейка запуска — `parentCell` стрелка** |
-| `AE#40814` | игрок на летающем ездовом атакует цель |
+| `AE#37348` | `Actor::Update`: **`+0x1D0` `cmp this, player`** → for a non-player `+0x1E4` player camera position (`AE#50785`) → `+0x1F3` `AE#78274` writes the distance to the camera into the controller `+0x29C` (verified). **Already hooked:** `CharControllerLodDistance` (`HooksPortal.cpp:383`, 0.8.17). Also: the player sneaking is passed to followers, drowning only for the player |
+| `AE#37347` | NPC AI per frame: followers, crimes, player sleep changes `dt`; player → `AE#39108`, others → `AE#39109` |
+| `AE#37356`, `AE#37507` | movement from animation (for any actor, from `AE#37350+0xFB`); `Actor::Move`: jump and fall — for the player via `PlayerControls`, for NPCs via `BGSActionData` |
+| `AE#37896` | `Actor::KillImpl`: a child dies only if the player; killing a follower is credited to the player; **`+0x1106` — NPC↔player distance when `gSceneComplexCounter != 0`** |
+| `AE#37422`, `AE#37425`, `AE#37426`, `AE#19827`, `AE#14864` | theft, assault, murder (`crimeCounts`, bounty, `RequestDetectionLevel(witness, player)`); "is activation a crime" (owner of the door's destination cell); harvesting |
+| `AE#17922` | `TESObjectDOOR::Activate`: player — lock, jail, fade via `AE#14284`; **an NPC with a teleport door is moved immediately** (`MoveRefToNewSpace`, without fading, `+0x558`) |
+| `AE#17924`, `AE#17927` | after the fade: sets the player's teleport (`AE#40442`, callback `AE#17927`); after the teleport: position and rotation correction, terrain or cell, sound |
+| `AE#19796`, `AE#17887`, `AE#24715` | `ActivateRef`, container, NPC: the player opens a menu, an NPC acts immediately |
+| `AE#38001`, `AE#38002`, `AE#38805`, `AE#34145`, `AE#24669` | equipment (HUD messages only to the player), shout, spell check, race change |
+| `AE#38586` | hit application: sneak attack, critical hit, stagger, kill cam |
+| `AE#18102`, `AE#34452` | weapon fire (for the player — a ray and his 3D node); spell projectile launch: **launch cell — the shooter's `parentCell`** |
+| `AE#40814` | the player on a flying mount attacks a target |
 
-**Вывод.** (а) NPC за порталом: расстояние до камеры в контроллере (`AE#78274`) уже перенесено; остаются расстояние в `KillImpl` и `RequestDetectionLevel` свидетелей преступлений (см. пачку 3 — `DoDetectionJob`). NPC, активирующий настоящую телепорт-дверь, переносится без затемнения через `MoveRefToNewSpace` — порталу, заменяющему дверь, нужен свой путь для NPC. Снаряды NPC остаются в их ячейке. (б) Игрок на дальней стороне: дверь, преступления и выстрелы берут `parentCell` игрока, поэтому смена ячейки — только через `SetParentCell` (T15).
+**Conclusion.** (a) NPCs behind the portal: the distance to the camera in the controller (`AE#78274`) is already moved; remaining are the distance in `KillImpl` and `RequestDetectionLevel` of crime witnesses (see batch 3 — `DoDetectionJob`). An NPC activating a real teleport door is moved without fading via `MoveRefToNewSpace` — a portal that replaces a door needs its own path for NPCs. NPC projectiles stay in their cell. (b) The player on the far side: the door, crimes, and shots take the player's `parentCell`, so the cell change must go only through `SetParentCell` (T15).
 
-## T38, пачка 6. Хэндл игрока `AE#403520` (30 ID)
+## T38, batch 6. Player handle `AE#403520` (30 IDs)
 
-Вопрос: с чем сравнивается хэндл игрока. Почти везде — «актёр — игрок»; место через сравнение хэндла не берётся.
+Question: what the player handle is compared with. Almost everywhere — "actor is the player"; location is not taken through a handle comparison.
 
-| Чем служит хэндл | ID |
+| What the handle serves | IDs |
 |---|---|
-| цель диалога (`AIProcess+0x114`): закрыть диалог, повернуться к игроку; в ветке NPC↔NPC — расстояние | `AE#40092` |
-| цель боя (`actor+0x104`, сверено: одно обращение) — счёт врагов игрока, добавить в группу боя игрока | `AE#41261` |
-| группы боя игрока, пакеты 0x16/0x18 | `AE#40590` |
-| сопровождение: игрок в списке целей → флаг пути | `AE#28453` |
-| стрелок снаряда: камера убийства, уровень эффекта попадания, слушатель звука | `AE#44122`, `AE#44213`, `AE#44166` (читает позицию слушателя `AE#67710`), `AE#44005` (источник броска) |
-| конец управления ездовым или диалоговым актёром: позиции и мир игрока и актёра | `AE#40808` |
-| очередь 3D: `QueuedPlayer` получает хэндл игрока | `AE#13057`, `AE#13112` |
-| интерфейс: меню паузы и твин-меню (синхронная анимация `AE#32808`), карта (метка игрока, цель карты), квестовые метки (игрок — не цель) | `AE#35734`, `AE#52714`, `AE#52718`, `AE#52719`, `AE#52971`, `AE#53074`, `AE#53077`, `AE#53087`, `AE#53178` |
-| прочее: доп. данные 0x1D, `BipedAnim`, шейдер эффекта на 3D игрока, записи `ProcessLists`, блокировка управления, подмена хэндла | `AE#11648`, `AE#15692`, `AE#34935`, `AE#37681`, `AE#41349`, `AE#41642`, `AE#43573`, `AE#43577`, `AE#51116` |
-| не сравнение: проверка «не ноль» перед опросом ввода | `AE#39039` |
+| dialogue target (`AIProcess+0x114`): close dialogue, turn to the player; in the NPC↔NPC branch — distance | `AE#40092` |
+| combat target (`actor+0x104`, verified: a single access) — count the player's enemies, add to the player's combat group | `AE#41261` |
+| the player's combat groups, packages 0x16/0x18 | `AE#40590` |
+| escort: player in the target list → path flag | `AE#28453` |
+| projectile shooter: kill cam, hit effect level, sound listener | `AE#44122`, `AE#44213`, `AE#44166` (reads the listener position `AE#67710`), `AE#44005` (throw source) |
+| end of controlling a mount or dialogue actor: the player's and the actor's positions and world | `AE#40808` |
+| 3D queue: `QueuedPlayer` receives the player handle | `AE#13057`, `AE#13112` |
+| interface: pause menu and tween menu (synchronized animation `AE#32808`), map (player marker, map target), quest markers (the player is not a target) | `AE#35734`, `AE#52714`, `AE#52718`, `AE#52719`, `AE#52971`, `AE#53074`, `AE#53077`, `AE#53087`, `AE#53178` |
+| misc: extra data 0x1D, `BipedAnim`, effect shader on the player's 3D, `ProcessLists` records, control lock, handle substitution | `AE#11648`, `AE#15692`, `AE#34935`, `AE#37681`, `AE#41349`, `AE#41642`, `AE#43573`, `AE#43577`, `AE#51116` |
+| not a comparison: a "not zero" check before polling input | `AE#39039` |
 
-**Вывод.** Хэндл — чистая личность; подмена места его не трогает. Для портала важны цель диалога, цель боя, группа боя и сопровождение — все они берут игрока через синглтон, а не через ячейку.
+**Conclusion.** The handle is pure identity; the location substitution does not touch it. For the portal, the important ones are the dialogue target, combat target, combat group, and escort — they all take the player via the singleton, not via the cell.
 
-## T38, пачка 5. Интерфейс и карта (25 ID)
+## T38, batch 5. Interface and map (25 IDs)
 
-Вопрос: какое место игрока берут интерфейс и карта. `currentLocation` (`+0xAD0`) и `exteriorPosition` (`+0x638`) не читает ни одна функция пачки (`fieldrefs`, по агенту). Место берётся четырьмя путями: позиция `data.location`, «в интерьере ли» `AE#19815` (бит 0 `parentCell+0x40`, сверено), `GetWorldSpace(player)`, `cachedWorldSpace` (`+0x630`).
+Question: which player location the interface and the map take. `currentLocation` (`+0xAD0`) and `exteriorPosition` (`+0x638`) are not read by any function in the batch (`fieldrefs`, per the agent). Location is taken by four paths: position `data.location`, "is in interior" `AE#19815` (bit 0 of `parentCell+0x40`, verified), `GetWorldSpace(player)`, `cachedWorldSpace` (`+0x630`).
 
-| ID | Что делает; место игрока |
+| ID | What it does; the player location |
 |---|---|
-| `AE#51612` | `HUDMenu::ProcessMessage`: компас (`AE#51744`, `AE#51728`); «в интерьере» через `AE#19815` |
-| `AE#51728`, `AE#51744`, `AE#51676`, `AE#51671` | маркер компаса (направление и расстояние от позиции игрока); враги на компасе — **только из мира игрока** (`AE#51744`, единственный вызов из `HUDMenu+0x16A9`, сверено); маркеры квестов на экране; полоса здоровья врага — всё по позиции |
-| `AE#53111` | карта мира каждый кадр: метки, «Вы здесь» скрывается, если игрок в интерьере (`AE#19815`) или мир без родителя |
-| `AE#53121`, `AE#53150`, `AE#53154`, `AE#53155` | «место без карты»; выбор мира для карты (`TES::worldSpace`, иначе `cachedWorldSpace`, к верхнему родителю); показать / вернуть ландшафт при открытии и закрытии карты |
-| `AE#52409`, `AE#52345`, `AE#52536`, `AE#52335`, `AE#51141`, `AE#51126`, `AE#50951`, `AE#51543`, `AE#51548`, `AE#51571`, `AE#51577`, `AE#51578`, `AE#51583`, `AE#51584` | меню расы, характеристик, контейнера, обмена, избранного, подарков — только личность |
-| `AE#47314` | `Actor::UpdateNavPos` — не интерфейс, места игрока не берёт |
+| `AE#51612` | `HUDMenu::ProcessMessage`: compass (`AE#51744`, `AE#51728`); "in interior" via `AE#19815` |
+| `AE#51728`, `AE#51744`, `AE#51676`, `AE#51671` | compass marker (direction and distance from the player position); enemies on the compass — **only from the player's world** (`AE#51744`, the only call from `HUDMenu+0x16A9`, verified); on-screen quest markers; enemy health bar — all by position |
+| `AE#53111` | world map every frame: markers, "You are here" hidden if the player is in an interior (`AE#19815`) or the world has no parent |
+| `AE#53121`, `AE#53150`, `AE#53154`, `AE#53155` | "no-map location"; choosing the world for the map (`TES::worldSpace`, otherwise `cachedWorldSpace`, to the top parent); show / restore terrain on map open and close |
+| `AE#52409`, `AE#52345`, `AE#52536`, `AE#52335`, `AE#51141`, `AE#51126`, `AE#50951`, `AE#51543`, `AE#51548`, `AE#51571`, `AE#51577`, `AE#51578`, `AE#51583`, `AE#51584` | race, stats, container, barter, favorites, gift menus — identity only |
+| `AE#47314` | `Actor::UpdateNavPos` — not interface, does not take the player location |
 
-**Вывод.** Интерфейс не держится за `currentLocation`. Компас и карта считают координаты в мире игрока: актёры интерьера за порталом на компасе не появятся или окажутся в чужой системе координат (координаты интерьера и улицы не связаны). Карта следует за `parentCell` игрока: бесшовный переход, оставляющий `parentCell` на улице, оставит карту уличной; ворота в другой мир требуют согласовать `cachedWorldSpace` и `TES::worldSpace`.
+**Conclusion.** The interface does not hold onto `currentLocation`. The compass and the map compute coordinates in the player's world: interior actors behind the portal will not appear on the compass or will end up in a foreign coordinate system (interior and street coordinates are unrelated). The map follows the player's `parentCell`: a seamless transition that leaves `parentCell` on the street will leave the map a street one; gates to another world require reconciling `cachedWorldSpace` and `TES::worldSpace`.
 
-## T38, пачка 7. Второй указатель на игрока `AE#401069` (28 ID)
+## T38, batch 7. The second player pointer `AE#401069` (28 IDs)
 
-**Кто пишет** (сверено): `AE#401069` (`gPlayerCharacter3`) — только конструктор игрока `AE#40411+0xFC7` (`= this`, последняя запись перед возвратом) и `dtor_impl` `AE#40412+0xE3` (`= 0`); остальные 547 ссылок — чтения. `AE#403521` пишут `AE#36629+0xAB` (результат конструктора) и сброс `TES` `AE#13754+0x358` (`= 0`). **Во время игры оба указателя равны**; расходятся только в окне создания (после конструктора, до `AE#36629+0xAB`) и при сбросе игры (`AE#403521` обнуляется раньше, `AE#401069` — в деструкторе). Подмене игрока нужно учитывать **оба** указателя.
+**Who writes** (verified): `AE#401069` (`gPlayerCharacter3`) — only the player constructor `AE#40411+0xFC7` (`= this`, the last write before return) and `dtor_impl` `AE#40412+0xE3` (`= 0`); the other 547 references are reads. `AE#403521` is written by `AE#36629+0xAB` (constructor result) and cleared by the `TES` reset `AE#13754+0x358` (`= 0`). **During gameplay both pointers are equal**; they diverge only in the creation menu (after the constructor, before `AE#36629+0xAB`) and on game reset (`AE#403521` is nulled earlier, `AE#401069` — in the destructor). Player substitution must account for **both** pointers.
 
-**Зачем код берёт второй указатель:** во всех прочитанных местах — только сравнение личности (`actor == player` / `!=`), методы игрока зовутся через `AE#403521` (например `AE#12789+0x56`). Вероятно, разные единицы трансляции; причина не доказана.
+**Why the code takes the second pointer:** in all read places — only identity comparison (`actor == player` / `!=`); player methods are called via `AE#403521` (e.g. `AE#12789+0x56`). Probably different translation units; the reason is not proven.
 
-| ID | Что делает; сравнение |
+| ID | What it does; the comparison |
 |---|---|
-| `AE#38928`–`AE#38930`, `AE#38933`–`AE#38935` | внутренние функции `ActorEquipManager` (экипировать/снять заклинание, предмет, крик; Skyrim Together перехватывает их) |
-| `AE#39897`, `AE#39912`, `AE#39923` | экипировка: камера игрока, `AE#20159`, кормление вампира |
-| `AE#28644` | пакет следования: игрок в бою → группа боя |
-| `AE#44725`, `AE#44015`, `AE#44014` | бой и попадания: множитель урона по игроку в кровотечении (`fCombatPlayerBleedoutHealthDamageMult`) |
-| `AE#42824` | обработчик кнопки оружия в правой руке |
-| `AE#16059`, `AE#16019`, `AE#16020`, `AE#16117`, `AE#15678` | инвентарь: владение, кража, золото |
-| `AE#32782`, `AE#34407`, `AE#34658`, `AE#34914` | синхронная анимация (VATS), запуск заклинания, позиция эффектов модели и шейдера (вид от первого лица) |
-| `AE#54768`, `AE#56098` | Papyrus `StartCombat`, `RemoveItem` (поток VM) |
-| `AE#36991`, `AE#26366`, `AE#12789` | диспетчер `BSTaskPool`; формула точки входа перка; запись ссылки в сохранение |
+| `AE#38928`–`AE#38930`, `AE#38933`–`AE#38935` | internal `ActorEquipManager` functions (equip/unequip spell, item, shout; Skyrim Together hooks them) |
+| `AE#39897`, `AE#39912`, `AE#39923` | equipment: player camera, `AE#20159`, vampire feeding |
+| `AE#28644` | follow package: player in combat → combat group |
+| `AE#44725`, `AE#44015`, `AE#44014` | combat and hits: damage multiplier on the bleeding-out player (`fCombatPlayerBleedoutHealthDamageMult`) |
+| `AE#42824` | right-hand weapon button handler |
+| `AE#16059`, `AE#16019`, `AE#16020`, `AE#16117`, `AE#15678` | inventory: ownership, theft, gold |
+| `AE#32782`, `AE#34407`, `AE#34658`, `AE#34914` | synchronized animation (VATS), spell cast, model effect and shader position (first person) |
+| `AE#54768`, `AE#56098` | Papyrus `StartCombat`, `RemoveItem` (VM thread) |
+| `AE#36991`, `AE#26366`, `AE#12789` | `BSTaskPool` dispatcher; perk entry point formula; writing a reference to a save |
 
-## T38, пачка 8. Квесты, Story Manager, сцены, диалог (27 ID)
+## T38, batch 8. Quests, Story Manager, scenes, dialogue (27 IDs)
 
-Вопрос: что предполагает одну локацию или ячейку игрока.
+Question: what assumes a single location or cell of the player.
 
-| ID | Имя | Что делает; допущение об одной локации |
+| ID | Name | What it does; the single-location assumption |
 |---|---|---|
-| `AE#40466` (контекст) | `PlayerCharacter::SetParentCell` | **единственный, кто читает и пишет `currentLocation` игрока.** `CLOC` (`AE#32288` на `+0x105` → `AddEvent_Impl` `+0x11C`) и `OnLocationChange` (`AE#20039` на `+0x154`) — только если `GetLocation(новая) != currentLocation` (`+0xEB…+0xF5`, сверено); пара `BGSActorCellEvent` (`AE#41034`: `+0x75` — уход из старой, `+0xC1` — вход в новую, сверено) — при каждой смене ячейки |
-| `AE#32288` | — | запись события `CLOC` (0x18 байт: хэндл, старая и новая локация); локацию получает аргументами; единственный вызов — `SetParentCell+0x105` (сверено) |
-| `AE#41034` | — | `BSTEventSource<BGSActorCellEvent>::SendEvent`: тип 1 — уход, 0 — вход |
-| `AE#20039` | — | `SendEvent` источника `ScriptEventSourceHolder+0x108`: (игрок, старая, новая локация) = `OnLocationChange`. Ещё 4 вызывающих (`AE#37313`, `MoveRefToNewSpace`, `TESWorldSpace::AE_20541/20542`) не разобраны |
-| `AE#32154` | `PlayerParentCellListener::vf_0x1` | приёмник `BGSActorCellEvent` игрока: на входе пишет высоту воды ячейки (`AE#19001`, `cell+0x78`) в **один глобал** `AE#379980` (сверено: слот 1 vtable слушателя). Портал без `SetParentCell` оставит его старым; кто читает глобал — не найдено |
-| `AE#25063` | `TESQuest::AE_25063` | заполнение алиасов квеста: ищет в `TES::interiorCell`, если он есть, иначе в `gridCells` — то есть в ячейках `TES`, а не по локации игрока. При нескольких живых ячейках видит только то, что держит `TES` |
-| `AE#25046` | `TESQuest::AE_25046` | сброс/старт квеста; из `BeginStartUpQuest` `AE#32485`, `LoadGame` |
-| `AE#28386`, `AE#28374` | диалог-активация | событие активации Story Manager с **локацией цели**, не игрока |
-| `AE#52638` | — | расстояние до игрока для отслеживаемых ссылок HUD; считает одно пространство координат без проверки ячейки |
-| `AE#39250` | `AIProcess` (освобождение) | если это процесс игрока — особая ветка |
-| `AE#21392`, `AE#25260`, `AE#23933`, `AE#23940`, `AE#23941`, `AE#28352`, `AE#25609`, `AE#24234`, `AE#24244`, `AE#21422`, `AE#32160`, `AE#56856`, `AE#56858`, `AE#56853`, `AE#32299`, `AE#32308`, `AE#32310` | условия, цели квестов, сцены, голос, записи событий | допущений о ячейке нет, кроме синглтона игрока |
+| `AE#40466` (context) | `PlayerCharacter::SetParentCell` | **the only one that reads and writes the player's `currentLocation`.** `CLOC` (`AE#32288` at `+0x105` → `AddEvent_Impl` `+0x11C`) and `OnLocationChange` (`AE#20039` at `+0x154`) — only if `GetLocation(new) != currentLocation` (`+0xEB…+0xF5`, verified); the `BGSActorCellEvent` pair (`AE#41034`: `+0x75` — leaving the old one, `+0xC1` — entering the new one, verified) — on every cell change |
+| `AE#32288` | — | writes the `CLOC` event record (0x18 bytes: handle, old and new location); gets the locations as arguments; the only call — `SetParentCell+0x105` (verified) |
+| `AE#41034` | — | `BSTEventSource<BGSActorCellEvent>::SendEvent`: type 1 — leaving, 0 — entering |
+| `AE#20039` | — | `SendEvent` of the `ScriptEventSourceHolder+0x108` source: (player, old, new location) = `OnLocationChange`. 4 more callers (`AE#37313`, `MoveRefToNewSpace`, `TESWorldSpace::AE_20541/20542`) not analyzed |
+| `AE#32154` | `PlayerParentCellListener::vf_0x1` | the player's `BGSActorCellEvent` receiver: on entry writes the cell's water height (`AE#19001`, `cell+0x78`) into a **single global** `AE#379980` (verified: listener vtable slot 1). A portal without `SetParentCell` leaves it stale; who reads the global — not found |
+| `AE#25063` | `TESQuest::AE_25063` | filling quest aliases: searches in `TES::interiorCell` if it exists, otherwise in `gridCells` — i.e. in the cells held by `TES`, not by the player's location. With several live cells it sees only what `TES` holds |
+| `AE#25046` | `TESQuest::AE_25046` | quest reset/start; from `BeginStartUpQuest` `AE#32485`, `LoadGame` |
+| `AE#28386`, `AE#28374` | dialogue activation | Story Manager activation event with the **target's location**, not the player's |
+| `AE#52638` | — | distance to the player for tracked HUD references; computes a single coordinate space without a cell check |
+| `AE#39250` | `AIProcess` (release) | if this is the player's process — a special branch |
+| `AE#21392`, `AE#25260`, `AE#23933`, `AE#23940`, `AE#23941`, `AE#28352`, `AE#25609`, `AE#24234`, `AE#24244`, `AE#21422`, `AE#32160`, `AE#56856`, `AE#56858`, `AE#56853`, `AE#32299`, `AE#32308`, `AE#32310` | conditions, quest objectives, scenes, voice, event records | no cell assumptions except the player singleton |
 
-**Вывод для T16, T20.** Всё, что зависит от локации игрока, идёт из одного места — `SetParentCell`; события получают старую и новую локацию аргументами. Переход между ячейками одной локации не рождает `CLOC` и `OnLocationChange`, но рождает пару `BGSActorCellEvent`. Бесшовный переход без `SetParentCell` оставит старыми `currentLocation`, глобал воды `AE#379980`, климат, траву, коллизию камеры (`AE#50833`). Алиасы квестов ищутся в ячейках `TES` — при многих порталах это вопрос к T29 и T21.
+**Conclusion for T16, T20.** Everything that depends on the player's location comes from a single place — `SetParentCell`; the events receive the old and new locations as arguments. A transition between cells of one location does not produce `CLOC` and `OnLocationChange`, but produces the `BGSActorCellEvent` pair. A seamless transition without `SetParentCell` will leave `currentLocation`, the water global `AE#379980`, climate, grass, and camera collision (`AE#50833`) stale. Quest aliases are searched in the cells of `TES` — with many portals this is a question for T29 and T21.
 
-## T38, пачка 1. Безымянные переопределения и шаги `Update` (34 ID)
+## T38, batch 1. Unnamed overrides and `Update` steps (34 IDs)
 
-Вопрос: что у игрока иначе и касается ли это его места. Слоты — основной vtable `AE#208040`, иначе `@0x38` (`IAnimationGraphManagerHolder`), `@0xA0` (`MagicTarget`), `@0xC0` (`ActorState`).
+Question: what is different for the player and whether it concerns his location. Slots — the main vtable `AE#208040`, otherwise `@0x38` (`IAnimationGraphManagerHolder`), `@0xA0` (`MagicTarget`), `@0xC0` (`ActorState`).
 
-**Переопределения** (места игрока не пишут):
+**Overrides** (do not write the player location):
 
-| ID | Слот | Что делает |
+| ID | Slot | What it does |
 |---|---|---|
-| `AE#41259` | `0xA0` | углы запуска снаряда: от первого лица — с поправкой INI на наклон стрелы |
-| `AE#40738`, `AE#40479` | `0xA2`, `0xB4` | то же для 3D от первого и третьего лица (биped первого лица, `TaskQueueInterface`) |
-| `AE#41145`, `AE#41006`, `AE#41242`, `AE#40757`, `AE#41144` | `0xB3`, `0xC6`, `0xD1`, `0x12E`, `0x129` | константы и пересылки (нет анимации экипировки в очереди; 2; false; false; `Is3rdPersonVisible`) |
-| `AE#40480` | `0xC9` | сброс флагов игрока, затем `Actor::Unk_C9` |
-| `AE#41258` | `0x105` | возврат боеприпаса в руку |
-| `AE#40687` | `0x117` | смещение от первого лица → мир (читает позицию) |
-| `AE#40539` | `0x12A` (новый) | запись игры + маски оттенков |
-| `AE#40753`, `AE#40755`, `AE#40756`, `AE#40754` | `@0x38` 5, 4, 7, `0xB` | граф анимации игрока: создание (0x250 байт), узлы, переменные первого лица, доводка |
-| `AE#40762` | `@0xA0` 8 | `EffectAdded`: сообщение HUD о новом эффекте |
-| `AE#40743`, `AE#40735`, `AE#40752` | `@0xC0` 4, `0x14`, `0x15` | угол без наклона; `DoSetSitSleepState`; оружие наготове → `PlayerCamera` |
-| `AE#41147` | `0xE5` | `StopCombat`: снять игрока с группы боя |
+| `AE#41259` | `0xA0` | projectile launch angles: first person — with the INI arrow-tilt correction |
+| `AE#40738`, `AE#40479` | `0xA2`, `0xB4` | same for first- and third-person 3D (first-person biped, `TaskQueueInterface`) |
+| `AE#41145`, `AE#41006`, `AE#41242`, `AE#40757`, `AE#41144` | `0xB3`, `0xC6`, `0xD1`, `0x12E`, `0x129` | constants and pass-throughs (no equip animation in the queue; 2; false; false; `Is3rdPersonVisible`) |
+| `AE#40480` | `0xC9` | reset of player flags, then `Actor::Unk_C9` |
+| `AE#41258` | `0x105` | return ammunition to the hand |
+| `AE#40687` | `0x117` | first-person offset → world (reads the position) |
+| `AE#40539` | `0x12A` (new) | game save + tint masks |
+| `AE#40753`, `AE#40755`, `AE#40756`, `AE#40754` | `@0x38` 5, 4, 7, `0xB` | the player's animation graph: creation (0x250 bytes), nodes, first-person variables, finalization |
+| `AE#40762` | `@0xA0` 8 | `EffectAdded`: HUD message about a new effect |
+| `AE#40743`, `AE#40735`, `AE#40752` | `@0xC0` 4, `0x14`, `0x15` | angle without tilt; `DoSetSitSleepState`; weapon drawn → `PlayerCamera` |
+| `AE#41147` | `0xE5` | `StopCombat`: remove the player from the combat group |
 
-**Шаги `PlayerCharacter::Update` (`AE#40447`):**
+**`PlayerCharacter::Update` steps (`AE#40447`):**
 
-| ID | Где | Что делает; место игрока |
+| ID | Where | What it does; the player location |
 |---|---|---|
-| `AE#40470` | `+0xF36`, `FinishLoadGame+0x106`, `AE#40562+0x123` (сверено) | **пишет кэш места:** `lastKnownGoodPosition` (`+0x480`) и мир экстерьера или ячейку интерьера в `lastKnownGoodLocation` (`+0x990`, сверено `fieldrefs`); каждый кадр |
-| `AE#40750` | `+0xF7B` | открытие меток карты мира игрока в радиусе, событие `LocationDiscovery` (мир и позиция) |
-| `AE#40450` | `AE#36581+0x60` (сверено), `FinishLoadGame+0xA1` | вариант обновления игрока при особом состоянии камеры; `BGSTerrainManager::Update` для мира игрока |
-| `AE#40748` | `+0x1479` | ветка «под ИИ или мёртв»; в конце `AE#19165(parentCell, player)` |
-| `AE#40556`, `AE#40568`, `AE#40588`, `AE#40423` | `+0xC15`, `+0xC1D`, `+0x332`, `+0x28D` | захват предмета (`bhkWorld` ячейки игрока), брошенные предметы, опора контроллера, лучи от позиции игрока к затухающим узлам |
-| `AE#40449` | `+0xA87`, `+0xF65` | `SetJobTaskEvent(2)`, `PlayerCamera::Update`, слушатель звука от камеры (`AE#67708`/`AE#67709` не дочитаны — важно для T23) |
-| `AE#40747`, `AE#40736`, `AE#40604`, `AE#40605` | `+0x1EB`, `+0xD4`, 14 вызывающих | таймеры и взгляд на солнце; история скорости; список действий игрока для реплик NPC |
+| `AE#40470` | `+0xF36`, `FinishLoadGame+0x106`, `AE#40562+0x123` (verified) | **writes the location cache:** `lastKnownGoodPosition` (`+0x480`) and the exterior world or interior cell into `lastKnownGoodLocation` (`+0x990`, verified via `fieldrefs`); every frame |
+| `AE#40750` | `+0xF7B` | opening of the player's world map markers within a radius, `LocationDiscovery` event (world and position) |
+| `AE#40450` | `AE#36581+0x60` (verified), `FinishLoadGame+0xA1` | a variant of the player update for a special camera state; `BGSTerrainManager::Update` for the player's world |
+| `AE#40748` | `+0x1479` | the "under AI or dead" branch; at the end `AE#19165(parentCell, player)` |
+| `AE#40556`, `AE#40568`, `AE#40588`, `AE#40423` | `+0xC15`, `+0xC1D`, `+0x332`, `+0x28D` | grabbed object (`bhkWorld` of the player's cell), thrown objects, controller support, rays from the player position to fading nodes |
+| `AE#40449` | `+0xA87`, `+0xF65` | `SetJobTaskEvent(2)`, `PlayerCamera::Update`, sound listener from the camera (`AE#67708`/`AE#67709` not fully read — important for T23) |
+| `AE#40747`, `AE#40736`, `AE#40604`, `AE#40605` | `+0x1EB`, `+0xD4`, 14 callers | timers and looking at the sun; speed history; the player's action list for NPC barks |
 
-**Вывод.** Из 34 функций место игрока пишет только `AE#40470` — кэш «последнего хорошего места» (по нему игрок возвращается от границы мира, `AE#40469`). `parentCell` и `currentLocation` не пишет ни одна. Кэш строится каждый кадр по `parentCell` и позиции: переход без смены `parentCell` оставит в нём старую ячейку.
+**Conclusion.** Of the 34 functions, only `AE#40470` writes the player location — the "last known good place" cache (the player returns from the world border by it, `AE#40469`). None writes `parentCell` or `currentLocation`. The cache is built every frame from `parentCell` and the position: a transition without changing `parentCell` will leave the old cell in it.
 
-## T38, пачка 2. Телепорт и переход (31 ID)
+## T38, batch 2. Teleport and transition (31 IDs)
 
-Вопрос: порядок перехода и кто пишет `queuedTargetLoc` (`player+0x648…+0x68A`: мир `+0x648`, ячейка `+0x650`, позиция `+0x658`, поворот `+0x664`, флаги `+0x688…+0x68A`).
+Question: the order of the transition and who writes `queuedTargetLoc` (`player+0x648…+0x68A`: world `+0x648`, cell `+0x650`, position `+0x658`, rotation `+0x664`, flags `+0x688…+0x68A`).
 
-**Порядок в `AE#40438`** (главный поток, `Main::Update+0x6E`): ветка тюрьмы (`AE#40656` — в тюрьму, `AE#40661` — на волю) → `AE#36604` (подготовка: защита от повторного входа, `TES`, `ProcessLists`, VM, перки игрока; 11 вызывающих) → `AE#51628` (сообщение HUD) → дверь с загруженной 3D: `AE#40445` (спутники, ездовое, `AE#40745`, `MoveRefToNewSpace`), иначе `AE#40744` (ячейка) или `AE#40745` (мир + позиция → ячейка → `AE#40744`) → `AE#32491` (стартовые квесты) → `PositionPlayerEvent` (`AE#41051`, значения 0/3/4, источник `player+0x388`) → цикл `AE#41313`, пока `AE#41316` → закрытие `AE#13363(0,…)` → `AE#13388` (доводка ячеек в состоянии 7) → сброс `queuedTargetLoc`.
+**Order in `AE#40438`** (main thread, `Main::Update+0x6E`): the jail branch (`AE#40656` — to jail, `AE#40661` — to freedom) → `AE#36604` (preparation: re-entry guard, `TES`, `ProcessLists`, VM, player perks; 11 callers) → `AE#51628` (HUD message) → door with loaded 3D: `AE#40445` (followers, mount, `AE#40745`, `MoveRefToNewSpace`), otherwise `AE#40744` (cell) or `AE#40745` (world + position → cell → `AE#40744`) → `AE#32491` (start-up quests) → `PositionPlayerEvent` (`AE#41051`, values 0/3/4, source `player+0x388`) → loop `AE#41313` until `AE#41316` → closing `AE#13363(0,…)` → `AE#13388` (bringing cells to state 7) → reset of `queuedTargetLoc`.
 
-**Внутри `AE#40744`** (сверено): базовый `TESObjectREFR::SetParentCell` (`AE#19818`) вызывается **напрямую** (на `+0x18D` — с пустой ячейкой); между ними `SetCurrentCell` (`+0x14E`) или `AE#13315` + `AE#13317`; затем `AE#19411` (`+0x19B`, добавить ссылку в ячейку), внутри `+0x251` — слот `0x98` у ссылки, у игрока это `PlayerCharacter::SetParentCell` с `CLOC`. Агент пачки утверждал, что вызова `0x98` нет, — **неверно**.
+**Inside `AE#40744`** (verified): the base `TESObjectREFR::SetParentCell` (`AE#19818`) is called **directly** (at `+0x18D` — with an empty cell); between them `SetCurrentCell` (`+0x14E`) or `AE#13315` + `AE#13317`; then `AE#19411` (`+0x19B`, add the reference to the cell), inside `+0x251` — slot `0x98` of the reference, for the player this is `PlayerCharacter::SetParentCell` with `CLOC`. The batch agent claimed there is no `0x98` call — **incorrect**.
 
-**Кто пишет `queuedTargetLoc`:** `AE#40442` (общий путь), `CenterOnCell_Impl` (`AE#40437`: `+0x144`, `+0x259`, затем сам зовёт `AE#40438`), `AE#40469+0xB3` (возврат на последнее «хорошее» место у границы мира), `AE#40656+0x12C`, `AE#40661+0x107`, сам `AE#40438` (`+0x5F3`, `+0x98B`); сброс — `AE#40732` и конструктор (`AE#40411+0x4D3`). Вызывают `AE#40442`: дверь `AE#17924+0x1B1`, `MoveTo_Impl` `AE#56626+0x18B`, быстрое перемещение (`AE#22612`, Papyrus `AE#55457`, карта `AE#53102`), `AE#22279`, `AE#55427`, старт игры `AE#36549`, `AE#36642`.
+**Who writes `queuedTargetLoc`:** `AE#40442` (common path), `CenterOnCell_Impl` (`AE#40437`: `+0x144`, `+0x259`, then calls `AE#40438` itself), `AE#40469+0xB3` (return to the last "good" place at the world border), `AE#40656+0x12C`, `AE#40661+0x107`, `AE#40438` itself (`+0x5F3`, `+0x98B`); reset — `AE#40732` and the constructor (`AE#40411+0x4D3`). Callers of `AE#40442`: door `AE#17924+0x1B1`, `MoveTo_Impl` `AE#56626+0x18B`, fast travel (`AE#22612`, Papyrus `AE#55457`, map `AE#53102`), `AE#22279`, `AE#55427`, game start `AE#36549`, `AE#36642`.
 
-| ID | Что делает |
+| ID | What it does |
 |---|---|
-| `AE#40807`, `AE#40806` | летающее ездовое: перенос маркера `AE#371018` и ездового |
-| `AE#41346` | `ProcessLists`: спутники игрока идут с ним (выведено, не дочитано) |
-| `AE#41317`, `AE#41316`, `AE#41313` | двойной буфер ближних актёров; флаг «обработка занята»; принудительное обновление актёров |
-| `AE#32216`, `AE#32487` | включение системы воды; обработка квестов `BGSStoryTeller` после загрузки |
-| `AE#13425` | все ли ячейки сетки вокруг (x, y) загружены |
-| `AE#40517` | путь до метки карты игрока |
-| `AE#40562` | проверка границы мира → `AE#40469(…,0)` |
-| `AE#35652`, `AE#35651`, `AE#35639` | загрузка и запись места игрока в сохранении (`AE#35652` зовёт `AE#40744`/`AE#40745`) |
-| `AE#13754`, `AE#36601`, `AE#36629` | сброс `TES`; полный сброс игры; создание игрока (0xBE8, FormID 0x14, хэндл) |
+| `AE#40807`, `AE#40806` | flying mount: moving the marker `AE#371018` and the mount |
+| `AE#41346` | `ProcessLists`: the player's followers go with him (inferred, not fully read) |
+| `AE#41317`, `AE#41316`, `AE#41313` | double buffer of nearby actors; "processing busy" flag; forced actor update |
+| `AE#32216`, `AE#32487` | enabling the water system; processing of `BGSStoryTeller` quests after loading |
+| `AE#13425` | whether all grid cells around (x, y) are loaded |
+| `AE#40517` | path to the player's map marker |
+| `AE#40562` | world border check → `AE#40469(…,0)` |
+| `AE#35652`, `AE#35651`, `AE#35639` | loading and saving the player location in a save (`AE#35652` calls `AE#40744`/`AE#40745`) |
+| `AE#13754`, `AE#36601`, `AE#36629` | `TES` reset; full game reset; player creation (0xBE8, FormID 0x14, handle) |
 
-## T38, пачка 9. Ячейки, мир, погода, регион, музыка, вода (31 ID)
+## T38, batch 9. Cells, world, weather, region, music, water (31 IDs)
 
-Вопрос: что считает ячейку игрока «миром».
+Question: what treats the player's cell as "the world".
 
-| Узел | ID | Одна точка игрока? |
+| Node | IDs | A single player point? |
 |---|---|---|
-| Сетка и мир | `AE#13288` (сдвиг сетки от позиции; из `AE#36581` с позицией игрока), `AE#13363` (экран загрузки; на закрытии `BGSTerrainManager::Update` с позицией игрока), `AE#31802` (`BGSTerrainManager::Update`: один активный менеджер LOD, `parentCell` игрока) | да: одна сетка, один мир, один LOD |
-| Погода и регион | `AE#26231` (`Sky::UpdateWeather`: регион интерьера `TES` или `PlayerRegionState::lastKnownWeatherRegion`), `AE#41262` (конструктор `PlayerRegionState`, слушатель `BGSActorCellEvent`), `AE#41265` (точка в регионах; из `PlayerCharacter::Update+0xEED`, `AE#40562`), `AE#41266`, `AE#41272` | да: одна погода, один регион |
-| Вода | `AE#32164`, `AE#32179` (`AddWater`), `AE#32217` (`AddRipple`), `AE#32218`, `AE#32089` (обновление всех `BGSWaterUpdateI` с позицией игрока; единственный вызов — `TES::AE_13291+0x247`, сверено) | да |
-| Свет | `AE#18889` (после подключения ячейки: свет в радиусе от игрока) | да |
-| Музыка | `AE#40177` (`BGSPlayerMusicChanger` привязан к игроку), `AE#35180`, `AE#35122`, `AE#35181` (`AddEventSink`) | да |
-| Механика ячейки | `AE#19063` (подключить; состояние 7), `AE#19280` (на ссылку: vfunc `0x91` `DoMoveToHigh`), `AE#19411` (добавить ссылку в ячейку), `AE#19165` (перенести 3D ссылки в граф ячейки, с комнатами `BSPortal`) | **нет**: ячейка — аргумент |
-| Прочее | `AE#13328` (переход `coc`: `CenterOnCell_Impl` `+0x96`, ожидание IO `+0xA7`, сверено), `AE#17967` (`AutoDoorFadeCallback`: дверь → `forceActivateRef` игрока), `AE#13729`/`AE#13730` (взрыв, снаряд в точке), `AE#13763`, `AE#13771`, `AE#13062`, `AE#40201`, `AE#32224` | — |
+| Grid and world | `AE#13288` (grid shift from position; from `AE#36581` with the player position), `AE#13363` (loading screen; on closing `BGSTerrainManager::Update` with the player position), `AE#31802` (`BGSTerrainManager::Update`: one active LOD manager, the player's `parentCell`) | yes: one grid, one world, one LOD |
+| Weather and region | `AE#26231` (`Sky::UpdateWeather`: the `TES` interior region or `PlayerRegionState::lastKnownWeatherRegion`), `AE#41262` (`PlayerRegionState` constructor, `BGSActorCellEvent` listener), `AE#41265` (point in regions; from `PlayerCharacter::Update+0xEED`, `AE#40562`), `AE#41266`, `AE#41272` | yes: one weather, one region |
+| Water | `AE#32164`, `AE#32179` (`AddWater`), `AE#32217` (`AddRipple`), `AE#32218`, `AE#32089` (updating all `BGSWaterUpdateI` with the player position; the only call — `TES::AE_13291+0x247`, verified) | yes |
+| Light | `AE#18889` (after attaching a cell: light within a radius of the player) | yes |
+| Music | `AE#40177` (`BGSPlayerMusicChanger` bound to the player), `AE#35180`, `AE#35122`, `AE#35181` (`AddEventSink`) | yes |
+| Cell mechanics | `AE#19063` (attach; state 7), `AE#19280` (on a reference: vfunc `0x91` `DoMoveToHigh`), `AE#19411` (add a reference to a cell), `AE#19165` (move a reference's 3D into the cell graph, with `BSPortal` rooms) | **no**: the cell is an argument |
+| Misc | `AE#13328` (`coc` transition: `CenterOnCell_Impl` `+0x96`, waiting for IO `+0xA7`, verified), `AE#17967` (`AutoDoorFadeCallback`: door → the player's `forceActivateRef`), `AE#13729`/`AE#13730` (explosion, projectile at a point), `AE#13763`, `AE#13771`, `AE#13062`, `AE#40201`, `AE#32224` | — |
 
-**Вывод для 5.14, пп. 1–2.** Механика ячеек (подключение, ссылки, 3D) работает от ячейки-аргумента и годится для многих живых ячеек. «Мир» — сетка, LOD, погода, регион, вода, свет, музыка — привязан к позиции игрока или к `TES::interiorCell`/`worldSpace`. Вторая живая ячейка экстерьера останется без воды и погоды своего мира; интерьеру за порталом это не мешает.
+**Conclusion for 5.14, items 1–2.** Cell mechanics (attach, references, 3D) works off the cell argument and is suitable for many live cells. "World" — grid, LOD, weather, region, water, light, music — is bound to the player position or to `TES::interiorCell`/`worldSpace`. A second live exterior cell will be left without the water and weather of its world; an interior behind a portal does not suffer from this.
 
-## T39, пачка 1. Загрузка сохранения и старт (30 ID)
+## T39, batch 1. Save loading and start (30 IDs)
 
-Вопрос: на каком потоке идёт загрузка сохранения (откуда `DetachAll` из `AE#13295+0x64` не на главном потоке, 44 раза в трассах) и в каком порядке работа с ячейками.
+Question: which thread the save loading runs on (where the `DetachAll` from `AE#13295+0x64` off the main thread comes from, 44 cases in traces) and in what order the cell work happens.
 
-**Поток — главный, перехода на другой поток по коду нет.** Цепочка (сверены первое и последнее звенья): `Main::Update+0x9A` → `AE#35772` (очередь запросов сохранения/загрузки) → `AE#442580+0x465` → `AE#35600+0x34F` → `AE#35641+0x7E` → `AE#35642+0x46` → `AE#35652` → `AE#13295` на `+0x67A`. `AE#35772` зовёт ещё экран загрузки `AE#13363+0x3FA` — на потоке вызывающего. Единственный путь к `AE#13295` вне главного потока — **старт игры**: `InitTESThread` (`AE#36644`) → `Main::AE_36553+0x341` → `AE#13753+0x6F` → `AE#13295(0,0)`, один раз. 44 случая этим не объясняются. **Предположение:** в старых трассах «главный поток» определялся неверно (например, по потоку `kDataLoaded`, который на 1.6.1170 не главный). Проверка — `GetCurrentThreadId` в перехватах `PlayerCharacter::Update`, `AE#35772`, `AE#13295` (T40).
+**The thread is the main one; there is no switch to another thread in the code.** The chain (the first and last links verified): `Main::Update+0x9A` → `AE#35772` (save/load request queue) → `AE#442580+0x465` → `AE#35600+0x34F` → `AE#35641+0x7E` → `AE#35642+0x46` → `AE#35652` → `AE#13295` at `+0x67A`. `AE#35772` also calls the loading screen `AE#13363+0x3FA` — on the caller's thread. The only path to `AE#13295` outside the main thread is **game start**: `InitTESThread` (`AE#36644`) → `Main::AE_36553+0x341` → `AE#13753+0x6F` → `AE#13295(0,0)`, once. The 44 cases are not explained by this. **Hypothesis:** in old traces the "main thread" was identified incorrectly (e.g. by the `kDataLoaded` thread, which is not the main thread on 1.6.1170). Check — `GetCurrentThreadId` in the `PlayerCharacter::Update`, `AE#35772`, `AE#13295` hooks (T40).
 
-**Порядок загрузки** (`AE#35600`): подготовка `AE#35779` (заморозка VM, отмена загрузок, звук, экран `AE#13363(1,…)`) → `IOManager::AE_75712` → таблица глобальных данных 1 → `AE#35652`: мир `AE#13315`, сдвиг сетки `AE#13288`, `AE#40744` (или `AE#40745`/`AE#13317`), затем `AE#13295(1,0)` (`DetachAll` только если `interiorCell` есть) → цикл изменённых форм, таблицы 2 и 3 → `AE#35567` (доводка форм, синхронная загрузка ячеек `TES::AE_13387`, ожидание IO) → `AE#35780` (`GridCellArray::AE_15960`, `BGSTerrainManager::Update`, закрыть экран `AE#13363(0,…)`, VM).
+**Loading order** (`AE#35600`): preparation `AE#35779` (VM freeze, canceling loads, sound, screen `AE#13363(1,…)`) → `IOManager::AE_75712` → global data table 1 → `AE#35652`: world `AE#13315`, grid shift `AE#13288`, `AE#40744` (or `AE#40745`/`AE#13317`), then `AE#13295(1,0)` (`DetachAll` only if there is an `interiorCell`) → the change form loop, tables 2 and 3 → `AE#35567` (form finalization, synchronous cell loading `TES::AE_13387`, waiting for IO) → `AE#35780` (`GridCellArray::AE_15960`, `BGSTerrainManager::Update`, close the screen `AE#13363(0,…)`, VM).
 
-**`AE#13295(TES, a, b)`:** vfunc 1 сетки `TES+0x78` (`DetachAll`, возврат `+0x64`) — всегда при `a = 0`, при `a = 1` только если есть `interiorCell` (`+0x4E`); затем работа с буферами (`AE#13439`, `AE#13436`); при `(0,0)` обнуляет `interiorCell`. Вызывают: `AE#36601` (сброс игры), `AE#13753`, `AE#13754`, `AE#40745`, `AE#35652`, `AE#40446`.
+**`AE#13295(TES, a, b)`:** grid vfunc 1 of `TES+0x78` (`DetachAll`, return `+0x64`) — always with `a = 0`, with `a = 1` only if there is an `interiorCell` (`+0x4E`); then buffer work (`AE#13439`, `AE#13436`); with `(0,0)` it nulls `interiorCell`. Callers: `AE#36601` (game reset), `AE#13753`, `AE#13754`, `AE#40745`, `AE#35652`, `AE#40446`.
 
-| ID | Что делает |
+| ID | What it does |
 |---|---|
-| `AE#36544`, `AE#36548`, `AE#36549`, `AE#36641`, `AE#36642` | запуск: цикл кадра с `Main::Update`; инициализация и поток `TESInitThread`; стартовая ячейка из командной строки, постановка игрока (`AE#40442` + `AE#40438`) |
-| `AE#36601`, `AE#13280`, `AE#13627`, `AE#13754` | полный сброс игры (`AE#13295(0,0)` `+0x1E1`, `AE#13754` `+0x514`, новый игрок `AE#36629`); разрушение `TES` |
-| `AE#35599`, `AE#35638`, `AE#35639`, `AE#40562`, `AE#40469` | запись: место игрока в сохранении (мир, сетка, ячейка, позиция), проверка границы мира перед записью |
-| `AE#36581`, `AE#36582` | обновление игрока за кадр (выход за ячейку → `AE#13717`, `AE#13288`); вариант для режима меню |
-| `AE#13327`, `AE#13328`, `AE#13616` | консольная проверка ячеек `RunCellTest` |
-| `AE#55427`, `AE#22279` | Papyrus `LatentPlayerMover`; перенос ссылки или игрока к ссылке со смещением (игрок — через `AE#40442`) |
+| `AE#36544`, `AE#36548`, `AE#36549`, `AE#36641`, `AE#36642` | start: frame loop with `Main::Update`; initialization and the `TESInitThread` thread; the start cell from the command line, placing the player (`AE#40442` + `AE#40438`) |
+| `AE#36601`, `AE#13280`, `AE#13627`, `AE#13754` | full game reset (`AE#13295(0,0)` `+0x1E1`, `AE#13754` `+0x514`, new player `AE#36629`); destruction of `TES` |
+| `AE#35599`, `AE#35638`, `AE#35639`, `AE#40562`, `AE#40469` | saving: the player location in the save (world, grid, cell, position), world border check before saving |
+| `AE#36581`, `AE#36582` | per-frame player update (cell exit → `AE#13717`, `AE#13288`); a variant for menu mode |
+| `AE#13327`, `AE#13328`, `AE#13616` | console cell check `RunCellTest` |
+| `AE#55427`, `AE#22279` | Papyrus `LatentPlayerMover`; moving a reference or the player to a reference with an offset (the player — via `AE#40442`) |
 
-## T39, пачка 2. Подключение и события (33 ID)
+## T39, batch 2. Attach and events (33 IDs)
 
-Вопрос: кто шлёт `CellFullyLoaded` и `AttachDetach`, что значат `bool` у примитивов.
+Question: who sends `CellFullyLoaded` and `AttachDetach`, and what the `bool` of the primitives means.
 
-**События — три разных:**
-- **`CellAttachDetachEvent{cell, 0…3}`** (свой источник `AE#400441`, рассылка `AE#19361`): `AE#18976+0x69` (0, до подключения) и `+0x329` (1, после); `AE#19130+0x91` (2, до отключения) и `+0x77C` (3, после). Главный поток: `Main::Update+0x825` → `TES::AE_13288` → `AE#18976`/`AE#19130`, а также `SetCurrentCell`, `AE#13315`, `AE#13317`. Имена 0…3 — по порядку вызовов.
-- **`TESCellAttachDetachEvent(ref, attached)`** (`ScriptEventSourceHolder+0x1B8`, рассылка `AE#19362`): на каждую ссылку из `AE#19187+0x32E` (1) и `AE#19188` (0), внутри `AE#18976`/`AE#19130` — главный поток.
-- **`TESCellFullyLoadedEvent`** (`+0x210`, рассылка `AE#13664`): `AE#18895+0x55E` (обновление ячейки, когда счётчики `runtime+0x16C`, `+0x170`, `+0x17C` равны 0), `TES::AE_13381+0x345` (после загрузки сохранения), мёртвая копия `AE#19146`. **`AE#18895` вызывают `UpdateManagedNodesJob` (`AE#18871+0x18E`, задание) и `TES::AE_13291+0x23A`** (сверено). Отсюда экстерьерные `FullyLoaded` не на главном потоке (в игре: 1 624 из 1 676), а текущий интерьер — через `AE#13291` на главном. Какой поток исполняет список заданий `gJobList_TES_CellAnimations` (`Job_Cell_animations` `AE#39067`), не прослежено.
+**Three different events:**
+- **`CellAttachDetachEvent{cell, 0…3}`** (own source `AE#400441`, dispatch `AE#19361`): `AE#18976+0x69` (0, before attach) and `+0x329` (1, after); `AE#19130+0x91` (2, before detach) and `+0x77C` (3, after). Main thread: `Main::Update+0x825` → `TES::AE_13288` → `AE#18976`/`AE#19130`, also `SetCurrentCell`, `AE#13315`, `AE#13317`. The names 0…3 — by call order.
+- **`TESCellAttachDetachEvent(ref, attached)`** (`ScriptEventSourceHolder+0x1B8`, dispatch `AE#19362`): for each reference from `AE#19187+0x32E` (1) and `AE#19188` (0), inside `AE#18976`/`AE#19130` — main thread.
+- **`TESCellFullyLoadedEvent`** (`+0x210`, dispatch `AE#13664`): `AE#18895+0x55E` (cell update when the counters `runtime+0x16C`, `+0x170`, `+0x17C` are 0), `TES::AE_13381+0x345` (after save loading), a dead copy `AE#19146`. **`AE#18895` is called by `UpdateManagedNodesJob` (`AE#18871+0x18E`, a job) and `TES::AE_13291+0x23A`** (verified). Hence the exterior `FullyLoaded` off the main thread (in game: 1 624 of 1 676), while the current interior — via `AE#13291` on the main thread. Which thread runs the job list `gJobList_TES_CellAnimations` (`Job_Cell_animations` `AE#39067`) was not traced.
 
-**Смысл `bool`** (по ветвлениям, в игре не проверено):
-- `AE#19063(cell, b)` — `b` = в конце положить коллизию ячейки (`CellMopp`) в мир Havok (`AE#18996`). 1 — из `AE#13285`, `AE#13286`, `SetCurrentCell`; 0 — `AE#13426`, небесная ячейка.
-- `AE#19130(cell, b)` — `b` = разобрать коллизию (`CellMopp`, `bhkWorld`, `UnloadCellMopp`, вода выкл.). `SetCurrentCell` и `AE#13426` дают 0 для сетки — **коллизия экстерьера остаётся**.
-- `AE#19059(cell, b)` — 1 создать динамический свет всех ламп ячейки, 0 снять из `ShadowSceneNode`.
+**The meaning of `bool`** (from branches, not verified in game):
+- `AE#19063(cell, b)` — `b` = at the end put the cell's collision (`CellMopp`) into the Havok world (`AE#18996`). 1 — from `AE#13285`, `AE#13286`, `SetCurrentCell`; 0 — `AE#13426`, the sky cell.
+- `AE#19130(cell, b)` — `b` = tear down the collision (`CellMopp`, `bhkWorld`, `UnloadCellMopp`, water off). `SetCurrentCell` and `AE#13426` give 0 for the grid — **the exterior collision stays**.
+- `AE#19059(cell, b)` — 1 create the dynamic light of all the cell's lamps, 0 remove from `ShadowSceneNode`.
 
-| ID | Что делает |
+| ID | What it does |
 |---|---|
-| `AE#18976` / `AE#19063` / `AE#19130` | подключение, ч. 1 (событие 0, состояние 6, узел к родителю, ссылки, событие 1) / ч. 2 (обновление узла, земля, снятие затухания, вода вкл., состояние 7) / отключение (только из 6 или 7; состояние 5 → 4, `+0x46 = 1`) |
-| `AE#19411` / `AE#19032` | добавить ссылку в ячейку (сначала `AE#19032` из старой, `+0x188`) / убрать ссылку |
-| `AE#15962`, `AE#15959` | `GridCellArray`: подключить ячейку (x, y) через `AE#18976`; коллизия всех ячеек |
-| `AE#13427`, `AE#13426`, `AE#13285`, `AE#13286`, `AE#13287` | `TES`: загрузить и подключить ячейку сетки; подключить/отключить всю сетку; подключить сразу; центр сетки и её загрузка |
-| `AE#13367`, `AE#13437`, `AE#13433` | буферы: сортировка экстерьерного по расстоянию от центра; есть ли ячейка в буфере экстерьера / интерьера |
-| `AE#13308` | «ячейка подключена»: состояния 6–7 → 1, 3–5 → `!strict`; 61 вызывающий |
-| `AE#13718`, `AE#13710`, `AE#20460`, `AE#19112` | найти или создать ячейку экстерьера; `TESWorldSpace::LoadCell` (и из `CellLoaderTask::Run+0x3E`, IO); чтение данных ячейки из плагина (состояние 2) |
-| `AE#19113`, `AE#19056`, `AE#18980`, `AE#18981` | выгрузка: данные ячейки; 3D и граф порталов; коллизия; сброс в состояние 0 (из `AE#13721`) |
-| `AE#19167`, `AE#18979`, `AE#19145`, `AE#19153` | граф порталов ячейки (у экстерьера — мира); корневой узел; занят ли замок ссылок; счётчик до `FullyLoaded` |
-| `AE#19055`, `AE#19028`, `AE#19046`, `AE#41292`, `AE#13440`, `AE#19178` | вода ячейки вкл./выкл.; снять затухание ссылок; актёры ячейки в `ProcessLists`; флаги шейдера земли 5×5; не дочитано |
+| `AE#18976` / `AE#19063` / `AE#19130` | attach, part 1 (event 0, state 6, node to parent, references, event 1) / part 2 (node update, land, clearing fading, water on, state 7) / detach (only from 6 or 7; state 5 → 4, `+0x46 = 1`) |
+| `AE#19411` / `AE#19032` | add a reference to a cell (first `AE#19032` from the old one, `+0x188`) / remove a reference |
+| `AE#15962`, `AE#15959` | `GridCellArray`: attach cell (x, y) via `AE#18976`; collision of all cells |
+| `AE#13427`, `AE#13426`, `AE#13285`, `AE#13286`, `AE#13287` | `TES`: load and attach a grid cell; attach/detach the whole grid; attach immediately; the grid center and its loading |
+| `AE#13367`, `AE#13437`, `AE#13433` | buffers: sorting the exterior one by distance from the center; whether a cell is in the exterior / interior buffer |
+| `AE#13308` | "cell attached": states 6–7 → 1, 3–5 → `!strict`; 61 callers |
+| `AE#13718`, `AE#13710`, `AE#20460`, `AE#19112` | find or create an exterior cell; `TESWorldSpace::LoadCell` (also from `CellLoaderTask::Run+0x3E`, IO); reading cell data from the plugin (state 2) |
+| `AE#19113`, `AE#19056`, `AE#18980`, `AE#18981` | unload: cell data; 3D and portal graph; collision; reset to state 0 (from `AE#13721`) |
+| `AE#19167`, `AE#18979`, `AE#19145`, `AE#19153` | the cell's portal graph (for the exterior — of the world); the root node; whether the reference lock is taken; the counter until `FullyLoaded` |
+| `AE#19055`, `AE#19028`, `AE#19046`, `AE#41292`, `AE#13440`, `AE#19178` | cell water on/off; clear reference fading; cell actors into `ProcessLists`; terrain shader flags 5×5; not fully read |
 
-**Вывод для T20, T21.** Отключение сетки при входе в интерьер оставляет её коллизию в мире Havok. Свет ячейки включается и выключается одной функцией `AE#19059`, вода — `AE#19055`. Это готовые ручки для «удержания» ячейки за порталом. `FullyLoaded` экстерьера приходит из задания — обработчики события в плагине не должны трогать игру (`CLAUDE.md`, раздел 7).
+**Conclusion for T20, T21.** Detaching the grid when entering an interior leaves its collision in the Havok world. A cell's light is turned on and off by a single function `AE#19059`, water — `AE#19055`. These are ready-made levers for "holding" a cell behind the portal. The exterior `FullyLoaded` arrives from a job — event handlers in the plugin must not touch the game (`CLAUDE.md`, section 7).
 
-## T39, пачка 4. Помощники перехода на главном потоке (38 ID)
+## T39, batch 4. Main-thread transition helpers (38 IDs)
 
-Вопрос: что из перехода нужно бесшовному переходу (оставить, пропустить, заменить) и что рассчитано на один экземпляр.
+Question: which parts of the transition a seamless transition needs (keep, skip, replace) and what is designed for a single instance.
 
-| ID | Что делает | Бесшовно |
+| ID | What it does | Seamless |
 |---|---|---|
-| `AE#13363`, `AE#52852`, `AE#35407`, `AE#36555` | экран загрузки; сообщение `LoadingMenu`; режим экрана для `JobListManager`; отрисовка кадра под экраном | пропустить (`AE#35407` остановил бы кадр) |
-| `AE#41294`, `AE#41313`–`AE#41316`, `AE#41406` | `ProcessLists`: временные перемещения, очередь мест пакетов (`AE#41316` — есть ли незавершённые), очереди анимации и синхронизации, освобождение данных high | пропустить: `Main::Update` и так зовёт их каждый кадр (`AE#41313` из `+0x7D6`, сверено) |
-| `AE#32484`, `AE#32487`, `AE#32491` | `BGSStoryTeller`: очередь квестов; списки квестов (и в `Main::Update+0x524`); стартовые квесты один раз | пропустить |
-| `AE#13425` | вся ли сетка цели уже загружена → флаг экрана | заменить |
-| `AE#13388`, `AE#13415`, `AE#19118` | снять затухание ссылок в загруженных ячейках (`TES` / буфер экстерьера) | только для новой ячейки, если заметно «проявление» |
-| `AE#13398`, `AE#53142` | разовая подгрузка моделей; неба и оверлея карты | пропустить / раз на мир |
-| `AE#13326` | режим неба и освещения по типу ячейки (одно небо, один мир) | заменить: по ячейке камеры |
-| `AE#13291` | анимация загруженных ячеек (интерьер или сетка + небо), каждый кадр из `Job_Cell_animations` | пропустить |
-| `AE#105631`, `AE#105654` | **глобальный флаг `BSShaderManager::State.interior`**; пустая заглушка | заменить: один флаг не верен для интерьера и улицы в одном кадре |
-| `AE#106335` | `ShadowSceneNode`: разбор очередей света и объектов (свет сверяется с `portalGraph` `SSN+0x228`) | оставить, раз после подключения |
-| `AE#106355`, `AE#106459` | `SSN`: обновить или снять весь свет; сбросить `lastRenderPassState` у всей геометрии поддерева (не метод `SSN`) | заменить (снимет свет чужих ячеек); второй — только при устаревших проходах (T14) |
-| `AE#31813`, `AE#31814` | показать / **скрыть** корни LOD (глобальные) | `AE#31814` не вызывать: прячет даль для вида изнутри наружу |
-| `AE#77905`/`AE#77906`, `AE#77908`/`AE#77909` | `bhkWorld`: отложенная работа и пакетное добавление тел | оставить парами вокруг подключения с коллизией |
-| `AE#20514`, `AE#20548` | мир: менеджер ландшафта, узлы `MultiBoundNode` и `Portal-shared` → `SSN` слоты 8 и 9; данные высот | оставить, раз на мир |
-| `AE#20516`, `AE#20517`, `AE#20463` | **слоты 8, 9 корневой `SSN` — одна пара на активный мир** (сверено); снять их; освободить данные мира | заменить / не вызывать для видимого мира |
-| `AE#40745`, `AE#40445` | перенос игрока в мир (отключает старую ячейку: `AE#19032`, `AE#13298`, `AE#13295`); быстрое перемещение к ссылке | заменить (взять только поиск ячейки) / не для двери |
+| `AE#13363`, `AE#52852`, `AE#35407`, `AE#36555` | loading screen; `LoadingMenu` message; screen mode for `JobListManager`; rendering a frame under the screen | skip (`AE#35407` would stall the frame) |
+| `AE#41294`, `AE#41313`–`AE#41316`, `AE#41406` | `ProcessLists`: temporary moves, the package location queue (`AE#41316` — are there unfinished), animation and synchronization queues, high data release | skip: `Main::Update` calls them every frame anyway (`AE#41313` from `+0x7D6`, verified) |
+| `AE#32484`, `AE#32487`, `AE#32491` | `BGSStoryTeller`: quest queue; quest lists (also in `Main::Update+0x524`); start-up quests once | skip |
+| `AE#13425` | whether the whole target grid is already loaded → screen flag | replace |
+| `AE#13388`, `AE#13415`, `AE#19118` | clear reference fading in loaded cells (`TES` / exterior buffer) | only for the new cell, if "appearing" is noticeable |
+| `AE#13398`, `AE#53142` | one-time model preload; sky and map overlay | skip / once per world |
+| `AE#13326` | sky and lighting mode by cell type (one sky, one world) | replace: by the camera's cell |
+| `AE#13291` | animation of loaded cells (interior or grid + sky), every frame from `Job_Cell_animations` | skip |
+| `AE#105631`, `AE#105654` | **global flag `BSShaderManager::State.interior`**; empty stub | replace: one flag is wrong for an interior and a street in one frame |
+| `AE#106335` | `ShadowSceneNode`: draining light and object queues (light is checked against `portalGraph` `SSN+0x228`) | keep, once after attaching |
+| `AE#106355`, `AE#106459` | `SSN`: update or remove all light; reset `lastRenderPassState` for all geometry of the subtree (not an `SSN` method) | replace (will remove light of other cells); the second — only for stale passes (T14) |
+| `AE#31813`, `AE#31814` | show / **hide** LOD roots (global) | do not call `AE#31814`: it hides the distance for the inside-out view |
+| `AE#77905`/`AE#77906`, `AE#77908`/`AE#77909` | `bhkWorld`: deferred work and batched body add | keep in pairs around the attach with collision |
+| `AE#20514`, `AE#20548` | world: terrain manager, `MultiBoundNode` and `Portal-shared` nodes → `SSN` slots 8 and 9; height data | keep, once per world |
+| `AE#20516`, `AE#20517`, `AE#20463` | **slots 8, 9 of the root `SSN` — one pair per active world** (verified); remove them; free world data | replace / do not call for the visible world |
+| `AE#40745`, `AE#40445` | moving the player to a world (detaches the old cell: `AE#19032`, `AE#13298`, `AE#13295`); fast travel to a reference | replace (take only the cell lookup) / not for a door |
 
-**Вывод — минимум для бесшовного перехода** (по коду, в игре не проверено): без экрана и его ожиданий; не отключать старую ячейку (`AE#13295`, `AE#13298`, `AE#13317`, `AE#40745`, `AE#20463`, `AE#20517`, `AE#31814`, снятие всего света); для новой ячейки — `AE#20514`/`AE#20548` раз на мир, пары `bhkWorld` вокруг подключения, `AE#106335` после; `SetParentCell` игрока ровно один раз (через `AE#19411`). **Одиночки, которые нужно заменить для многих порталов и ворот:** `portalGraph` один на `SSN` (`SetPortalGraph` `AE#106385`), слоты 8/9 `SSN` на один мир, флаг `interior` шейдеров, режим неба, корни LOD.
+**Conclusion — the minimum for a seamless transition** (from code, not verified in game): no screen and its waits; do not detach the old cell (`AE#13295`, `AE#13298`, `AE#13317`, `AE#40745`, `AE#20463`, `AE#20517`, `AE#31814`, removing all light); for the new cell — `AE#20514`/`AE#20548` once per world, `bhkWorld` pairs around the attach, `AE#106335` after; the player's `SetParentCell` exactly once (via `AE#19411`). **Singletons that need replacement for many portals and gates:** `portalGraph` is one per `SSN` (`SetPortalGraph` `AE#106385`), slots 8/9 of the `SSN` for one world, the `interior` shader flag, the sky mode, LOD roots.
 
-## T39, пачка 3. IO, модели, задания (32 ID)
+## T39, batch 3. IO, models, jobs (32 IDs)
 
-Вопрос: идут ли задания `Job_IO` (`PostProcess` → `AE#13434` → `AE#13721`) одновременно с `Update` главного потока.
+Question: do `Job_IO` jobs (`PostProcess` → `AE#13434` → `AE#13721`) run concurrently with the main thread's `Update`.
 
-**Кадр `Main::Update` (`AE#36564`, сверено по `asm`):** игрок `+0x2A7` → встроенный шаг IO `+0x5AC…+0x5D3` (`bhkWorld` `AE#77905`/`AE#77908`, `AE#75705`; по словам агента — только при паузе игры, ветка не сверена) → сдвиг сетки `AE#13288` `+0x825` → `SetJobTaskEvent(1…4)` `+0x82F…+0x859` (`AE#69514`; между ними декали `AE#15207`) → камера, корень мира → `WaitForJobTask(0,1)` `+0x8B3` (`AE#69516`, только если `AE#35406(1)`). `AE#36565` (`Job_IO`) повторяет встроенный шаг IO.
+**`Main::Update` frame (`AE#36564`, verified via `asm`):** player `+0x2A7` → inline IO step `+0x5AC…+0x5D3` (`bhkWorld` `AE#77905`/`AE#77908`, `AE#75705`; per the agent — only when the game is paused, the branch not verified) → grid shift `AE#13288` `+0x825` → `SetJobTaskEvent(1…4)` `+0x82F…+0x859` (`AE#69514`; decals `AE#15207` between them) → camera, world root → `WaitForJobTask(0,1)` `+0x8B3` (`AE#69516`, only if `AE#35406(1)`). `AE#36565` (`Job_IO`) repeats the inline IO step.
 
-**Вердикт — предположение, не доказано:** `Job_IO` запускается событиями этапов и идёт одновременно с главным потоком хотя бы между `+0x82F` и `+0x8B3`; в каком этапе он стоит, по коду не найдено (`Job_IO` `AE#39084` есть только в таблице данных `0x142011bf0`, без ссылок из кода). Ответит T40: счёт вызовов `AE#13721`/`AE#13434` по потокам и фазам кадра. До этого наш detour `AE#13721` не должен полагаться на главный поток (`CLAUDE.md`, раздел 7).
+**Verdict — a hypothesis, not proven:** `Job_IO` is started by stage events and runs concurrently with the main thread at least between `+0x82F` and `+0x8B3`; which stage it stands in was not found in the code (`Job_IO` `AE#39084` exists only in the data table `0x142011bf0`, with no code references). T40 will answer: counting calls of `AE#13721`/`AE#13434` by threads and frame phases. Until then, our `AE#13721` detour must not rely on the main thread (`CLAUDE.md`, section 7).
 
-| ID | Что делает; поток |
+| ID | What it does; thread |
 |---|---|
-| `AE#75651` | `BSTaskManagerThread::vf_0x1` — цикл IO-потока: семафор, задача через `AE#75682` |
-| `AE#75636` | `BSTaskManager::vf_0x13` — запуск задачи: состояние 4 → `Run` → 5 (IO-поток) |
-| `AE#75709`, `AE#75643`, `AE#75644`, `AE#75646` | `IOManager`: обработка задач до приоритета; пауза и возобновление IO-потоков; счёт задач |
-| `AE#75686`, `AE#75676`, `AE#75696`, `AE#75693` | очереди без замков `IOManager` (поиск, выбор задачи, чистка) |
-| `AE#18549` | ждать, пока все задачи загрузки ячеек выполнены (крутит `AE#75708`, главный поток) |
-| `AE#18550` | загрузка ячейки по (мир, x, y): `LoadCell`, `AE#18978`, вершины земли (вероятно, тело `CellLoaderTask::Run`, IO) |
-| `AE#18546`, `AE#18547`, `AE#18543`–`AE#18545`, `AE#18554`, `AE#18559` | карты загрузчика ячеек под замком записи; ключ `(x,y)` |
-| `AE#13005`, `AE#13355`, `AE#13023`, `AE#13015` | доводка моделей: `AttachDistant3DTask` → `TES::AE_13355` (3D ссылки), дерево, `QueuedReference` (поток не прослежен) |
-| `AE#441574`, `AE#441575`, `AE#19232` | обход ссылок ячейки под замком `cell+0x120` |
-| `AE#63973`, `AE#63974` | менеджер файлов анимации: обработка и доводка очереди (главный поток, `AE#40438+0x8A1/+0x8C3`, `AE#35567`) |
-| `AE#15319`, `AE#15328` | `QueuedPromoteReferencesTask` → повышение ссылок до постоянных (IO) |
-| `AE#36565`, `AE#39084` | шаг IO с `bhkWorld`; `Job_IO` на рабочих потоках `BSJobs` |
+| `AE#75651` | `BSTaskManagerThread::vf_0x1` — the IO thread loop: semaphore, task via `AE#75682` |
+| `AE#75636` | `BSTaskManager::vf_0x13` — running a task: state 4 → `Run` → 5 (IO thread) |
+| `AE#75709`, `AE#75643`, `AE#75644`, `AE#75646` | `IOManager`: processing tasks up to priority; pausing and resuming IO threads; task count |
+| `AE#75686`, `AE#75676`, `AE#75696`, `AE#75693` | lock-free queues of `IOManager` (search, task selection, cleanup) |
+| `AE#18549` | wait until all cell loading tasks are done (spins `AE#75708`, main thread) |
+| `AE#18550` | loading a cell by (world, x, y): `LoadCell`, `AE#18978`, land vertices (probably the body of `CellLoaderTask::Run`, IO) |
+| `AE#18546`, `AE#18547`, `AE#18543`–`AE#18545`, `AE#18554`, `AE#18559` | cell loader maps under a write lock; key `(x,y)` |
+| `AE#13005`, `AE#13355`, `AE#13023`, `AE#13015` | model finalization: `AttachDistant3DTask` → `TES::AE_13355` (reference 3D), tree, `QueuedReference` (thread not traced) |
+| `AE#441574`, `AE#441575`, `AE#19232` | iterating a cell's references under the lock `cell+0x120` |
+| `AE#63973`, `AE#63974` | animation file manager: processing and draining the queue (main thread, `AE#40438+0x8A1/+0x8C3`, `AE#35567`) |
+| `AE#15319`, `AE#15328` | `QueuedPromoteReferencesTask` → promoting references to permanent (IO) |
+| `AE#36565`, `AE#39084` | the IO step with `bhkWorld`; `Job_IO` on the `BSJobs` worker threads |
 
-## Для куратора (кандидаты имён из пачек)
+## For the curator (name candidates from the batches)
 
-Формат `tools/ghidra/reviewed_names.txt`. Остальные кандидаты — в `results/T38.md` (11), `T39.md` (45), `T41.md` (22).
+Format `tools/ghidra/reviewed_names.txt`. Other candidates are in `results/T38.md` (11), `T39.md` (45), `T41.md` (22).
 
 ```
 AE#50833  PlayerCamera::MoveCollisionBodyToCellWorld  ; only caller PlayerCharacter::SetParentCell+0x271; creates sphere body this+0x128, adds to bhkWorld of target parentCell (target+0x60) (medium)

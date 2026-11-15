@@ -1,184 +1,183 @@
-# Как NPC проходят через двери с загрузкой
+# How NPCs pass through load doors
 
-Задача T43, 08.11.2026. Только исследование: `SkyrimSE.exe` 1.6.1170 (база Ghidra, `docs/GHIDRA.md`) и старые трассы `logs/run-0.8.24`…`run-0.8.32` (поле `stack` у `hook.TESObjectDOOR.Activate.enter`, 474 записи). Код и данные игры не менялись.
+Task T43, 08.11.2026. Research only: `SkyrimSE.exe` 1.6.1170 (Ghidra database, `docs/GHIDRA.md`) and old traces `logs/run-0.8.24`…`run-0.8.32` (the `stack` field of `hook.TESObjectDOOR.Activate.enter`, 474 records). No game code or data was changed.
 
-Пометки: **по коду** — дизассемблер или псевдокод, ссылки проверены `xrefs`/`asm`; **в игре** — трасса; **предположение** — вывод без прямой проверки. Смещения — из `asm`. Это поведение игры: контроль — прогон 0.8.27, 318–460 с, F8 выключен (23 прохода не из high и один из high, те же стеки и те же 0,5 с затемнения).
+Labels: **from code** — disassembly or pseudocode, references verified with `xrefs`/`asm`; **in game** — trace; **assumption** — conclusion without direct verification. Offsets are from `asm`. This is game behavior: control run 0.8.27, 318–460 s, F8 disabled (23 transitions not in high and one in high, the same stacks and the same 0.5 s fade).
 
-## 1. Коротко
+## 1. Summary
 
-- Проход NPC через загрузочную дверь — всегда `TESObjectDOOR::Activate` (`AE#17922`, слот `0x37` vtable `TESObjectDOOR`). Перенос делает он сам: `TESObjectREFR::SetPosition` (`AE#19790`) в точку маркера телепорта и `TESObjectREFR::MoveRefToNewSpace` (`AE#19799`). `MoveTo` и `PlayerCharacter::SetParentCell` не участвуют (**по коду**).
-- Ветвление одно — по уровню обработки (`Character::AE_37965` = `process+0x137`, 0 — high):
-  - **high**: анимация активации, затем затемнение 0,5 с, затем перенос и проявление;
-  - **не high** (middleHigh, middleLow, low): перенос сразу, без затемнения (**по коду**, **в игре**).
-- Всё это идёт **на рабочих потоках `BSJobs`**: 465 из 474 вызовов `Activate` со стеком — не главный поток. Исключение — 9 вызовов из `Actor::MoveToMiddleHigh` при опускании актёра (**в игре**).
-- Путь через дверь — один путь на обе ячейки. Узел у двери несёт сообщение `MovementMessageActivateDoor`, за ним идут узлы по ту сторону. После переноса путь продолжается (**по коду**).
+- An NPC passing through a load door always uses `TESObjectDOOR::Activate` (`AE#17922`, slot `0x37` of the `TESObjectDOOR` vtable). It performs the transfer itself: `TESObjectREFR::SetPosition` (`AE#19790`) to the teleport marker position and `TESObjectREFR::MoveRefToNewSpace` (`AE#19799`). `MoveTo` and `PlayerCharacter::SetParentCell` are not involved (**from code**).
+- There is one branch, based on processing level (`Character::AE_37965` = `process+0x137`, 0 — high):
+  - **high**: activation animation, then a 0.5 s fade, then transfer and fade-in;
+  - **not high** (middleHigh, middleLow, low): immediate transfer, without a fade (**from code**, **in game**).
+- All of this runs **on `BSJobs` worker threads**: 465 of the 474 `Activate` calls with a stack were not on the main thread. The exception is 9 calls from `Actor::MoveToMiddleHigh` while demoting the actor (**in game**).
+- The path through a door is a single path spanning both cells. The node at the door carries a `MovementMessageActivateDoor` message, followed by nodes on the other side. The path continues after the transfer (**from code**).
 
-## 2. Путь в другую ячейку
+## 2. Path into another cell
 
-### 2.1. Данные
+### 2.1. Data
 
-- **Дверь.** `ExtraTeleport` (`TESObjectREFR::GetTeleportData` `AE#20216`) хранит ссылку на связанную дверь (`+0`), точку маркера (`+4`, `AE#12972`) и поворот маркера (`+0x10`, `AE#12973`).
-  - Ячейка связанной двери берётся из `parentCell` двери (`AE#12974`).
-  - Мир берётся из ячейки (`AE#12976`): он есть только у экстерьера, у интерьера — `null`.
-  - Точка прибытия лежит на исходной двери, а не на связанной (**по коду**).
-- **Путь NPC строит `BSPathBuilder`, а не `TeleportDoorSearch`** (пачка T43-1, координатор сверил 09.11.2026). `BSPathBuilder::Build` (`AE#91713`) → `AE#91717`: навмеш-поиск, для каждой двери узел `AE#91717+0x148`/`+0x23E` → `AE#91750` → `AE#91674`. Узел хранит `PathingDoor` (FormID и кэш handle). Позиции считаются лениво: `AE#30820` — место двери на её стороне, `AE#30821` — место связанной двери. Маркер `ExtraTeleport` в узлах пути нет: отрезок за дверью начинается от связанной двери на её навмеше. Если связанная дверь не найдена по handle, путь помечается неудачным («Found an invalid Teleport Door location»). Поток `Build` не найден (**открыто**).
-- **Грубый маршрут по дверям** (`TeleportDoorSearch`; поиск — `AE#30932`, его зовут только `Pathing::AE_30656`–`AE_30659`): оценка длины и первой двери для игрока, карты, консоли, патруля и квестов, не путь NPC (**по коду**, `xrefs`). `TeleportDoorSearch::vf_0x1` (`AE#30933`) перебирает телепорт-двери мира (`AE#20535`) или ячейки (`AE#19071`). Для каждой он читает `ExtraTeleport`, ячейку и мир связанной двери и точку маркера, затем создаёт узлы `PathingDoor` (`AE#30809`; дверь хранится FormID, `+0x14` — кэш handle, `PathingDoor::AE_30828`) (**по коду**: список вызовов; что `AE#20535`/`AE#19071` — списки дверей, **предположение**).
-  - Внутри ячейки путь идёт по навмешу. `BSPathingLocation` — точка, навмеш, треугольник и `PathingCell` (ячейка или мир с координатами, `Pathing::GetPathingCell` `AE#30682`).
-- **Путь.** Объект 0xB0 с узлами по 0x38: `BSPathingLocation` 0x30 и указатель на сообщение `+0x30`. Счётчик узлов — `+0x80` (`AE#92556`, `AE#37438`).
-  - Узел у двери строят `AE#91673`/`AE#91696` с сообщением `MovementMessageActivateDoor` (конструктор `AE#91958`, внутри `PathingDoor`) (**по коду**).
-  - Тот же граф дверей ищут цели квестов, карта и игрок: `AE#30931` вызывают `PlayerCharacter::AE_40517`, `AE_23940`/`AE_23941`, `MapMenu` (**по коду**: дерево вызовов).
-- **Где считается путь** — `BSPathBuilder` (выше); на каком потоке — не найдено, цепочка вызовов рвётся на слоте vtable (**открыто**). Агент `MovementPathManagerAgentLoadedAreaMonitor` по имени следит за границей загруженной зоны (**предположение**).
+- **Door.** `ExtraTeleport` (`TESObjectREFR::GetTeleportData` `AE#20216`) stores a reference to the linked door (`+0`), the marker position (`+4`, `AE#12972`), and the marker rotation (`+0x10`, `AE#12973`).
+  - The linked door's cell is taken from the door's `parentCell` (`AE#12974`).
+  - The world is taken from the cell (`AE#12976`): only an exterior has one; for an interior it is `null`.
+  - The arrival point is on the source door, not the linked door (**from code**).
+- **An NPC's path is built by `BSPathBuilder`, not `TeleportDoorSearch`** (batch T43-1, verified by the coordinator on 09.11.2026). `BSPathBuilder::Build` (`AE#91713`) → `AE#91717`: navmesh search; for each door, node `AE#91717+0x148`/`+0x23E` → `AE#91750` → `AE#91674`. The node stores `PathingDoor` (FormID and cached handle). Positions are computed lazily: `AE#30820` — the door's location on its side, `AE#30821` — the linked door's location. There is no `ExtraTeleport` marker in the path nodes: the segment beyond the door starts at the linked door on its navmesh. If the linked door cannot be found by handle, the path is marked as failed ("Found an invalid Teleport Door location"). The thread running `Build` was not found (**open**).
+- **Coarse route through doors** (`TeleportDoorSearch`; search — `AE#30932`, called only by `Pathing::AE_30656`–`AE_30659`): estimates length and the first door for the player, map, console, patrols, and quests; it is not the NPC path (**from code**, `xrefs`). `TeleportDoorSearch::vf_0x1` (`AE#30933`) iterates over the world's (`AE#20535`) or cell's (`AE#19071`) teleport doors. For each one it reads `ExtraTeleport`, the linked door's cell and world, and the marker position, then creates `PathingDoor` nodes (`AE#30809`; the door is stored as a FormID, `+0x14` is the cached handle, `PathingDoor::AE_30828`) (**from code**: call list; that `AE#20535`/`AE#19071` are door lists is an **assumption**).
+  - Within a cell, the path follows the navmesh. `BSPathingLocation` is a position, navmesh, triangle, and `PathingCell` (cell or world with coordinates, `Pathing::GetPathingCell` `AE#30682`).
+- **Path.** A 0xB0 object with 0x38-byte nodes: `BSPathingLocation` 0x30 and a message pointer at `+0x30`. The node count is at `+0x80` (`AE#92556`, `AE#37438`).
+  - The node at the door is built by `AE#91673`/`AE#91696` with a `MovementMessageActivateDoor` message (constructor `AE#91958`, containing `PathingDoor`) (**from code**).
+  - Quest objectives, the map, and the player search the same door graph: `AE#30931` is called by `PlayerCharacter::AE_40517`, `AE_23940`/`AE_23941`, `MapMenu` (**from code**: call tree).
+- **Where the path is computed** — `BSPathBuilder` (above); the thread was not found because the call chain breaks at a vtable slot (**open**). By its name, the `MovementPathManagerAgentLoadedAreaMonitor` agent monitors the boundary of the loaded area (**assumption**).
 
-### 2.2. Кто ведёт актёра по пути
+### 2.2. What moves the actor along the path
 
-`MovementControllerNPC` (`Actor+0x150`) держит агентов пути и интерфейс `IMovementMessageInterface` (таблица `[1]`, `+0x120`). Слоты (**по коду**):
+`MovementControllerNPC` (`Actor+0x150`) holds path agents and the `IMovementMessageInterface` interface (table `[1]`, `+0x120`). Slots (**from code**):
 
-| Слот | Функция | Что делает |
+| Slot | Function | What it does |
 |---|---|---|
-| 1 | `AE#41761` | ставит варп (`BSPathingLocation` и поворот, запись 0x40) в очередь `+0x170` под мьютексом |
-| 2 | `AE#41762` | ставит сообщение в очередь `+0x158` |
-| 3 | `AE#41763` | разбирает сообщение сразу: `AE#37892` и обработчик `+0xA0` |
+| 1 | `AE#41761` | queues a warp (`BSPathingLocation` and rotation, 0x40-byte record) at `+0x170` under a mutex |
+| 2 | `AE#41762` | queues a message at `+0x158` |
+| 3 | `AE#41763` | processes a message immediately: `AE#37892` and handler `+0xA0` |
 
-- **Не high** — `MovementAgentPathFollowerVirtual::AE_92556` двигает актёра по пути на `скорость × dt`. За каждый пройденный узел он ставит варп в узел (слот 1). Если у узла есть сообщение (`AE#91683`), ставит и его (слот 2) (**по коду**).
-- **Разбор очереди:** `Job_Low_messages` (`AE#39071`, задание `BSJobs`) → `AE#41297` берёт актёров из очереди `AE#404447` → `MovementControllerNPC::AE_41717` (**по коду**, **в игре**: 420 стеков).
-  - Варпы и сообщения разбираются в порядке пути. Варп превращается в `MovementMessageWarpToLocation` (`AE#91979`).
-  - Разбор останавливается, если `AE#37503` захотел другой уровень или актёр выключен или удалён (`flags & 0x820`) (**по коду**, `AE#37503` на `AE#41717+0x22D`, `+0x2C8`).
-- **Диспетчер** `AE#37892` ищет обработчик по CRC типа сообщения в таблице `AE#403901+0x3B8` и вызывает его. Таблицу строит `AE#38103` (**по коду**):
+- **Not high** — `MovementAgentPathFollowerVirtual::AE_92556` moves the actor along the path at `speed × dt`. For each node passed, it queues a warp to the node (slot 1). If the node has a message (`AE#91683`), it queues that as well (slot 2) (**from code**).
+- **Queue processing:** `Job_Low_messages` (`AE#39071`, a `BSJobs` job) → `AE#41297` takes actors from queue `AE#404447` → `MovementControllerNPC::AE_41717` (**from code**, **in game**: 420 stacks).
+  - Warps and messages are processed in path order. A warp becomes `MovementMessageWarpToLocation` (`AE#91979`).
+  - Processing stops if `AE#37503` requests a different level or the actor is disabled or deleted (`flags & 0x820`) (**from code**, `AE#37503` at `AE#41717+0x22D`, `+0x2C8`).
+- **Dispatcher** `AE#37892` finds a handler by the message type CRC in table `AE#403901+0x3B8` and calls it. The table is built by `AE#38103` (**from code**):
 
-| Сообщение | Обработчик | Суть |
+| Message | Handler | Purpose |
 |---|---|---|
-| `WarpToLocation` | `AE#37877` | `TESObjectREFR::AE_37313` в точку узла; ячейка и мир — из `PathingCell` узла (`AE#30784`, `AE#30781`). Вторым вызовом переносит и всадника |
-| `ActivateDoor` | `AE#37878` | проход двери, раздел 3 |
-| `ApproachingDoor` | `AE#37889` | high: если `GetFadeState` = 0, затемнение `kOut` без цели (`AE#39454(…,0,0)`) и `approachingAutoTeleportDoor` = 1 |
-| `WarpToMultiple` | `AE#37890` | серия `AE#37877` |
-| ещё 8 (`Blocked`, `NewPath`, `PathComplete`, `PathFailed`, `Jump`…) | адреса `0x1406958E0`…`0x1406966C0` | к двери не относятся |
+| `WarpToLocation` | `AE#37877` | `TESObjectREFR::AE_37313` to the node position; cell and world come from the node's `PathingCell` (`AE#30784`, `AE#30781`). A second call also transfers the rider |
+| `ActivateDoor` | `AE#37878` | door transition, section 3 |
+| `ApproachingDoor` | `AE#37889` | high: if `GetFadeState` = 0, `kOut` fade with no target (`AE#39454(…,0,0)`) and `approachingAutoTeleportDoor` = 1 |
+| `WarpToMultiple` | `AE#37890` | series of `AE#37877` |
+| 8 more (`Blocked`, `NewPath`, `PathComplete`, `PathFailed`, `Jump`…) | addresses `0x1406958E0`…`0x1406966C0` | unrelated to the door |
 
-- **High.** Путь ведёт стандартный агент. Как `ActivateDoor` от него доходит до `AE#37878`, слотом 2 или 3, не прочитано (**открыто**, пачка 2).
+- **High.** The standard agent follows the path. How `ActivateDoor` gets from it to `AE#37878`, via slot 2 or 3, has not been traced (**open**, batch 2).
 
-### 2.3. Путь на той стороне
+### 2.3. Path on the other side
 
-- Узлы за дверью лежат в той же цепочке. У них `PathingCell` дальней ячейки.
-  - Не high: следующий варп после двери сам переносит актёра в ячейку узла: `AE#37313` → `MoveRefToNewSpace` (**по коду**).
-  - High: `Character::AE_37438` (`AE#17922+0x5AD`) берёт текущий путь (`IMovementQueryPathingState`) и, если у актёра есть спутники (`AE#37435`, `AE#37437`: сумма радиусов), сдвигает точку прибытия вдоль пути, чтобы они встали за ним (**по коду**). Без спутников точка — маркер.
-  - Что делает стандартный агент после скачка позиции (проекция на путь или новый путь), не прочитано (**предположение**: продолжает с ближайшей точки, пачка 2).
+- Nodes beyond the door are in the same chain. Their `PathingCell` belongs to the destination cell.
+  - Not high: the next warp after the door itself transfers the actor to the node's cell: `AE#37313` → `MoveRefToNewSpace` (**from code**).
+  - High: `Character::AE_37438` (`AE#17922+0x5AD`) gets the current path (`IMovementQueryPathingState`) and, if the actor has followers (`AE#37435`, `AE#37437`: sum of radii), shifts the arrival point along the path so they stand behind it (**from code**). Without followers, the point is the marker.
+  - What the standard agent does after the position jump (projection onto the path or a new path) has not been traced (**assumption**: continues from the nearest point, batch 2).
 
-## 3. Проход в high
+## 3. Transition in high
 
-Цепочка (**по коду**, **в игре**: 0.8.24, 0.8.27, 0.8.29, 0.8.31, 0.8.32):
+Chain (**from code**, **in game**: 0.8.24, 0.8.27, 0.8.29, 0.8.31, 0.8.32):
 
-1. Узел двери → `AE#37892` → `AE#37878`. Условие ветки high (`+0x15B`: `process+0x137` = 0, игрок не спит): у двери есть телепорт, дверь не автоматическая (`TESObjectDOOR::AE_17918`: `+0xB0` бит 1), а `AE#39255(process, actor, kActionActivate = 55, база, дверь)` (`+0x1AA`) запустил действие анимации.
-   - Тогда дверь запоминается в `HighProcessData::lastExtDoorActivated` (`+0xD8`, `AE#39407`, `+0x1CD`), `doorActivated` (`+0x470`) = 0. Иначе — сразу `ActivateRef` (`+0x1ED`), как вне high.
-2. Дверь активирует один из двух путей:
-   - `ActionActivateDoneHandler::Handle` (`AE#42866+0x89`, событие графа анимации) — 8 раз в трассах;
-   - если действие не запустилось (`high+0x455`), `AE#39637+0x1310`/`+0x2039` → `AE#39408` (пакет, `UpdateActor` `AE#41448` → `AE#41369` → `AE#37347`) — 15 раз.
-3. `TESObjectREFR::ActivateRef` (`AE#19796`) берёт общий рекурсивный спин-замок `AE#401080`, затем шлёт `TESActivateEvent` (`+0x434`, `ScriptEventSourceHolder+0x58`, Papyrus `OnActivate`). Потом вызывает `Activate` через vtable базы.
-4. `AE#17922` для high при `fadeState` 0: звук открытия (`+0x4B4`), затем `AE#39454(process, actor, door, 1)` (`+0x4EB`): `fadeState` = `kTeleportOut` (4), `fadeTrigger` = дверь, `fadeAlpha` = 1. Возврат 0: активация «не удалась», `ActivateRef` не зовёт `AE#40512` и `AE#20037`.
-5. Каждый кадр `Actor::UpdateNonRenderSafe` (`AE#37360+0x98`, задание `ProcessActorAnimSG` `AE#41446` → `AE#41381`) → `AE#39457`: альфа убывает на `dt / AE#370515`.
-   - `AE#370515` — по порядку строк настроек `fActorTeleportFadeSeconds` (**предположение**). Затемнение длится 0,49–0,50 с в 22 из 22 пар (**в игре**).
-6. При альфе ≤ 0 `AE#39457+0x1FB` снова зовёт `ActivateRef(fadeTrigger)`. Теперь `fadeState` = 4: `ActivateRef+0x197` ставит флаг, и **`TESActivateEvent` второй раз не шлётся** (обход на `+0x37F`) (**по коду**).
-7. `AE#17922` уходит в ветку переноса (условие `+0x3CE`…`+0x3EF`: уровень ≠ high или `fadeState` = 4):
-   - `AE#37438` (`+0x5AD`), `SetPosition` в маркер (`+0x5BA`);
-   - если ячейка назначения загружена (`TES::AE_13308(cell,0)`, `+0x5D1`): поворот маркера (`+0x5EA`, `+0x5F5`), иначе `ExtraBadPosition` (`AE#11817`, `+0x600`);
-   - снять бит `0x2000` у `boolBits`; `StopMovement`, если пакет — сопровождение игрока или `AE#39138` (`AE#37716`, `+0x620`);
-   - `MoveRefToNewSpace(actor, cell, world)` (`+0x63A`). Возврат 1: `ActivateRef` зовёт `Character::AE_37864` (`+0x6EA`, спешивание), `AE#40512(игрок, актёр)` (`+0x702`) (поиск пути по графу дверей `AE#40517` → `AE#30658`; **предположение**: обновление цели квеста) и `Actor::DispelAlteredStates` (`+0x74A`).
-8. `AE#39457+0x20C`: если `AE#37503(actor)` ≠ 0, `fadeState` = 0. Иначе `kTeleportIn` (3) и проявление на той стороне.
+1. Door node → `AE#37892` → `AE#37878`. High branch condition (`+0x15B`: `process+0x137` = 0, player not sleeping): the door has a teleport, the door is not automatic (`TESObjectDOOR::AE_17918`: `+0xB0` bit 1), and `AE#39255(process, actor, kActionActivate = 55, base, door)` (`+0x1AA`) started the animation action.
+   - The door is then stored in `HighProcessData::lastExtDoorActivated` (`+0xD8`, `AE#39407`, `+0x1CD`), `doorActivated` (`+0x470`) = 0. Otherwise, `ActivateRef` is called immediately (`+0x1ED`), as outside high.
+2. The door is activated by one of two paths:
+   - `ActionActivateDoneHandler::Handle` (`AE#42866+0x89`, animation graph event) — 8 times in the traces;
+   - if the action did not start (`high+0x455`), `AE#39637+0x1310`/`+0x2039` → `AE#39408` (package, `UpdateActor` `AE#41448` → `AE#41369` → `AE#37347`) — 15 times.
+3. `TESObjectREFR::ActivateRef` (`AE#19796`) acquires the common recursive spin lock `AE#401080`, then sends `TESActivateEvent` (`+0x434`, `ScriptEventSourceHolder+0x58`, Papyrus `OnActivate`). It then calls `Activate` through the base object's vtable.
+4. `AE#17922` for high with `fadeState` 0: opening sound (`+0x4B4`), then `AE#39454(process, actor, door, 1)` (`+0x4EB`): `fadeState` = `kTeleportOut` (4), `fadeTrigger` = door, `fadeAlpha` = 1. Returns 0: activation "failed", so `ActivateRef` does not call `AE#40512` or `AE#20037`.
+5. Every frame `Actor::UpdateNonRenderSafe` (`AE#37360+0x98`, job `ProcessActorAnimSG` `AE#41446` → `AE#41381`) → `AE#39457`: alpha decreases by `dt / AE#370515`.
+   - `AE#370515` is `fActorTeleportFadeSeconds`, based on the order of setting strings (**assumption**). The fade lasts 0.49–0.50 s in 22 of 22 pairs (**in game**).
+6. At alpha ≤ 0, `AE#39457+0x1FB` calls `ActivateRef(fadeTrigger)` again. Now `fadeState` = 4: `ActivateRef+0x197` sets a flag, and **`TESActivateEvent` is not sent a second time** (bypass at `+0x37F`) (**from code**).
+7. `AE#17922` takes the transfer branch (condition `+0x3CE`…`+0x3EF`: level ≠ high or `fadeState` = 4):
+   - `AE#37438` (`+0x5AD`), `SetPosition` to the marker (`+0x5BA`);
+   - if the destination cell is loaded (`TES::AE_13308(cell,0)`, `+0x5D1`): marker rotation (`+0x5EA`, `+0x5F5`), otherwise `ExtraBadPosition` (`AE#11817`, `+0x600`);
+   - clear bit `0x2000` in `boolBits`; `StopMovement` if the package is player follow or `AE#39138` (`AE#37716`, `+0x620`);
+   - `MoveRefToNewSpace(actor, cell, world)` (`+0x63A`). Returns 1: `ActivateRef` calls `Character::AE_37864` (`+0x6EA`, dismount), `AE#40512(player, actor)` (`+0x702`) (door graph path search `AE#40517` → `AE#30658`; **assumption**: quest objective update), and `Actor::DispelAlteredStates` (`+0x74A`).
+8. `AE#39457+0x20C`: if `AE#37503(actor)` ≠ 0, `fadeState` = 0. Otherwise `kTeleportIn` (3) and fade-in on the other side.
 
-Задержка от `ActivateDone` или пакета до переноса — 0,49–0,50 с (**в игре**). Экрана и затемнения у игрока нет: затемняется только альфа актёра.
+The delay from `ActivateDone` or the package to the transfer is 0.49–0.50 s (**in game**). There is no player screen or fade: only the actor's alpha fades.
 
-**Опускание с дверью в руке.** `Actor::MoveToMiddleHigh` (`AE#37624+0x135`), пока уровень ещё high, зовёт `AE#39408` — на главном потоке, стек `AE#41468` → `AE#41292` (отключение ячейки). `Activate` начинает затемнение и возвращает 0, а `HighProcessData` затем уничтожается. В 9 из 9 случаев (0.8.28–0.8.30) переноса после этого в трассе нет: проход, видимо, теряется. Контроля нет (**открыто**).
+**Demotion with a door pending.** `Actor::MoveToMiddleHigh` (`AE#37624+0x135`), while the level is still high, calls `AE#39408` — on the main thread, stack `AE#41468` → `AE#41292` (cell detach). `Activate` starts the fade and returns 0, then `HighProcessData` is destroyed. In 9 of 9 cases (0.8.28–0.8.30), there is no subsequent transfer in the trace: the transition is apparently lost. There is no control run (**open**).
 
-## 4. Проход не в high
+## 4. Transition outside high
 
-- **middleHigh, middleLow, low, незагруженная ячейка:** виртуальный путь → варп в узел двери → `ActivateDoor` → `AE#37878`. Ветка high не проходит (`+0x15B`): сразу `ActivateRef` (`+0x1ED`, возврат `+0x1F2`) → `AE#17922` → шаг 7 без затемнения. Если `ActivateRef` не удалась — `Actor+0x204 |= 0x8000000` (**по коду**).
-  - **В игре:** 420 стеков `AE#19796+0x6C0 < AE#37878+0x1F2 < AE#37892+0xA3 < AE#41717+0x215 < AE#41297+0x7B`, все не на главном потоке.
-  - Двери по всему Скайриму (Винтерхолд, храм Кинарет); расстояние актёра до двери 37–799 ед., медиана 85.
-- **Ячейка назначения не загружена** (`MoveRefToNewSpace`, **по коду**):
-  - 3D снимается (`AE#12358`, `+0x1D8`) или ставится в очередь на снятие (`AE#36943`), если `TaskQueueInterface::ShouldUseTaskQueue`;
-  - у временного (не persistent) актёра ячейка назначения запоминается, ссылка сохраняется (`AE#35570`) и уходит в `GarbageCollector` (`+0x82F`);
-  - иначе актёр вносится в ячейку (`AE#19411`) и в очередь пересчёта уровня `AE#41343` (`ProcessLists+0x158`).
-- **Варп в чужую ячейку** без двери тоже переносит: `AE#37877` → `AE#37313` → `MoveRefToNewSpace`. Так NPC интерьера «шагают» по 1–2 тыс. единиц на выходе игрока (T11, FINDINGS «Прогон 0.8.25»).
+- **middleHigh, middleLow, low, unloaded cell:** virtual path → warp to the door node → `ActivateDoor` → `AE#37878`. The high branch is not taken (`+0x15B`): immediately `ActivateRef` (`+0x1ED`, return `+0x1F2`) → `AE#17922` → step 7 without a fade. If `ActivateRef` fails — `Actor+0x204 |= 0x8000000` (**from code**).
+  - **In game:** 420 stacks `AE#19796+0x6C0 < AE#37878+0x1F2 < AE#37892+0xA3 < AE#41717+0x215 < AE#41297+0x7B`, all off the main thread.
+  - Doors throughout Skyrim (Winterhold, Temple of Kynareth); actor distance to door 37–799 units, median 85.
+- **Destination cell not loaded** (`MoveRefToNewSpace`, **from code**):
+  - 3D is detached (`AE#12358`, `+0x1D8`) or queued for detachment (`AE#36943`) if `TaskQueueInterface::ShouldUseTaskQueue`;
+  - for a temporary (non-persistent) actor, the destination cell is stored, the reference is saved (`AE#35570`), and it is sent to `GarbageCollector` (`+0x82F`);
+  - otherwise the actor is added to the cell (`AE#19411`) and to the level recalculation queue `AE#41343` (`ProcessLists+0x158`).
+- **Warp into another cell** without a door also transfers: `AE#37877` → `AE#37313` → `MoveRefToNewSpace`. This is how interior NPCs "walk" 1–2 thousand units when the player exits (T11, FINDINGS "Run 0.8.25").
 
-## 5. Что делает перенос (`MoveRefToNewSpace`, `AE#19799`)
+## 5. What the transfer does (`MoveRefToNewSpace`, `AE#19799`)
 
-По коду (смещения — места вызова):
-- `cell` берётся только интерьерный (`cellFlags & 1`); для экстерьера ячейка выводится из мира и позиции (`AE#13641`) или берётся ячейка неба (`AE#20543`).
-- Если мир сменился: актёр убирается из списка persistent старого мира (`AE#20527`) и вносится в новый (`AE#20526`); `AE#11992` запоминает исходную ячейку.
-- `TESObjectCELL::AddReference` (`AE#19411`, `+0x2C4` или `+0x42D`): убрать из старой (`AE#19032`), внести, **`Actor::SetParentCell` (`AE#37304`, слот `0x98`)**. Если ячейка подключена — 3D в граф, `MoveToHigh` (слот `0xF1`) или `MoveToMiddleHigh` (`0xF4`) у актёра без 3D.
-- Havok: `MoveHavok`, `InitHavok` или `DetachHavok`; при `ShouldUseTaskQueue` — через очередь задач (`AE#36932`, `AE#36921`, `AE#36933`). Поэтому функция безопасна на рабочем потоке.
-- `AddChange(8)` — флаг переноса для сохранения.
-- **События** — только для актёра:
-  - `TESActorLocationChangeEvent` (`AE#20039`, `+0x8A2`) — если `GetCurrentLocation` до и после различаются. Это Papyrus `OnLocationChange`: по T15 — 38 привязок `NPC_`, 5 `ACHR`, часть из 101 псевдонима квестов;
-  - `TESMoveAttachDetachEvent` (`AE#20043`, `+0x986`) — если подключённость старой и новой ячейки (`cellState` = 7) различается. Это `OnAttachedToCell` / `OnDetachedFromCell`.
-- **Чего нет у NPC:** `CLOC` (`AE#32288` вызывает только `AE#40466+0x105`), `BGSActorCellEvent` (`AE#41034` — только `AE#40466+0x75`/`+0xC1`), `OnCellAttach`/`OnCellDetach` (это события ячейки). `Actor::SetParentCell` событий не шлёт (**по коду**, `xrefs`).
-- `AE#37313` вокруг `MoveRefToNewSpace` добавляет поворот, `SetPosition` контроллера персонажа и курс (`+0x24D`…`+0x261`, или через очередь `AE#36949`, `+0x27E`), а при флаге — `StopMovement`. Если ячейка не загружена, ставит `ExtraBadPosition` (`+0x159`).
-  - Если мир не сменился, а локация сменилась, он шлёт `TESActorLocationChangeEvent` ещё раз (`+0x1D7`). Двойной `OnLocationChange` **подтверждён** (`+0x16C…+0x1D7`, сверено 09.11.2026): условие — мир до переноса ненулевой и равен миру после, локация сменилась. То есть перенос внутри одного мира экстерьера; экстерьер ↔ интерьер и разные миры — один раз (`results/T42-T44-batches.md`, «T43, пачка 3»).
-  - `AE#37313` — общий перенос актёра: его зовут `MoveTo_Impl+0x1C6` (Papyrus `MoveTo`), песочница, варпы пути.
+From code (offsets are call sites):
+- `cell` is taken only for an interior (`cellFlags & 1`); for an exterior, the cell is derived from the world and position (`AE#13641`) or the sky cell is used (`AE#20543`).
+- If the world changed: the actor is removed from the old world's persistent list (`AE#20527`) and added to the new one (`AE#20526`); `AE#11992` stores the source cell.
+- `TESObjectCELL::AddReference` (`AE#19411`, `+0x2C4` or `+0x42D`): remove from the old cell (`AE#19032`), add to the new one, **`Actor::SetParentCell` (`AE#37304`, slot `0x98`)**. If the cell is attached — 3D into the graph, `MoveToHigh` (slot `0xF1`) or `MoveToMiddleHigh` (`0xF4`) for an actor without 3D.
+- Havok: `MoveHavok`, `InitHavok`, or `DetachHavok`; with `ShouldUseTaskQueue` — through the task queue (`AE#36932`, `AE#36921`, `AE#36933`). Therefore the function is safe on a worker thread.
+- `AddChange(8)` — transfer flag for saving.
+- **Events** — only for an actor:
+  - `TESActorLocationChangeEvent` (`AE#20039`, `+0x8A2`) — if `GetCurrentLocation` differs before and after. This is Papyrus `OnLocationChange`: according to T15 — 38 `NPC_` bindings, 5 `ACHR`, some of 101 quest aliases;
+  - `TESMoveAttachDetachEvent` (`AE#20043`, `+0x986`) — if attachment of the old and new cells (`cellState` = 7) differs. This is `OnAttachedToCell` / `OnDetachedFromCell`.
+- **What NPCs do not have:** `CLOC` (`AE#32288` is called only by `AE#40466+0x105`), `BGSActorCellEvent` (`AE#41034` — only `AE#40466+0x75`/`+0xC1`), `OnCellAttach`/`OnCellDetach` (these are cell events). `Actor::SetParentCell` sends no events (**from code**, `xrefs`).
+- Around `MoveRefToNewSpace`, `AE#37313` adds rotation, the character controller's `SetPosition`, and heading (`+0x24D`…`+0x261`, or through queue `AE#36949`, `+0x27E`), and `StopMovement` when flagged. If the cell is not loaded, it sets `ExtraBadPosition` (`+0x159`).
+  - If the world did not change but the location did, it sends `TESActorLocationChangeEvent` again (`+0x1D7`). Duplicate `OnLocationChange` is **confirmed** (`+0x16C…+0x1D7`, verified 09.11.2026): condition — world before transfer is non-null and equal to world after, location changed. That is, a transfer within one exterior world; exterior ↔ interior and different worlds — once (`results/T42-T44-batches.md`, "T43, batch 3").
+  - `AE#37313` is the general actor transfer: it is called by `MoveTo_Impl+0x1C6` (Papyrus `MoveTo`), sandboxing, and path warps.
 
-## 6. Что нужно бесшовному проходу
+## 6. What a seamless transition needs
 
-Цель: NPC пересёк плоскость двери-портала — он в другой ячейке, без `Activate`, затемнения и телепорта к маркеру. Стороны равноправны: интерьер ↔ улица, интерьер ↔ интерьер, улица ↔ улица (другой мир).
+Goal: an NPC crosses the portal door plane — it is in another cell, without `Activate`, fading, or teleporting to the marker. Both sides are equivalent: interior ↔ street, interior ↔ interior, street ↔ street (another world).
 
-**Минимальный набор** (по образцу ветки не high в `AE#17922`, **по коду**):
-1. Позиция и поворот — преобразование портала (кадр ближней двери → кадр дальней), а не маркер `ExtraTeleport`. Маркер годится как опора кадра дальней стороны: игра ставит туда актёра при обычном проходе.
-2. **Путь ванильной двери** (уточнено пачкой 3, 09.11.2026): `SetPosition` (`AE#19790`) и поворот → `MoveRefToNewSpace` (`AE#19799`), как `AE#17922+0x5BA…+0x63A`, без `StopMovement`. Ванильная дверь `AE#37313` не зовёт; `MoveRefToNewSpace` сам делает всё состояние переноса (события, стартовая ячейка, постоянные ссылки, Havok, подключение 3D), эффектов ровно столько же, сколько у ванили.
-   - `AE#37313(actor, pos, rotZ, rotX, cell, world, stop=0)` (путь Papyrus `MoveTo`) добавляет `StopInteractingQuick`, курс, контроллер и **второй `OnLocationChange` при переносе внутри одного мира** — для ворот в том же мире не годится.
-   - `cell` — дальняя ячейка, если это интерьер, иначе `null`; `world` — мир дальней ячейки (у интерьера `null`).
-   - После переноса по желанию `AE#40512(player, npc)` — пересчёт маркеров квестов, как после `MoveTo`.
-3. Только на главном потоке, в тике `Update` (`CLAUDE.md`, раздел 7). Игра делает то же на рабочих потоках, поэтому перехваты на них только записывают запрос.
+**Minimum set** (modeled on the non-high branch in `AE#17922`, **from code**):
+1. Position and rotation — portal transformation (near door frame → far door frame), not the `ExtraTeleport` marker. The marker is suitable as an anchor for the far-side frame: the game places the actor there during a normal transition.
+2. **Vanilla door path** (clarified by batch 3, 09.11.2026): `SetPosition` (`AE#19790`) and rotation → `MoveRefToNewSpace` (`AE#19799`), as in `AE#17922+0x5BA…+0x63A`, without `StopMovement`. A vanilla door does not call `AE#37313`; `MoveRefToNewSpace` itself handles all transfer state (events, starting cell, persistent references, Havok, 3D attachment), with exactly the same effects as vanilla.
+   - `AE#37313(actor, pos, rotZ, rotX, cell, world, stop=0)` (the Papyrus `MoveTo` path) adds `StopInteractingQuick`, heading, controller, and **a second `OnLocationChange` when transferring within one world** — unsuitable for gates in the same world.
+   - `cell` — the far cell if it is an interior, otherwise `null`; `world` — the far cell's world (`null` for an interior).
+   - After the transfer, optionally `AE#40512(player, npc)` — recalculate quest markers, as after `MoveTo`.
+3. Only on the main thread, in the `Update` tick (`CLAUDE.md`, section 7). The game does the same on worker threads, so hooks on those threads only record the request.
 
-**Что не должно сработать** (точки — раздел 7):
-- анимация активации (`AE#39255` из `AE#37878+0x1AA`) и отложенная дверь `+0xD8`;
-- затемнение: `AE#39454` (`AE#17922+0x4EB`), `kOut` от `ApproachingDoor` (`AE#37889`), проявление `kTeleportIn` (`AE#39457`);
-- перенос к маркеру связанной двери (`AE#17922+0x5AD…+0x63A`), `ExtraBadPosition` (`+0x600`), если дальняя ячейка удерживается;
+**What must not trigger** (points — section 7):
+- activation animation (`AE#39255` from `AE#37878+0x1AA`) and deferred door `+0xD8`;
+- fade: `AE#39454` (`AE#17922+0x4EB`), `kOut` from `ApproachingDoor` (`AE#37889`), fade-in `kTeleportIn` (`AE#39457`);
+- transfer to the linked door's marker (`AE#17922+0x5AD…+0x63A`), `ExtraBadPosition` (`+0x600`) if the far cell is held;
 - `StopMovement` (`AE#37878+0x225`, `AE#17922+0x62C`).
 
-**Продолжение пути.**
-- Дальние узлы уже в пути (раздел 2.3).
-- Не high: следующий варп из очереди продолжит путь сам.
-- High: агент должен принять скачок позиции. Игра так и делает после маркера (**предположение**, проверить пачкой 2 или прогоном).
-- Расстояние активации — 54–291 ед. у high и до 799 у не high (**в игре**). Значит, `ActivateDoor` приходит раньше плоскости. Нужно либо дать актёру дойти до плоскости (подмена узла двери или прямое управление `IMovementDirectControl`, таблица `[0x138]`), либо переносить в момент сообщения со сдвигом на остаток пути. Второе даёт скачок, видимый через портал (**открыто**).
+**Continuing the path.**
+- Far-side nodes are already in the path (section 2.3).
+- Not high: the next warp from the queue will continue the path itself.
+- High: the agent must accept the position jump. This is what the game does after the marker (**assumption**, verify with batch 2 or a run).
+- Activation distance — 54–291 units in high and up to 799 outside high (**in game**). Thus `ActivateDoor` arrives before the plane. Either let the actor reach the plane (replace the door node or directly control `IMovementDirectControl`, table `[0x138]`), or transfer when the message arrives with an offset for the remaining path. The latter produces a jump visible through the portal (**open**).
 
 **`ActorHold` (T11).**
-- Detour `AE#37503` держит high только актёров удерживаемых ячеек, которые уже high. Актёр с улицы, вошедший в удерживаемый интерьер, становится high по правилам игры. Если он был middleHigh, его поднимает `MoveToHigh` с перестановкой `AE#37618`; `write_call` `AE#37621+0x348` её пропустит только для бывших high (**по коду**, T11).
-- `AE#41717` бросает разбор, если желаемый уровень сменился. После переноса в другую ячейку уровень может смениться, и остаток очереди будет потерян (**предположение**).
-- Если удерживаемый интерьер не подключён (`cellState` < 6), `MoveRefToNewSpace` не включит Havok и поставит актёра в очередь пересчёта уровня (`AE#41343`). Нужно подключённое удержание (T20).
+- Detour `AE#37503` keeps high only for actors in held cells that are already high. An actor from the street entering a held interior becomes high according to game rules. If it was middleHigh, `MoveToHigh` promotes it by moving `AE#37618`; `write_call` `AE#37621+0x348` will skip that only for actors that were previously high (**from code**, T11).
+- `AE#41717` aborts processing if the desired level changed. After transfer to another cell, the level may change and the rest of the queue will be lost (**assumption**).
+- If the held interior is not attached (`cellState` < 6), `MoveRefToNewSpace` will not enable Havok and will queue the actor for level recalculation (`AE#41343`). Attached holding is needed (T20).
 
-**События — ровно один раз** (**по коду**, раздел 5):
-- `OnLocationChange` NPC — из `MoveRefToNewSpace`, если локация сменилась. Не гасить (политика T30).
-- `OnAttachedToCell`/`OnDetachedFromCell` — только при разной подключённости. С подключённым удержанием их не будет, и это верно: актёр остался в загруженной зоне. В ванили при выходе NPC из загруженной зоны оно было бы.
-- `OnActivate` двери — в ванили ровно один на проход (шаг 3), даже в high. Бесшовный проход без `ActivateRef` его не даст. Слать ли его самим (`AE#20038` с `ScriptEventSourceHolder+0x58`, как `AE#19796+0x434`) — решение координатора (**открыто**). Скрипты дверей обычно проверяют игрока (**предположение**).
-- Обновление цели квеста `AE#40512` (если это оно) в ванили идёт после успешной активации. Без него маркер компаса за NPC может отставать (**предположение**).
-- `CLOC` и `BGSActorCellEvent` для NPC не рождаются ни в ванили, ни у нас.
+**Events — exactly once** (**from code**, section 5):
+- NPC `OnLocationChange` — from `MoveRefToNewSpace` if the location changed. Do not suppress it (T30 policy).
+- `OnAttachedToCell`/`OnDetachedFromCell` — only when attachment differs. With attached holding they will not fire, which is correct: the actor remained in the loaded area. In vanilla, an NPC leaving the loaded area would produce it.
+- Door `OnActivate` — exactly one per transition in vanilla (step 3), even in high. A seamless transition without `ActivateRef` will not produce it. Whether to send it ourselves (`AE#20038` with `ScriptEventSourceHolder+0x58`, as in `AE#19796+0x434`) is the coordinator's decision (**open**). Door scripts usually check the player (**assumption**).
+- Quest objective update `AE#40512` (if that is what it is) occurs in vanilla after successful activation. Without it, the compass marker behind an NPC may lag (**assumption**).
+- `CLOC` and `BGSActorCellEvent` are not generated for NPCs in vanilla or by us.
 
-## 7. Точки перехвата (только движок, 5.14 п. 7)
+## 7. Hook points (engine only, 5.14 item 7)
 
-| # | Где | Как | Поток | Что меняет |
+| # | Where | How | Thread | What it changes |
 |---|---|---|---|---|
-| П1 | `AE#37878` (обработчик `ActivateDoor`, указатель в обёртке `AE#38103`, прямых вызовов нет) | detour на входе | рабочие `BSJobs` (`Job_Low_messages`, задания актёров) | для двери-портала: не звать `AE#39255`/`ActivateRef`, записать запрос «актёр X идёт в портал Y» и вернуть 1 (разбор идёт дальше). Ловит оба уровня |
-| П2 | `TESObjectDOOR::Activate`, слот `0x37` (`AE#17922`) | vfunc, у нас уже стоит для трассы | любой | NPC и дверь-портал: вернуть 0 без затемнения и переноса. Ловит и активации пакетов и скриптов (`AE#39408`, `AE#42866`, Papyrus `Activate`) |
-| П3 | `AE#17922+0x4EB` (`AE#39454`) и `+0x63A` (`MoveRefToNewSpace`) | `write_call` | любой | тоньше П2: убрать только затемнение или только перенос |
-| П4 | `AE#37889` (`ApproachingDoor`) | detour | рабочие | не затемнять перед порталом-автодверью |
-| П5 | `MoveRefToNewSpace` `AE#19799` | detour, только наблюдение | рабочие и главный | все смены ячейки NPC: реестр «кто вошёл в удерживаемую ячейку», зонд T40 |
-| П6 | слоты 2, 3 `IMovementMessageInterface` (`AE#41762`, `AE#41763`) | vtable `MovementControllerNPC[1]` (у `ActorHold` там уже слот 1) | рабочие | снять `ActivateDoor` двери-портала до разбора |
-| П7 | свой детектор пересечения плоскости | без перехвата, тик `Update` | главный | любой актёр у двери-портала (путь, бой, толчок) → `AE#37313`. Это и есть проход объектов из 5.14 п. 2 |
+| P1 | `AE#37878` (`ActivateDoor` handler, pointer in wrapper `AE#38103`, no direct calls) | detour at entry | `BSJobs` workers (`Job_Low_messages`, actor jobs) | for a portal door: do not call `AE#39255`/`ActivateRef`, record request "actor X enters portal Y" and return 1 (processing continues). Catches both levels |
+| P2 | `TESObjectDOOR::Activate`, slot `0x37` (`AE#17922`) | vfunc, already installed for tracing | any | NPC and portal door: return 0 without fading or transfer. Also catches package and script activations (`AE#39408`, `AE#42866`, Papyrus `Activate`) |
+| P3 | `AE#17922+0x4EB` (`AE#39454`) and `+0x63A` (`MoveRefToNewSpace`) | `write_call` | any | finer-grained than P2: remove only the fade or only the transfer |
+| P4 | `AE#37889` (`ApproachingDoor`) | detour | workers | do not fade before an automatic portal door |
+| P5 | `MoveRefToNewSpace` `AE#19799` | detour, observation only | workers and main | all NPC cell changes: registry of "who entered the held cell", T40 probe |
+| P6 | slots 2, 3 of `IMovementMessageInterface` (`AE#41762`, `AE#41763`) | vtable `MovementControllerNPC[1]` (`ActorHold` already has slot 1 there) | workers | remove a portal door's `ActivateDoor` before processing |
+| P7 | custom plane-crossing detector | no hook, `Update` tick | main | any actor at a portal door (path, combat, push) → `AE#37313`. This is object passage from 5.14 item 2 |
 
-Порядок для сборки: П5 и счётчики (T40) → П1 + П7 → П2 как страховка для пакетов и скриптов.
+Build order: P5 and counters (T40) → P1 + P7 → P2 as a safeguard for packages and scripts.
 
-## 8. Открытые вопросы
+## 8. Open questions
 
-1. На каком потоке работает `BSPathBuilder::Build` (`AE#91713`): цепочка вызовов рвётся на слоте vtable.
-2. Как стандартный агент high шлёт `ActivateDoor`/`ApproachingDoor` (слот 2 или 3, на каком расстоянии) и что делает после скачка позиции (пачка 2).
-3. Теряется ли проход при опускании с дверью в руке (`AE#37624+0x135`) — нужен контроль без портала.
-4. ~~Двойной `OnLocationChange` в `AE#37313`~~ — подтверждён, решение — путь ванильной двери (раздел 6).
-5. Слать ли `OnActivate` и `AE#40512` при бесшовном проходе.
-6. Как довести актёра от узла двери до плоскости (раздел 6).
+1. Which thread runs `BSPathBuilder::Build` (`AE#91713`): the call chain breaks at a vtable slot.
+2. How the standard high agent sends `ActivateDoor`/`ApproachingDoor` (slot 2 or 3, at what distance) and what it does after a position jump (batch 2).
+3. Whether the transition is lost on demotion with a door pending (`AE#37624+0x135`) — a control run without the portal is needed.
+4. ~~Duplicate `OnLocationChange` in `AE#37313`~~ — confirmed; solution — the vanilla door path (section 6).
+5. Whether to send `OnActivate` and `AE#40512` during a seamless transition.
+6. How to move the actor from the door node to the plane (section 6).
 
-## 9. Ходок пути после скачка (пачка T43-2, 09.11.2026)
+## 9. Path follower after a jump (batch T43-2, 09.11.2026)
 
-- **`ActivateDoor` шлёт не расстояние, а параметр пути:** ходок high (`MovementAgentPathFollowerStandard`, апдейт `AE#90711`) продвигает `progress` (номер узла + доля); у точки подхода `AE#90711+0x544` → `AE#90769` ставит `ApproachingDoor` (только у дверей с ненулевым `D`, `PathingDoor` слот `0xE` `AE#30824`), у узла двери `+0x613` → `AE#90770` ставит сообщение узла (`ActivateDoor`) в очередь контроллера `AE#41762` (сверено). Очередь разбирает `AE#41717` → `AE#37892` → `AE#37878`.
-- **После скачка ходок не перепланирует:** каждый тик проецирует позицию на путь только вперёд от `progress` (`AE#91002`, порог 10 единиц). Если проекция попадёт на узел двери или дальше, дверь считается достигнутой, и `ActivateDoor` **может уйти повторно** после бесшовного переноса (**предположение**, по коду). Мод должен гасить его для этой двери (перехват `AE#37878`) или сбрасывать ходока (`AE#90716`).
-- **Ушёл с пути:** `AE#90714` (код 3, радиус `fMaxDistFromPathRadiusMult` × радиус пути), `AE#90737` (код 2, путь сброшен). Кто зовёт эти слоты и что делает менеджер с кодами — не найдено.
-- **`MovementPathManagerAgentLoadedAreaMonitor`** (`AE#92466`): код 3, если сегмент пути не в загруженной области. После прохода в удерживаемую ячейку путь, вероятно, сохранится (обе стороны загружены), иначе будет отброшен (**предположение**).
-- **`AE#41717` обрывает очередь,** если после сообщения сменился уровень процесса актёра или он выключен (`+0x226…+0x247`): перенос из обработчика может потерять остаток очереди этого тика.
-- Проверить в игре: `progress` ходока до и после переноса, повторный `ActivateDoor`.
-
+- **`ActivateDoor` is sent by a path parameter, not distance:** the high follower (`MovementAgentPathFollowerStandard`, update `AE#90711`) advances `progress` (node number + fraction); at the approach point `AE#90711+0x544` → `AE#90769` queues `ApproachingDoor` (only for doors with nonzero `D`, `PathingDoor` slot `0xE` `AE#30824`), and at the door node `+0x613` → `AE#90770` queues the node message (`ActivateDoor`) to controller `AE#41762` (verified). The queue is processed by `AE#41717` → `AE#37892` → `AE#37878`.
+- **The follower does not replan after a jump:** every tick it projects the position onto the path only forward from `progress` (`AE#91002`, threshold 10 units). If the projection lands on the door node or beyond, the door is considered reached, and `ActivateDoor` **may be sent again** after a seamless transfer (**assumption**, from code). The mod must suppress it for this door (hook `AE#37878`) or reset the follower (`AE#90716`).
+- **Left the path:** `AE#90714` (code 3, radius `fMaxDistFromPathRadiusMult` × path radius), `AE#90737` (code 2, path reset). Who calls these slots and what the manager does with the codes was not found.
+- **`MovementPathManagerAgentLoadedAreaMonitor`** (`AE#92466`): code 3 if a path segment is outside the loaded area. After entering a held cell, the path will probably survive (both sides loaded), otherwise it will be discarded (**assumption**).
+- **`AE#41717` aborts the queue** if the actor's process level changed after a message or the actor is disabled (`+0x226…+0x247`): a transfer from the handler may lose the rest of this tick's queue.
+- Verify in game: follower `progress` before and after transfer, duplicate `ActivateDoor`.

@@ -1,97 +1,97 @@
-# История версий (бывший раздел 9 `CLAUDE.md` и раздел 1 `HANDOFF.md`)
+# Version history (former section 9 of `CLAUDE.md` and section 1 of `HANDOFF.md`)
 
-Текст перенесён без изменений.
+The text was moved without changes.
 
-## 9. Порядок работы
+## 9. Workflow
 
-1. Проверка окружения (раздел 1) → сводка пользователю.
-2. Обновление сабмодуля, переименование, сборка стартового кода → первый zip `0.1.0`. Пользователь ставит его в Vortex и подтверждает, что лог появился (smoke-test).
-3. Трасса + события + vfunc-хуки → `0.2.0`, прогон.
-4. Detour-хуки + снимки → `0.3.0`, прогон.
-5. Исправление зависания по F11, эксперимент Preload (5.5), уведомления (5.6) → `0.4.0`, прогон.
-6. Исправление падения (висячий указатель на ячейку), профилировщик экрана загрузки, экстерьер в Preload выключен по умолчанию → `0.5.0`, прогон.
-7. Хвост Havok (дерево вызовов, `name_functions.py`) и проба симуляции H11/H12 → `0.6.0`, прогон.
-8. Счётчик шагов Havok, перехват обработчика `TES`, эксперимент `fWarmStartMaxTime` (F9), физика в пробе → `0.7.0`, прогон.
-   - `0.7.1`: F9 → F7, наборы `[Overrides]` (прогрев + затемнения), разбивка «дверь → картинка» (H13), профилировщик снова включён: найти 55 мс после `TES` при выходе наружу без прогрева.
-   - `0.7.2`: набор с `fTeleportDoorActivateDelayTimer=0` (пауза 0.65 с до затемнения), запись `frame.hitch` (подвисания в первые 5 с после экрана загрузки, автосохранение), проверка смены мира (ворота Вайтрана) с выключенными затемнениями.
-9. Детекторы дверей и окон (5.10), удержание интерьера и InteriorSim (5.11) → `0.8.0`, прогон.
-   - `0.8.1`: очередь сообщений, блок выгрузки менеджером `AE#40845`, шаг интерьера в потоке физики под блокировкой, снятие скрытия и прозрачности при отрисовке, исправление позиции вершин окон, F6 «что под взглядом».
-   - `0.8.2`: блок самой выгрузки `AE#13721` для удерживаемого интерьера, контрольная копия двери и стадия 5 (клон интерьера), скрытие наружной двери, `fadeWatch`, луч Havok для F6, сырые байты вершин окон.
-   - `0.8.3`: исправлено падение (клоны без актёров и без освобождения), 4 контрольные копии двери на разных родителях, регистрация в `ShadowSceneNode`, скрытие двери интерьера, позиции вершин как `float`, `lattice` в ключевых словах окон.
-   - `0.8.4`: детекторы выключены (двери ищутся молча), 5 контрольных копий двери в ряд на улице, счётчики `OnVisible` для подвешенных узлов, скрытие частей здания в проёме, луч F6 сквозь скрытые ссылки.
-   - `0.8.5`: интерьер в корне узлов ячейки экстерьера (рисуется только там), снятие перед отсоединением ячейки, 2 контрольные копии ближе к двери, скрытие куска здания с текстурой двери, поиск ссылок в постоянной ячейке мира и лучами.
-   - `0.8.6`: портал (5.12): стадия 6, вторая камера движка в текстуру на месте двери, ассеты `Meshes/`/`Textures/` в архиве, снимок портала по F11. Упал при включении стадии 6 (неверный синглтон `RenderTargetManager` в NG).
-   - `0.8.7`: исправлен адрес `RenderTargetManager`. Портал работает: интерьер виден через дверь с любой точки.
-   - `0.8.8`: освещение портала (свет интерьера и копии света игрока с `restrictedNode`, фоновый свет интерьера), NPC в портале, огонь с глубиной портала, разрешение по видимой части двери.
-   - `0.8.9`: UV в оба буфера (дубль картинки), копии всех ламп интерьера, копии «включены» на время прохода (`frustrumCull`, `lodDimmer`, `worldTranslate`), пересбор геометрии для света игрока, данные о скрытии NPC.
-   - `0.8.10`: свет «будится» до отсечения и проходы интерьера пересобираются, подмена всей ячейки глубины `kMAIN` (огонь вблизи двери), NPC — родители и все узлы затухания, данные отсечения их геометрии.
-   - `0.8.11`: `ignorePreprocess` при отсечении (NPC), режимы глубины по F4 и счётчик эффектов (огонь), пропуск прохода без фокуса окна, запасной файл трассы.
-   - `0.8.12`: стадии 1–5 убраны (F8: выключено / портал, архив в `docs/INTERIOR_SIM_STAGES.md`), эффекты без света ламп при отсечении (F4 — сравнение), анимация и позиции NPC интерьера, диагностика эффектов.
-   - `0.8.13`: полная анимация NPC интерьера (перехват `ModifyAnimationUpdateData`), контроллеры интерьера (огонь, дым, свечи) перед каждым проходом, F4 — режимы контроллеров, диагностика частиц.
-   - `0.8.14`: полное обновление high для NPC портала (detour `AE#37277`: ИИ и передвижение), F4 — мягкие частицы в портале, диагностика эффектов вне отрисовки. Alt+Tab отложен.
-   - `0.8.15`: NPC портала в заданиях анимации игры (detour `AE#41466`), счётчик передвижения (detour `AE#37350`) и данные контроллера персонажа, наблюдение за эффектами в отсечении портала.
-   - `0.8.16`: интерьер портала подключается, как соседняя ячейка (вызовы игры `AE#18976` / `AE#19063`, отключение `AE#19130` / `AE#19046`), добавлен в обходы ячеек за кадр (`AE#13291`, `AE#13325`), время контроллеров — время ячеек `AE#400333`.
-   - `0.8.17`: 3D подключённого интерьера под своим узлом вне сцены (свет в портале), зона трансформации — `lodDistance` контроллера персонажа через дверь (NPC под полом), диагностика высоты NPC и фигур свечей. Упал при входе в таверну.
-   - `0.8.18`: исправлено падение (3D снимается с нашего узла до `AE#19130`, detour `AE#19130`), `cameraRelatedUpdates` в проходе портала (пламя к камере), свет наших ламп для NPC на время прохода, добавочные узлы свечей в трассе.
-   - `0.8.19`: затухание анимированных ссылок через дверь (`AE#19384` → `AE#105486`: огонь и свечи), в списке NPC портала только NPC интерьера, диагностика застревания NPC на лестнице и под настилом (флаги контроллера) и двоения картинки.
-   - `0.8.20`: F4 — TAA игры в памяти (проверка двоения), выборка фигур огня в статусе портала и в пробе изнутри (сравнение пламени).
-   - `0.8.21`: `previousWorld` квадрата портала (двоение с TAA), эмиттеры интерьера вне бюджета частиц игры (огонь вдвое слабее, чем изнутри), общие системы частиц в проходе портала (огоньки свечей). Зависла через 2.4–2.9 с после F8.
-   - `0.8.22`: причина зависания: группа 5 после прохода, проверка накопителя, общие частицы только на границе списков сцены (`bMasterParticles=0`, `bPassAtSceneListFence=0` по умолчанию), `Watchdog`, выпуск частиц без записи в глобал, `thread_local`-флаг отсечения, восстановлен `[InteriorSim]` в INI, `Hooks::Ready()`, `Portal::Prepare` до подключения ячейки, `kPreLoadGame`, `toggleCollision` вместо `+0xC5F9`, `docs/PORTABILITY.md`.
-   - `0.8.23`: поворот квадов частиц к взгляду (detour `AE#77463`), ожидание готовности интерьера, сбор фигур ламп заново, граница списков и общие частицы по умолчанию, список NPC в тике (E5), интерьер обратно в буфер (E6), отключение под блокировкой (E8), без собственной анимации подключённых NPC (E13), длина буфера в пробе (E14), запись `scene.change`.
-   - `0.8.24`: причина высоты NPC (`kNotVisible`, Foot IK), виртуальная камера для обновления NPC интерьера, `GetDistance` через дверь, звук через дверь, захват обращений к позиции по F3 (`AccessWatch`), мягкие частицы по F2, стек у активаций дверей NPC, звуки в пробе, `docs/DISTANCE_CHECKS.md`, `docs/RELATED_MODS.md`.
-   - `0.8.25`: на экране только ответы на клавиши, субтитры через дверь, замена фрагмента квеста `BardSongStarter` (песня не обрывается на переходе), F2 — ImageSpace интерьера, F11 — кадр игры в HDR (`main-N.dds`), `actor.jump`, разбор модов (`docs/RELATED_MODS.md`).
-   - `0.8.26` (T00–T02, работа задачами): замена фрагмента `BardSongStarter` снята (данные игры не меняются); `tools/run_digest.py`, ветка и коммит в имени архива и в логе; удалены настройки автотеста, поиск окон, удержание экстерьера, проход перед `RenderWorld`, режимы глубины 0–1, переключатель мягких частиц; `Portal.cpp` разрезан на `Portal*.cpp` и `PortalState.h`. Контрольный прогон совпал с 0.8.25.
-   - `0.8.27` (T11, шаг 1 T10): NPC интерьера портала удерживаются в high на переходах (`ActorHold`: detour `AE#37503`, пропуск перестановки `AE#37621+0x348`), записи `actor.level`, `actor.keptHigh`, `actor.snap`, `scene.start/stop/line`. Прыжков NPC и обрыва песни на выходе нет.
-   - `0.8.28` (T12, диагностика T13): своя цветокоррекция портала (`PortalGrade.cpp`: композит интерьера и вид интерьера под уличным, F2 — стадии), туман интерьера для эффектов, удалены `iControllerUpdate`, `iParticleFacing`, `bLightEffects`. F11 вешал систему.
-   - `0.8.29`: причина зависания — обход `renderTargets` за настоящими целями (`RenderTargetCount`, `QueryInterface`); выключатели снимков F11, сторож 10 с после F11, `nan`/`inf` в трассе → `null`.
-   - `0.8.30` (слияние T11 + T12): туман интерьера от плоскости двери.
-   - `0.8.31`: `iQuadFogModel=1` по умолчанию. Прогон с Engine Fixes 7.0.20: совместимо. Этап 1 закрыт.
-10. Автотест → `0.9.0`, прогон (вариант A или B).
-11. Анализ, `FINDINGS.md`, README.
+1. Environment check (section 1) → summary to the user.
+2. Submodule update, renaming, starting-code build → first `0.1.0` zip. The user installs it in Vortex and confirms that the log appears (smoke test).
+3. Trace + events + vfunc hooks → `0.2.0`, run.
+4. Detour hooks + snapshots → `0.3.0`, run.
+5. Fix F11 hang, Preload experiment (5.5), notifications (5.6) → `0.4.0`, run.
+6. Fix crash (dangling cell pointer), loading-screen profiler, exterior in Preload disabled by default → `0.5.0`, run.
+7. Havok tail (call tree, `name_functions.py`) and H11/H12 simulation probe → `0.6.0`, run.
+8. Havok step counter, `TES` handler hook, `fWarmStartMaxTime` experiment (F9), physics in probe → `0.7.0`, run.
+   - `0.7.1`: F9 → F7, `[Overrides]` presets (warm-up + fades), door-to-image breakdown (H13), profiler enabled again: find 55 ms after `TES` when exiting outside without warm-up.
+   - `0.7.2`: preset with `fTeleportDoorActivateDelayTimer=0` (0.65 s pause before fade), `frame.hitch` record (stutters in the first 5 s after the loading screen, autosave), world-change check (Whiterun gates) with fades disabled.
+9. Door and window detectors (5.10), interior keeping and InteriorSim (5.11) → `0.8.0`, run.
+   - `0.8.1`: message queue, unload blocking by manager `AE#40845`, interior step on the physics thread under lock, culling and transparency removal during rendering, window-vertex position fix, F6 "what is under the crosshair".
+   - `0.8.2`: blocking the unload itself `AE#13721` for the kept interior, control door copy and stage 5 (interior clone), hiding the exterior door, `fadeWatch`, Havok ray for F6, raw window-vertex bytes.
+   - `0.8.3`: crash fixed (clones without actors and without freeing), 4 control door copies on different parents, registration in `ShadowSceneNode`, hiding the interior door, vertex positions as `float`, `lattice` in window keywords.
+   - `0.8.4`: detectors disabled (doors are found silently), 5 control door copies in a row on the street, `OnVisible` counters for hung nodes, hiding building parts in the doorway, F6 ray through hidden references.
+   - `0.8.5`: interior at the root of the exterior cell's nodes (renders only there), detachment before cell detach, 2 control copies closer to the door, hiding the building part with the door texture, reference search in the world's persistent cell and with rays.
+   - `0.8.6`: portal (5.12): stage 6, second engine camera into a texture in place of the door, `Meshes/`/`Textures/` assets in the archive, portal snapshot on F11. Crashed when enabling stage 6 (incorrect `RenderTargetManager` singleton in NG).
+   - `0.8.7`: `RenderTargetManager` address fixed. Portal works: the interior is visible through the door from any point.
+   - `0.8.8`: portal lighting (interior light and player-light copies with `restrictedNode`, interior ambient light), NPCs in the portal, fire with portal depth, resolution based on the visible part of the door.
+   - `0.8.9`: UVs in both buffers (duplicate image), copies of all interior lamps, copies "enabled" for the pass (`frustrumCull`, `lodDimmer`, `worldTranslate`), geometry rebuild for player light, NPC culling data.
+   - `0.8.10`: light is "woken" before culling and interior passes are rebuilt, substitution of the entire `kMAIN` depth target (fire near the door), NPCs — parents and all fade nodes, culling data for their geometry.
+   - `0.8.11`: `ignorePreprocess` during culling (NPCs), depth modes on F4 and effect counter (fire), pass skipped without window focus, fallback trace file.
+   - `0.8.12`: stages 1–5 removed (F8: off / portal, archive in `docs/INTERIOR_SIM_STAGES.md`), effects without lamp light during culling (F4 — comparison), interior NPC animation and positions, effect diagnostics.
+   - `0.8.13`: full interior NPC animation (`ModifyAnimationUpdateData` hook), interior controllers (fire, smoke, candles) before every pass, F4 — controller modes, particle diagnostics.
+   - `0.8.14`: full high update for portal NPCs (detour `AE#37277`: AI and movement), F4 — soft particles in the portal, diagnostics of effects outside rendering. Alt+Tab postponed.
+   - `0.8.15`: portal NPCs in game animation jobs (detour `AE#41466`), movement counter (detour `AE#37350`) and character-controller data, observation of effects in portal culling.
+   - `0.8.16`: portal interior attaches like a neighboring cell (game calls `AE#18976` / `AE#19063`, detachment `AE#19130` / `AE#19046`), added to per-frame cell traversals (`AE#13291`, `AE#13325`), controller time — cell time `AE#400333`.
+   - `0.8.17`: attached interior 3D under its own node outside the scene (light in the portal), transformation zone — character-controller `lodDistance` through the door (NPC under the floor), NPC-height and candle-shape diagnostics. Crashed on entering the tavern.
+   - `0.8.18`: crash fixed (3D detached from our node before `AE#19130`, detour `AE#19130`), `cameraRelatedUpdates` in the portal pass (flame toward camera), our lamp light for NPCs during the pass, additional candle nodes in the trace.
+   - `0.8.19`: animated-reference fading through the door (`AE#19384` → `AE#105486`: fire and candles), only interior NPCs in the portal NPC list, diagnostics of NPCs getting stuck on stairs and under flooring (controller flags) and image doubling.
+   - `0.8.20`: F4 — game TAA in memory (doubling check), fire-shape sampling in portal status and in the probe from inside (flame comparison).
+   - `0.8.21`: portal quad `previousWorld` (doubling with TAA), interior emitters outside the game particle budget (fire half as strong as inside), shared particle systems in the portal pass (candle sparks). Hung 2.4–2.9 s after F8.
+   - `0.8.22`: hang cause: group 5 after the pass, accumulator check, shared particles only at the scene-list boundary (`bMasterParticles=0`, `bPassAtSceneListFence=0` by default), `Watchdog`, particle emission without writing to the global, `thread_local` culling flag, `[InteriorSim]` restored in INI, `Hooks::Ready()`, `Portal::Prepare` before cell attachment, `kPreLoadGame`, `toggleCollision` instead of `+0xC5F9`, `docs/PORTABILITY.md`.
+   - `0.8.23`: particle quad rotation toward the view (detour `AE#77463`), waiting for interior readiness, lamp shapes collected anew, scene-list boundary and shared particles by default, NPC list on tick (E5), interior back into buffer (E6), detachment under lock (E8), no custom animation of attached NPCs (E13), buffer length in probe (E14), `scene.change` record.
+   - `0.8.24`: NPC-height cause (`kNotVisible`, Foot IK), virtual camera for interior NPC updates, `GetDistance` through the door, sound through the door, position-access capture on F3 (`AccessWatch`), soft particles on F2, stack on NPC door activations, sounds in probe, `docs/DISTANCE_CHECKS.md`, `docs/RELATED_MODS.md`.
+   - `0.8.25`: only key responses on screen, subtitles through the door, replacement of the `BardSongStarter` quest fragment (song does not cut off on transition), F2 — interior ImageSpace, F11 — game frame in HDR (`main-N.dds`), `actor.jump`, mod analysis (`docs/RELATED_MODS.md`).
+   - `0.8.26` (T00–T02, task-based work): `BardSongStarter` fragment replacement removed (game data is not modified); `tools/run_digest.py`, branch and commit in archive name and log; autotest settings, window detection, exterior keeping, pass before `RenderWorld`, depth modes 0–1, and soft-particle toggle removed; `Portal.cpp` split into `Portal*.cpp` and `PortalState.h`. Control run matched 0.8.25.
+   - `0.8.27` (T11, step 1 of T10): portal interior NPCs kept on high during transitions (`ActorHold`: detour `AE#37503`, skip reordering `AE#37621+0x348`), `actor.level`, `actor.keptHigh`, `actor.snap`, `scene.start/stop/line` records. No NPC jumps or song cutoff on exit.
+   - `0.8.28` (T12, T13 diagnostics): custom portal color grading (`PortalGrade.cpp`: interior composite and interior view under exterior grading, F2 — stages), interior fog for effects, `iControllerUpdate`, `iParticleFacing`, `bLightEffects` removed. F11 hung the system.
+   - `0.8.29`: hang cause — traversal of `renderTargets` beyond the actual targets (`RenderTargetCount`, `QueryInterface`); F11 snapshot switches, watchdog for 10 s after F11, `nan`/`inf` in trace → `null`.
+   - `0.8.30` (T11 + T12 merge): interior fog from the door plane.
+   - `0.8.31`: `iQuadFogModel=1` by default. Run with Engine Fixes 7.0.20: compatible. Stage 1 closed.
+10. Autotest → `0.9.0`, run (option A or B).
+11. Analysis, `FINDINGS.md`, README.
 
-После каждой версии кратко сообщай: что изменилось, путь к zip, что сделать в Vortex.
+After each version, briefly report: what changed, the zip path, and what to do in Vortex.
 
 ---
 
-## Состояние и итоги прогонов 0.8.22–0.8.25 (из `docs/HANDOFF.md`, на 03.11.2026)
+## Status and results of runs 0.8.22–0.8.25 (from `docs/HANDOFF.md`, as of 03.11.2026)
 
-## 1. Где мы сейчас
+## 1. Where we are now
 
-**Проект.** SKSE-плагин для Skyrim AE 1.6.1170 на CommonLibSSE-NG v13.1.0. Он начинался как исследование загрузки ячеек (гипотезы H1–H13, в основном закрыты). Теперь это эксперимент: таверна Bannered Mare живёт, пока игрок на улице, и видна через свою дверь, как через проём.
+**Project.** SKSE plugin for Skyrim AE 1.6.1170 on CommonLibSSE-NG v13.1.0. It began as cell-loading research (hypotheses H1–H13, mostly closed). It is now an experiment: the Bannered Mare tavern stays alive while the player is outside and is visible through its door as through an opening.
 
-**Цель пользователя** (проект NoLoads): переходы через двери без экрана загрузки. Промежуточная цель — «полноценный портал» (`docs/FEATURES.md`, 5.13): интерьер ведёт себя как соседняя ячейка экстерьера, а через дверь проходят свет, звук, снаряды, NPC и игрок.
+**User goal** (NoLoads project): door transitions without a loading screen. Intermediate goal — a "full portal" (`docs/FEATURES.md`, 5.13): the interior behaves like a neighboring exterior cell, and light, sound, projectiles, NPCs, and the player pass through the door.
 
-**Работает в игре:**
-- интерьер виден через дверь с любой точки улицы, картинка обновляется каждый кадр;
-- NPC внутри ходят, анимированы и освещены, их ИИ работает полностью;
-- физика интерьера шагает вместе с миром игрока;
-- свет факела игрока проходит внутрь;
-- интерьер подключён как соседняя ячейка (`kAttached`, 2.5–4 мс), вход в него занимает 70 мс экрана загрузки;
-- вход и выход не роняют игру (с 0.8.18).
+**Works in game:**
+- interior visible through the door from any point on the street, image updates every frame;
+- NPCs inside walk, are animated and lit, and their AI runs fully;
+- interior physics steps together with the player world;
+- player torchlight passes inside;
+- interior attached as a neighboring cell (`kAttached`, 2.5–4 ms), entering it takes 70 ms of loading screen;
+- entry and exit do not crash the game (since 0.8.18).
 
-**Прогоны 0.8.22** (FINDINGS): зависания больше нет, проход на границе списков сцены и огоньки свечей работают, NPC проходит через дверь с порталом. Осталось: огонь маленький при правильном числе частиц, двоение только при беге в невидимую стену (предел TAA), бард прерывается (причина не найдена).
+**Runs 0.8.22** (FINDINGS): no more hang, pass at the scene-list boundary and candle sparks work, NPC passes through the door with the portal. Remaining: fire is small with the correct particle count, doubling only when running into an invisible wall (TAA limit), bard is interrupted (cause not found).
 
-**Прогон 0.8.23** (FINDINGS): свет после загрузки исправлен. Поворот квадов не помог огню: симуляция частиц совпадает с внутренней, разница при отрисовке. Идолаф подтверждён как поведение игры по старым прогонам без портала. Найдена причина высоты NPC.
+**Run 0.8.23** (FINDINGS): light after loading fixed. Quad rotation did not help the fire: particle simulation matches the interior, difference is in rendering. Idolaf confirmed as game behavior from old runs without the portal. NPC-height cause found.
 
-**Прогон 0.8.24** (FINDINGS):
-- высота NPC исправлена;
-- мягкие частицы ни при чём;
-- песня барда слышна снаружи, но обрывается на каждом переходе: это ванильный квест `BardSongStarter`;
-- субтитров на улице нет: расстояние до говорящего;
-- Идолаф получает пакет слушателя барда, и дальняя обработка мгновенно ведёт его через дверь;
-- F3: частых непокрытых проверок позиции игрока мало.
+**Run 0.8.24** (FINDINGS):
+- NPC height fixed;
+- soft particles are irrelevant;
+- bard song is audible outside but cuts off on every transition: this is the vanilla `BardSongStarter` quest;
+- no subtitles on the street: distance to the speaker;
+- Idolaf receives the bard-listener package, and distant processing instantly moves him through the door;
+- F3: few frequent uncovered player-position checks.
 
-**Прогон 0.8.25** (FINDINGS):
-- F2 подтвердила: картинку портала окрашивает уличная цветокоррекция. Осталось: огонь меньше, нет дыма;
-- замена скрипта барда не помогла и снята: мод не меняет данные игры (`CLAUDE.md`, 5.14, п. 7);
-- Садию и Идолафа переставляет сама игра, пока они не в high: на выходе 1.7 с до подключения портала, на входе — догон;
-- субтитры не проверены: снаружи звучали только инструментальные сцены.
+**Run 0.8.25** (FINDINGS):
+- F2 confirmed that exterior color grading tints the portal image. Remaining: fire is smaller, no smoke;
+- bard script replacement did not help and was removed: the mod does not modify game data (`CLAUDE.md`, 5.14, item 7);
+- the game itself relocates Saadia and Idolaf while they are not on high: 1.7 s on exit before the portal attaches, catch-up on entry;
+- subtitles not tested: only instrumental scenes played outside.
 
-**Не сделано:** свет в обе стороны, вид изнутри наружу, снаряды, проход игрока без загрузки, README, итоговый FINDINGS. Автотест из требований убран 01.11.2026, его настройки ещё в коде.
+**Not done:** light in both directions, view from inside to outside, projectiles, player passage without loading, README, final FINDINGS. Autotest was removed from requirements on 01.11.2026; its settings are still in the code.
 
-**Работа с 03.11.2026 идёт задачами для отдельных чатов:** `docs/tasks/README.md`. Там этапы, брифы, ветки и правила для чатов. Результаты — `docs/tasks/results/`.
+**Since 03.11.2026, work is organized as tasks for separate chats:** `docs/tasks/README.md`. It contains stages, briefs, branches, and chat rules. Results are in `docs/tasks/results/`.
 
-**Первые действия координатора:**
-1. Прочитать `docs/tasks/README.md` и новые файлы в `docs/tasks/results/`.
-2. Слитые результаты перенести в FINDINGS, `CLAUDE.md` и этот файл. Написать брифы следующего этапа.
-3. Git: коммиты и слияния делает только пользователь, в конце итерации дать ему команду (`CLAUDE.md`, начало).
+**Coordinator's first actions:**
+1. Read `docs/tasks/README.md` and new files in `docs/tasks/results/`.
+2. Move merged results into FINDINGS, `CLAUDE.md`, and this file. Write briefs for the next stage.
+3. Git: only the user makes commits and merges; give them the command at the end of the iteration (`CLAUDE.md`, beginning).

@@ -1,63 +1,63 @@
-# T15. Реакции игры и скриптов на смену локации игрока
+# T15. Game and script reactions to player location changes
 
-Ветка `exp/T15-location-triggers`. Код: нет, только исследование. Прогон: нет. Можно начинать сразу.
+Branch `exp/T15-location-triggers`. Code: none, research only. Test run: none. Can start right away.
 
-## Решение пользователя (04.11.2026)
+## User's decision (04.11.2026)
 
-- Обрыв песни барда на входе решаем общим правилом, без FormID в коде.
-- Нужен перечень всего, что срабатывает при смене локации или входе игрока, и того, как каждый случай это отслеживает.
-- Скрипты не меняются (`CLAUDE.md`, 5.14, п. 7). Меняется условие срабатывания: перехват решает, отработает реакция как обычно или нет.
-- Пример. Песня барда при входе через портал перезапускаться не должна. Сюжетный квест, который запускает события при входе игрока, должен сработать.
-- Возможно, позже все такие реакции придётся гасить, а триггерами для скриптов станут динамически расставленные маркеры. Это направление здесь оценить, но не делать.
+- The bard song breaking on entry is solved with a general rule, without FormIDs in code.
+- A list of everything that triggers on a location change or player entry is needed, along with how each case detects it.
+- Scripts are not modified (`CLAUDE.md`, 5.14, item 7). What changes is the trigger condition: a hook decides whether a reaction fires as usual or not.
+- Example. The bard song must not restart when entering through a portal. A story quest that starts events on player entry must fire.
+- Possibly, later all such reactions will have to be suppressed, and dynamically placed markers will become the triggers for scripts. Assess this direction here, but do not implement it.
 
-## Что известно
+## What is known
 
-- **`BardSongStarter`** (`000BE159`, T10). Его запускает Story Manager по событию `CLOC`. Узел `000D1EEB` проверяет условие `GetEventData(HasKeyword, L2, LocTypeInn)`. Фрагмент вызывает `BardSongsScript.PlaySongRequest`, тот через 1 с — `StopAllSongs` и новую песню.
-- **Прогон 0.8.27** (`docs/FINDINGS.md`, «Прогон 0.8.27»). На каждом входе, с порталом и без, через +1.5 с останавливаются все 16 сцен песен, через +2.2 с начинается новая. Без портала песня к этому моменту уже кончилась, поэтому обрыв не слышен.
-- **171 квест** со стартом по `CLOC` в `Skyrim.esm`, `Update.esm` и DLC (T10, п. 9): `dun*QST`, `WIChangeLocation*`, `Favor*`, `CW*`, квесты DLC1 и DLC2, `WITavern`, `DialogueWhiterunArgueScene`.
-- **USSEP** меняет `BardSongsScript` (T14). Правило должно работать и с ним, и без него.
-- **Скрипты разбора ESM, VMAD и BSA** от T10 и T14 лежат в scratchpad координатора: `...\scratchpad\T10\`, `...\scratchpad\T14\`. Их можно взять за основу.
-- **Источники:**
-  - исходники Papyrus — `E:\Games\Skyrim\The Elder Scrolls V - Skyrim\Data\Source\Scripts`;
-  - `Skyrim.esm`, `Update.esm`, DLC — там же в `Data`.
+- **`BardSongStarter`** (`000BE159`, T10). Story Manager starts it on the `CLOC` event. Node `000D1EEB` checks the condition `GetEventData(HasKeyword, L2, LocTypeInn)`. The fragment calls `BardSongsScript.PlaySongRequest`, which after 1 s calls `StopAllSongs` and starts a new song.
+- **Run 0.8.27** (`docs/FINDINGS.md`, "Run 0.8.27"). On every entry, with and without the portal, all 16 song scenes stop after +1.5 s and a new one starts after +2.2 s. Without the portal the song has already ended by then, so the break is not heard.
+- **171 quests** with a `CLOC` start in `Skyrim.esm`, `Update.esm`, and the DLCs (T10, item 9): `dun*QST`, `WIChangeLocation*`, `Favor*`, `CW*`, DLC1 and DLC2 quests, `WITavern`, `DialogueWhiterunArgueScene`.
+- **USSEP** changes `BardSongsScript` (T14). The rule must work both with and without it.
+- **ESM, VMAD, and BSA parsing scripts** from T10 and T14 are in the coordinator's scratchpad: `...\scratchpad\T10\`, `...\scratchpad\T14\`. They can be used as a starting point.
+- **Sources:**
+  - Papyrus sources — `E:\Games\Skyrim\The Elder Scrolls V - Skyrim\Data\Source\Scripts`;
+  - `Skyrim.esm`, `Update.esm`, DLCs — also in `Data`.
 
-## Сделать
+## To do
 
-1. **Механизмы.** Через что игра и скрипты узнают о смене локации или ячейки игрока:
-   - **Story Manager:** `CLOC` и другие события, связанные с локацией и ячейкой. Искать по `ENAM` у `QUST` и по узлам `SMBN`/`SMQN`/`SMEN`;
-   - **события Papyrus** по исходникам: `OnLocationChange`, `OnCellLoad`, `OnCellAttach`/`OnCellDetach`, `OnLoad`/`OnUnload`, `OnTriggerEnter`/`OnTriggerLeave` (в том числе триггеры у дверей);
-   - **условия** в пакетах, диалогах и сценах (`CTDA`): `GetInCurrentLocation`, `IsInLocation`, `GetInCell`, `GetIsCurrentLocation` и подобные;
-   - **движок:** где игра определяет текущую локацию игрока и рассылает событие. ID и смещения — `tools/name_functions.py` и dumpbin (`CLAUDE.md`, раздел 7).
-2. **Таблица** в отдельном файле `docs/LOCATION_TRIGGERS.md`: квест или скрипт, механизм, условие, что делает, категория. Категории:
-   - **окружение** (барды, приветствия, сценки, `WI*`): при входе через работающий портал реакция не нужна или мешает;
-   - **сюжет:** реакция должна сработать;
-   - **неясно.**
-3. **Общее правило без FormID.** Найти в данных признаки, которые разделяют категории: тип квеста (`QUST` `DNAM`), флаги квеста и узлов Story Manager, наличие этапов в журнале, ключевые слова локации и т. п. Проверить правило на всей таблице и посчитать, сколько оно ошибается.
-4. **Точки перехвата:**
-   - где движок формирует `CLOC` и отдаёт его в Story Manager;
-   - где выбирается квест узла;
-   - где рассылается `OnLocationChange`.
+1. **Mechanisms.** How the game and scripts learn about a player location or cell change:
+   - **Story Manager:** `CLOC` and other events related to location and cell. Search by `ENAM` on `QUST` and by `SMBN`/`SMQN`/`SMEN` nodes;
+   - **Papyrus events** from the sources: `OnLocationChange`, `OnCellLoad`, `OnCellAttach`/`OnCellDetach`, `OnLoad`/`OnUnload`, `OnTriggerEnter`/`OnTriggerLeave` (including triggers at doors);
+   - **conditions** in packages, dialogues, and scenes (`CTDA`): `GetInCurrentLocation`, `IsInLocation`, `GetInCell`, `GetIsCurrentLocation` and similar;
+   - **engine:** where the game determines the player's current location and dispatches the event. IDs and offsets — `tools/name_functions.py` and dumpbin (`CLAUDE.md`, section 7).
+2. **Table** in a separate file `docs/LOCATION_TRIGGERS.md`: quest or script, mechanism, condition, what it does, category. Categories:
+   - **ambient** (bards, greetings, vignettes, `WI*`): on entry through a working portal the reaction is unnecessary or harmful;
+   - **story:** the reaction must fire;
+   - **unclear.**
+3. **General rule without FormIDs.** Find data features that separate the categories: quest type (`QUST` `DNAM`), quest and Story Manager node flags, presence of journal stages, location keywords, etc. Test the rule against the whole table and count its errors.
+4. **Hook points:**
+   - where the engine forms `CLOC` and hands it to the Story Manager;
+   - where the node's quest is selected;
+   - where `OnLocationChange` is dispatched.
 
-   Что можно подменить: старую локацию в событии, результат условия или сам запуск квеста. Как перехват узнает, что игрок вошёл через портал, который уже показывал эту локацию. Как правило работает при нескольких порталах (5.14, п. 1).
-5. **Маркеры-триггеры.** Оценить идею «гасить такие реакции и расставлять маркеры»: что она даёт миру без загрузок, чего стоит, чем рискует.
-6. **Любые пары ячеек** (5.14, п. 2). Ворота городов (экстерьер — экстерьер) тоже меняют локацию: правило должно работать и там.
+   What can be substituted: the old location in the event, the condition result, or the quest start itself. How the hook knows that the player entered through a portal that was already showing this location. How the rule works with multiple portals (5.14, item 1).
+5. **Marker triggers.** Assess the idea of "suppressing such reactions and placing markers": what it gives a world without loading screens, what it costs, what it risks.
+6. **Any cell pairs** (5.14, item 2). City gates (exterior — exterior) also change the location: the rule must work there too.
 
-## Ограничения
+## Constraints
 
-- Кода, сборки и запуска игры нет. Данные игры только читаются.
-- Свои скрипты — в своей папке scratchpad, не в репозитории.
-- pip-пакеты и программы не ставить.
+- No code, build, or game launch. Game data is only read.
+- Your own scripts go in your own scratchpad folder, not in the repository.
+- Do not install pip packages or programs.
 
-## Результат
+## Result
 
-- `docs/tasks/results/T15.md`, не длиннее 80 строк:
-  - механизмы;
-  - предложенное правило и его ошибки на таблице;
-  - точки перехвата с ID;
-  - план кода для следующей задачи;
-  - оценка идеи с маркерами.
-- `docs/LOCATION_TRIGGERS.md` — таблица, длина не ограничена.
+- `docs/tasks/results/T15.md`, no longer than 80 lines:
+  - mechanisms;
+  - proposed rule and its errors on the table;
+  - hook points with IDs;
+  - code plan for the next task;
+  - assessment of the marker idea.
+- `docs/LOCATION_TRIGGERS.md` — the table, length unrestricted.
 
-## Конфликты
+## Conflicts
 
-Кода нет. Новые файлы только этой задачи.
+No code. New files belong to this task only.

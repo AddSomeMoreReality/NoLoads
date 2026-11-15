@@ -1,159 +1,159 @@
-# Исходное задание (бывшие разделы 0, 4, 5.1–5.3, 6 и 8 `CLAUDE.md`)
+# Original assignment (former sections 0, 4, 5.1–5.3, 6, and 8 of `CLAUDE.md`)
 
-Текст перенесён без изменений. Нумерация разделов старая: ссылки вида «раздел 4», «5.3» относятся к этому файлу. Остальные подразделы 5.x — `docs/FEATURES.md`, 5.14 — `CLAUDE.md`.
+The text was moved without changes. Section numbering is old: references such as "section 4" and "5.3" refer to this file. Other 5.x subsections are in `docs/FEATURES.md`; 5.14 is in `CLAUDE.md`.
 
-## 0. Задача и критерии готовности
+## 0. Task and completion criteria
 
-Нужно собрать на CommonLibSSE-NG SKSE-плагин `CellLoadResearch`, который:
+Build a CommonLibSSE-NG SKSE plugin `CellLoadResearch` that:
 
-1. **Трассирует реальный алгоритм загрузки** ячеек и локаций: события движка, хуки ключевых функций, снимки состояния `RE::TES`, тайминги, потоки.
-2. **Прогоняет автоматический сценарий переходов**: интерьер ↔ экстерьер, загрузочная дверь, смена мирового пространства, шаги по экстерьеру, сброс буфера.
-3. **Поставляется архивом**, который ставится в Vortex без ручной перепаковки.
+1. **Traces the real loading algorithm** for cells and locations: engine events, hooks on key functions, snapshots of `RE::TES` state, timings, threads.
+2. **Runs an automated transition scenario**: interior ↔ exterior, loading door, worldspace change, walking through the exterior, buffer purge.
+3. **Is distributed as an archive** that installs in Vortex without manual repacking.
 
-После прогона нужно проанализировать трассу и подтвердить или опровергнуть гипотезы из раздела 4.
+After the run, analyze the trace and confirm or refute the hypotheses in section 4.
 
 **Definition of Done**
 
-| # | Результат | Где |
+| # | Deliverable | Where |
 |---|---|---|
-| 1 | Архив для Vortex, корень — `SKSE/Plugins/...` | `dist/CellLoadResearch-X.Y.Z.zip` |
-| 2 | Сборка и упаковка одной командой | `scripts/build.ps1` |
-| 3 | Скрипт анализа трассы: таймлайны, длительности фаз, порядок вызовов, потоки | `tools/analyze_trace.py` |
-| 4 | Отчёт по каждой гипотезе: подтверждено / опровергнуто / неясно + выдержки из трассы | `docs/FINDINGS.md` |
-| 5 | Краткая инструкция для пользователя: установка в Vortex, горячие клавиши, где логи | `README.md` |
+| 1 | Vortex archive, root — `SKSE/Plugins/...` | `dist/CellLoadResearch-X.Y.Z.zip` |
+| 2 | Build and packaging with one command | `scripts/build.ps1` |
+| 3 | Trace analysis script: timelines, phase durations, call order, threads | `tools/analyze_trace.py` |
+| 4 | Report for each hypothesis: confirmed / refuted / unclear + trace excerpts | `docs/FINDINGS.md` |
+| 5 | Brief user instructions: Vortex installation, hotkeys, log locations | `README.md` |
 
 ---
 
 
-## 4. Гипотезы для проверки
+## 4. Hypotheses to test
 
-| ID | Гипотеза | Как проверить |
+| ID | Hypothesis | How to test |
 |---|---|---|
-| H1 | `TESObjectDOOR::Activate` только заполняет `queuedTargetLoc`, а перемещение происходит на следующем кадре или позже | Номер кадра (счётчик тиков `Update`) и `isValid` при выходе из `Activate` против входа в `SetCurrentCell` |
-| H2 | `SetCurrentCell` вызывается между `kPre` и `kPreUpdatePackages` | Порядок `seq` в трассе |
-| H3 | Интерьер грузится синхронно в главном потоке под `LoadingMenu`; экстерьер при ходьбе — асинхронно через `CellLoaderTask::Run` в IO-потоках | `tid` и `main` у `Run`/`Finish`; наличие `CellLoaderTask` при `coc` в интерьер |
-| H4 | Покинутые ячейки уходят в буфер (`kUnattached`/`kDataLoaded`), повторный вход заметно быстрее; после `PurgeBufferedCells` выигрыш пропадает | Длительность `LoadingMenu` и `SetCurrentCell` в парах шагов сценария по умолчанию (5.3); состояния ячеек в снимках |
-| H5 | `currentQueuedX/Y` опережает `currentGridX/Y`, то есть это предзагрузка | Снимки при ходьбе |
-| H6 | Порядок `TESCellFullyLoadedEvent`, `BGSActorCellEvent`, `TESActorLocationChangeEvent` относительно `kFinish` и закрытия `LoadingMenu` | Таймлайн |
-| H7 | `CellLoaderTask` с `interior=true` используется для интерьеров (например, предзагрузка за дверью) | Логировать все `CellLoaderTask` с `interior` |
-| H8 | Смысл `a_unk4` у `SetCurrentCell` и последнего `bool` у `QueueCellLoad` | Логировать значения во всех сценариях и сопоставить |
-| H9 | Длина `interiorBuffer` равна `uInterior Cell Buffer`, длина `exteriorBuffer` — `uExterior Cell Buffer` | Осторожное чтение (см. раздел 7); сравнение с INI |
-| H10 | Какие INI-настройки загрузки реально существуют в 1.6.1170 | Пробовать `INISettingCollection::GetSingleton()->GetSetting(name)` и `INIPrefSettingCollection` для кандидатов: `uGridsToLoad:General`, `uExterior Cell Buffer:General`, `uInterior Cell Buffer:General`, `bPreloadLinkedInteriors:General`, `uLargeRefLODGridSize:TerrainManager`. Логировать, что найдено и со значением. Названия, кроме первых трёх, не проверены |
-| H11 | Пока игрок в экстерьере, интерьеры за дверями загруженной области не рисуются и не считают физику, а NPC в них обрабатываются только на уровне low/middle-low (грубый ИИ по расписанию, без анимации и физики). Соседние ячейки экстерьера в сетке 5×5 симулируются полностью | Проба симуляции (5.7): состояние ячеек, `inScene`, время физического мира, уровни обработки и перемещения NPC по категориям |
-| H12 | Пока игрок в интерьере, сетка экстерьера остаётся загруженной (`kUnattached`), но не рисуется и не считает физику, а NPC снаружи опускаются до low/middle | Та же проба, категория `gridWhileInside` |
-| H13 | Видимый переход через дверь (3.5–3.8 с) почти целиком состоит из пауз и затемнений, а не из загрузки: пауза до затемнения 0.65 с (`fTeleportDoorActivateDelayTimer`?), `fNormalDoorFadeSecs` 0.4 с, проявление 2.37 с = `fMinSecondsForLoadFadeIn` + `fFadeToBlackFadeSeconds` (подтверждено в 0.7.1) | Запись `transition.visible`; наборы `[Overrides]` по F7 (5.9) |
-| H14 | Вызов `ExteriorCellLoader::QueueInteriorCellLoad` (`AE#18540`) раз в пару секунд держит выбранный интерьер загруженным (`kUnattached`), пока игрок рядом: вытеснения из буфера на 3 места больше нет | `preload.change` / `preload.keep` при ходьбе по Вайтрану (5.5) |
-| H15 | Если шагать мир Havok интерьера вместе с миром игрока и поднимать его NPC через `MoveToHigh`, интерьер симулируется как соседняя ячейка экстерьера: NPC на уровне high, двигаются, физика идёт | Стадии 1–2 InteriorSim (5.11): `interior.sim`, проба |
-| H16 | `cell3D` интерьера в состоянии `kUnattached` можно подвесить в сцену экстерьера и увидеть: на месте двери или над зданием | Стадии 3–4 InteriorSim (5.11) |
+| H1 | `TESObjectDOOR::Activate` only fills `queuedTargetLoc`, and movement occurs on the next frame or later | Frame number (`Update` tick counter) and `isValid` on exit from `Activate` versus entry into `SetCurrentCell` |
+| H2 | `SetCurrentCell` is called between `kPre` and `kPreUpdatePackages` | `seq` order in the trace |
+| H3 | Interiors load synchronously on the main thread under `LoadingMenu`; exteriors load asynchronously while walking via `CellLoaderTask::Run` on IO threads | `tid` and `main` on `Run`/`Finish`; presence of `CellLoaderTask` on `coc` into an interior |
+| H4 | Departed cells go into the buffer (`kUnattached`/`kDataLoaded`), re-entry is noticeably faster; after `PurgeBufferedCells`, the advantage disappears | `LoadingMenu` and `SetCurrentCell` durations in step pairs of the default scenario (5.3); cell states in snapshots |
+| H5 | `currentQueuedX/Y` leads `currentGridX/Y`, meaning this is preloading | Snapshots while walking |
+| H6 | Order of `TESCellFullyLoadedEvent`, `BGSActorCellEvent`, `TESActorLocationChangeEvent` relative to `kFinish` and `LoadingMenu` closing | Timeline |
+| H7 | `CellLoaderTask` with `interior=true` is used for interiors (for example, preloading behind a door) | Log all `CellLoaderTask` instances with `interior` |
+| H8 | Meaning of `a_unk4` in `SetCurrentCell` and the last `bool` in `QueueCellLoad` | Log values in all scenarios and correlate them |
+| H9 | Length of `interiorBuffer` equals `uInterior Cell Buffer`, length of `exteriorBuffer` equals `uExterior Cell Buffer` | Careful reading (see section 7); comparison with INI |
+| H10 | Which loading INI settings actually exist in 1.6.1170 | Try `INISettingCollection::GetSingleton()->GetSetting(name)` and `INIPrefSettingCollection` for candidates: `uGridsToLoad:General`, `uExterior Cell Buffer:General`, `uInterior Cell Buffer:General`, `bPreloadLinkedInteriors:General`, `uLargeRefLODGridSize:TerrainManager`. Log what is found and its value. Names other than the first three have not been verified |
+| H11 | While the player is in an exterior, interiors behind doors in the loaded area are neither rendered nor physics-simulated, and their NPCs are processed only at low/middle-low level (coarse schedule AI, without animation or physics). Neighboring exterior cells in the 5×5 grid are fully simulated | Simulation probe (5.7): cell states, `inScene`, physics-world time, NPC processing levels, and movement by category |
+| H12 | While the player is in an interior, the exterior grid remains loaded (`kUnattached`) but is neither rendered nor physics-simulated, and NPCs outside drop to low/middle | Same probe, `gridWhileInside` category |
+| H13 | The visible door transition (3.5–3.8 s) consists almost entirely of pauses and fades rather than loading: pre-fade pause 0.65 s (`fTeleportDoorActivateDelayTimer`?), `fNormalDoorFadeSecs` 0.4 s, fade-in 2.37 s = `fMinSecondsForLoadFadeIn` + `fFadeToBlackFadeSeconds` (confirmed in 0.7.1) | `transition.visible` record; `[Overrides]` presets on F7 (5.9) |
+| H14 | Calling `ExteriorCellLoader::QueueInteriorCellLoad` (`AE#18540`) every couple of seconds keeps the selected interior loaded (`kUnattached`) while the player is nearby: eviction from the 3-slot buffer no longer occurs | `preload.change` / `preload.keep` while walking around Whiterun (5.5) |
+| H15 | If the interior Havok world is stepped together with the player world and its NPCs are raised via `MoveToHigh`, the interior is simulated like a neighboring exterior cell: NPCs are on high, move, and physics runs | InteriorSim stages 1–2 (5.11): `interior.sim`, probe |
+| H16 | The `cell3D` of an interior in `kUnattached` can be hung in the exterior scene and seen: in place of the door or above the building | InteriorSim stages 3–4 (5.11) |
 
 ---
 
 
-## 5. Что должен делать плагин (начало)
+## 5. What the plugin must do (beginning)
 
-### 5.1 Трасса (JSONL)
+### 5.1 Trace (JSONL)
 
-Файл: `<MyDocuments>\My Games\Skyrim Special Edition\SKSE\CellLoadResearch.trace.jsonl`. Пересоздаётся при старте игры. Рядом обычный текстовый лог через `SKSE::log`.
+File: `<MyDocuments>\My Games\Skyrim Special Edition\SKSE\CellLoadResearch.trace.jsonl`. Recreated at game startup. A regular text log via `SKSE::log` is written alongside it.
 
-Одна строка — одна запись:
+One line is one record:
 
 ```json
 {"seq":42,"t_us":1234567,"frame":9876,"tid":4321,"main":true,"ev":"hook.TES.SetCurrentCell.enter","args":{"cell":"WhiterunBanneredMare [xxxxxxxx]","pos":[0,0,0],"unk4":0.0},"caller":"AE#40437+0x1A2"}
 ```
 
-- **`t_us`** — `std::chrono::steady_clock` от старта плагина.
-- **`main`** — сравнение `GetCurrentThreadId()` с `RE::Main::GetSingleton()->threadID`.
-- **`frame`** — счётчик тиков из хука `PlayerCharacter::Update`.
-- **`caller`** — `_ReturnAddress()` минус база модуля, переведённое в «ближайший меньший AE-ID + смещение» через `REL::Offset2ID`. Это ориентир, а не точная функция.
-  - Таблицу строй один раз, лениво, в главном потоке.
-- **Запись в файл** — потокобезопасная (mutex или очередь), с `flush` после каждой записи `LoadingMenu`/`kFinish` и при выходе.
-- **Префиксы `ev`:** `event.*` для событий, `hook.*.enter` / `hook.*.leave` (с `dur_us`) для хуков, `snapshot`, `autotest.step.begin` / `autotest.step.end`, `info` для версии runtime и INI.
+- **`t_us`** — `std::chrono::steady_clock` from plugin startup.
+- **`main`** — comparison of `GetCurrentThreadId()` with `RE::Main::GetSingleton()->threadID`.
+- **`frame`** — tick counter from the `PlayerCharacter::Update` hook.
+- **`caller`** — `_ReturnAddress()` minus the module base, converted to "nearest lower AE-ID + offset" via `REL::Offset2ID`. This is a guide, not an exact function.
+  - Build the table once, lazily, on the main thread.
+- **File writing** — thread-safe (mutex or queue), with `flush` after every `LoadingMenu`/`kFinish` record and on exit.
+- **`ev` prefixes:** `event.*` for events, `hook.*.enter` / `hook.*.leave` (with `dur_us`) for hooks, `snapshot`, `autotest.step.begin` / `autotest.step.end`, `info` for runtime version and INI.
 
-### 5.2 Инструментирование
+### 5.2 Instrumentation
 
-- **События** — все из раздела 3.5.
-- **vfunc-хуки** — все из таблицы 3.3: дверь, `GridCellArray`, `CellLoaderTask`, `PlayerCharacter::Update`.
-- **Хуки на вход в обычные функции:** `SetCurrentCell`, `PurgeBufferedCells`, `QueueCellLoad`, `CenterOnCell_Impl`, `MoveTo_Impl`.
-  - Нужен полноценный detour с переносом пролога.
-  - Предпочтительно Microsoft Detours: проверь пакет `xmake require --info microsoft-detours`. Если его нет — подключи через vcpkg или исходники.
-  - Альтернативы: `SKSE::stl` ContextHook (`--skse_xbyak=y`) или `write_call<5>` на найденных местах вызова.
-  - **Не пиши самодельный `write_branch` в начало функции без переноса пролога.**
-- **Снимки состояния** (`snapshot`) — только в главном потоке:
-  - после `kFinish`, после закрытия `LoadingMenu`, после каждого `SetCenter`, в конце каждого шага автотеста, по горячей клавише;
-  - содержимое: `interiorCell`, `worldSpace`, `currentGridX/Y`, `currentQueuedX/Y`, сетка `length×length` (для каждой ячейки: ID, `cellX/cellY`, `cellState`, `refsFullyLoaded`, `queuedRefCount`), размер `ExteriorCellLoader::queuedCellMap` (под `BSReadLockGuard` на `lock`), позиция игрока, `GetParentCell()`, `GetCurrentLocation()`, `playerFlags.isLoading`, `queuedTargetLoc`.
+- **Events** — all from section 3.5.
+- **vfunc hooks** — all from table 3.3: door, `GridCellArray`, `CellLoaderTask`, `PlayerCharacter::Update`.
+- **Hooks at entry to regular functions:** `SetCurrentCell`, `PurgeBufferedCells`, `QueueCellLoad`, `CenterOnCell_Impl`, `MoveTo_Impl`.
+  - A full detour with prologue relocation is required.
+  - Microsoft Detours is preferred: check the package with `xmake require --info microsoft-detours`. If unavailable, integrate it via vcpkg or sources.
+  - Alternatives: `SKSE::stl` ContextHook (`--skse_xbyak=y`) or `write_call<5>` at identified call sites.
+  - **Do not write a homemade `write_branch` at the beginning of a function without relocating the prologue.**
+- **State snapshots** (`snapshot`) — only on the main thread:
+  - after `kFinish`, after `LoadingMenu` closes, after every `SetCenter`, at the end of every autotest step, and on hotkey;
+  - contents: `interiorCell`, `worldSpace`, `currentGridX/Y`, `currentQueuedX/Y`, `length×length` grid (for each cell: ID, `cellX/cellY`, `cellState`, `refsFullyLoaded`, `queuedRefCount`), size of `ExteriorCellLoader::queuedCellMap` (under `BSReadLockGuard` on `lock`), player position, `GetParentCell()`, `GetCurrentLocation()`, `playerFlags.isLoading`, `queuedTargetLoc`.
 
-### 5.3 Автотест
+### 5.3 Autotest
 
-- **Запуск:** горячая клавиша F10 в игре или `bEnabled=1` в INI.
-  - При `bEnabled=1`, когда открывается `Main Menu`, плагин сам загружает сохранение: по имени из INI через `BGSSaveLoadManager::Load(name)` или самое свежее.
-- **Сценарий:** конечный автомат, который крутится в хуке `PlayerCharacter::Update`.
-  - Каждый шаг: запустить действие → ждать «переход завершён» → `fSettleSeconds` → снимок.
-  - **«Переход завершён»** = виден `kFinish`, `LoadingMenu` закрыт и `player->GetParentCell()->IsAttached()`. Таймаут 60 с, при таймауте логировать ошибку и переходить к следующему шагу.
-  - **Время ожидания считай по `steady_clock`**: во время `LoadingMenu` тиков `Update` может не быть.
-- **Шаги** (строка `sSteps` в INI, разделитель `|`):
+- **Launch:** F10 hotkey in game or `bEnabled=1` in INI.
+  - With `bEnabled=1`, when `Main Menu` opens, the plugin loads a save itself: by INI name via `BGSSaveLoadManager::Load(name)` or the most recent one.
+- **Scenario:** a finite-state machine running in the `PlayerCharacter::Update` hook.
+  - Each step: start action → wait for "transition complete" → `fSettleSeconds` → snapshot.
+  - **"Transition complete"** = `kFinish` observed, `LoadingMenu` closed, and `player->GetParentCell()->IsAttached()`. Timeout is 60 s; on timeout, log an error and proceed to the next step.
+  - **Measure waiting time with `steady_clock`**: `Update` ticks may be absent during `LoadingMenu`.
+- **Steps** (`sSteps` string in INI, `|` separator):
 
-| Шаг | Действие |
+| Step | Action |
 |---|---|
-| `coc:<EditorID>` | `PlayerCharacter::CenterOnCell(name)`. Сначала залогируй, находит ли ячейку `TESForm::LookupByEditorID<TESObjectCELL>` (не все editor ID хранятся в рантайме). Сам `CenterOnCell` ищет ячейку по-своему и возвращает `bool`: при `false` пропусти шаг с ошибкой |
-| `door:nearest` | ближайшая к игроку ссылка с `ExtraTeleport` в текущем интерьере, а в экстерьере — в загруженной сетке, затем `door->ActivateRef(player, 0, nullptr, 0, false)`. Это проверка настоящего пути через дверь |
-| `walk:<+x\|-x\|+y\|-y>,<N>` | N шагов по 4096 единиц: `player->SetPosition(...)` и ожидание `SetCenter`. **Не подтверждено**, что `SetPosition` вызывает перецентрирование без экрана загрузки — выясни и зафиксируй в FINDINGS |
+| `coc:<EditorID>` | `PlayerCharacter::CenterOnCell(name)`. First log whether `TESForm::LookupByEditorID<TESObjectCELL>` finds the cell (not all editor IDs are stored at runtime). `CenterOnCell` itself searches for the cell in its own way and returns `bool`: on `false`, skip the step with an error |
+| `door:nearest` | nearest reference to the player with `ExtraTeleport` in the current interior, or in the loaded grid in an exterior, then `door->ActivateRef(player, 0, nullptr, 0, false)`. This tests the real door path |
+| `walk:<+x\|-x\|+y\|-y>,<N>` | N steps of 4096 units: `player->SetPosition(...)` and wait for `SetCenter`. **Not confirmed** that `SetPosition` triggers recentering without a loading screen — investigate and record in FINDINGS |
 | `purge` | `TES::PurgeBufferedCells()` |
-| `wait:<sec>` | пауза |
-| `snapshot` | снимок |
+| `wait:<sec>` | pause |
+| `snapshot` | snapshot |
 
-- **Сценарий по умолчанию.** Пары для H4 (первый вход → повторный → после `purge`):
-  - интерьер через дверь: 1 → 3; экстерьер через дверь: 2 → 4;
-  - интерьер через `coc`: 6 → 8 → 11; экстерьер через `coc`: 7 → 9 → 12.
-  - `purge` и замер после него должны идти, когда игрок уже **вне** проверяемой ячейки: `coc` в ячейку, где игрок стоит, не вызывает загрузки (прогон 0.1.0).
-  - Прогон 0.2.0 показал, что через `coc` интерьер перезагружается каждый раз, а через дверь — нет. Поэтому дверь и `coc` проверяются отдельно.
+- **Default scenario.** Pairs for H4 (first entry → repeat → after `purge`):
+  - interior through a door: 1 → 3; exterior through a door: 2 → 4;
+  - interior via `coc`: 6 → 8 → 11; exterior via `coc`: 7 → 9 → 12.
+  - `purge` and the measurement after it must occur when the player is already **outside** the tested cell: `coc` to the cell where the player stands does not trigger loading (0.1.0 run).
+  - Run 0.2.0 showed that interiors reload every time via `coc`, but not through a door. Therefore door and `coc` are tested separately.
 
 ```
 coc:RiverwoodSleepingGiantInn | door:nearest | door:nearest | door:nearest | walk:+x,4 | coc:WhiterunBanneredMare | coc:Riverwood | coc:WhiterunBanneredMare | coc:Riverwood | purge | coc:WhiterunBanneredMare | coc:Riverwood | coc:Whiterun
 ```
 
-- Если трасса покажет, что сценарий не проверяет то, что должен, исправляй его здесь, в `res/CellLoadResearch.ini` и в `Settings.h` (разрешение пользователя от 23.10.2026).
+- If the trace shows that the scenario does not test what it should, correct it here, in `res/CellLoadResearch.ini`, and in `Settings.h` (user permission dated 23.10.2026).
 
-- По завершении: запись `autotest.done`, сводка в лог, flush. При `bQuitWhenDone=1` — `RE::Console::ExecuteCommand("qqq")`.
+- On completion: `autotest.done` record, summary in the log, flush. With `bQuitWhenDone=1` — `RE::Console::ExecuteCommand("qqq")`.
 
 
-## 6. Прогон и анализ
+## 6. Run and analysis
 
-**Вариант A — играет пользователь.**
+**Option A — the user plays.**
 
-1. Пользователь ставит zip в Vortex, делает Deploy, запускает игру через SKSE в Vortex.
-2. Загружает тестовое сохранение и жмёт F10 или просто ходит через двери.
-3. После выхода из игры ты читаешь `CellLoadResearch.trace.jsonl` и `CellLoadResearch.log`.
+1. The user installs the zip in Vortex, deploys, and launches the game through SKSE in Vortex.
+2. Loads a test save and presses F10 or simply walks through doors.
+3. After exiting the game, you read `CellLoadResearch.trace.jsonl` and `CellLoadResearch.log`.
 
-**Вариант B — автономно, только с явного разрешения пользователя.**
+**Option B — autonomously, only with the user's explicit permission.**
 
-1. Убедись, что последняя версия архива установлена и развёрнута в Vortex: DLL с нужной версией лежит в `<Game>\Data\SKSE\Plugins`. Версию бери из ресурсов DLL.
-2. Временно выставь в INI в `Data` значения `bEnabled=1` и `bQuitWhenDone=1`.
-   - INI — жёсткая ссылка на файл в staging Vortex. Правь на месте, без пересоздания файла.
-   - После прогона верни значения обратно.
-3. Steam должен быть запущен. Запусти `<Game>\skse64_loader.exe` и следи за трассой до записи `autotest.done` или до таймаута 15 мин.
-4. Если игра упала — найди crash-лог (`Crash Logger SSE AE VR` пишет в папку SKSE), сопоставь стек с `.pdb` и исправь.
+1. Ensure the latest archive version is installed and deployed in Vortex: the DLL of the required version is in `<Game>\Data\SKSE\Plugins`. Get the version from the DLL resources.
+2. Temporarily set `bEnabled=1` and `bQuitWhenDone=1` in the INI in `Data`.
+   - The INI is a hard link to a file in Vortex staging. Edit in place, without recreating the file.
+   - Restore the values after the run.
+3. Steam must be running. Launch `<Game>\skse64_loader.exe` and monitor the trace until `autotest.done` or a 15-minute timeout.
+4. If the game crashes, find the crash log (`Crash Logger SSE AE VR` writes to the SKSE folder), correlate the stack with the `.pdb`, and fix it.
 
-**Анализ (`tools/analyze_trace.py`, только stdlib Python 3):**
+**Analysis (`tools/analyze_trace.py`, Python 3 stdlib only):**
 
-- Сегментирует трассу по переходам: от `autotest.step.begin` или `LoadingMenu open` до `kFinish` + `LoadingMenu close`.
-- Для каждого перехода выводит:
-  - упорядоченную последовательность `ev` с `Δt`;
-  - длительности (`LoadingMenu`, `SetCurrentCell`, сумма `CellLoaderTask::Run`);
-  - распределение по потокам;
-  - вызывающих (`caller`).
-- Сводная таблица по шагам сценария, сравнение «с буфером / после purge».
-- Вывод в Markdown, который вставляется в `docs/FINDINGS.md`.
+- Segments the trace by transitions: from `autotest.step.begin` or `LoadingMenu open` to `kFinish` + `LoadingMenu close`.
+- For each transition, outputs:
+  - ordered `ev` sequence with `Δt`;
+  - durations (`LoadingMenu`, `SetCurrentCell`, sum of `CellLoaderTask::Run`);
+  - thread distribution;
+  - callers (`caller`).
+- Summary table by scenario step, comparison "with buffer / after purge".
+- Markdown output to be inserted into `docs/FINDINGS.md`.
 
-**`docs/FINDINGS.md`:** для каждой гипотезы H1–H10 — вердикт, доказательства (2–5 строк трассы), открытые вопросы. В конце — уточнённая схема реального потока загрузки.
+**`docs/FINDINGS.md`:** for each hypothesis H1–H10 — verdict, evidence (2–5 trace lines), open questions. At the end — a refined diagram of the real loading flow.
 
 ---
 
 
-## 8. Стартовый код
+## 8. Starting code
 
-`src/main.cpp` (передан пользователем) — минимальный пример: подписка на события из 3.5, хук `TESObjectDOOR::Activate`, который в бою блокирует загрузочные двери, и хук `GridCellArray::SetCenter`. Он **не собирался**.
+`src/main.cpp` (provided by the user) — minimal example: subscriptions to events from 3.5, a `TESObjectDOOR::Activate` hook that blocks loading doors in combat, and a `GridCellArray::SetCenter` hook. It **did not compile**.
 
-1. Начни с того, чтобы он собрался.
-2. Хук-блокировку двери оставь за INI-флагом `bBlockDoorsInCombat=0`.
-3. Затем разнеси код по файлам: `Trace.*`, `Events.*`, `Hooks.*`, `Snapshot.*`, `AutoTest.*`, `Settings.*`.
+1. Start by making it compile.
+2. Keep the door-blocking hook behind the INI flag `bBlockDoorsInCombat=0`.
+3. Then split the code into files: `Trace.*`, `Events.*`, `Hooks.*`, `Snapshot.*`, `AutoTest.*`, `Settings.*`.
 

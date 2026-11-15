@@ -1,65 +1,65 @@
-# T44. Карта отрисовки кадра: что нужно, чтобы проход принимал камеру параметром
+# T44. Frame rendering map: what is needed for the pass to take the camera as a parameter
 
-Этап 2, исследование, опора для этапа 3. Без кода: чат работает в основной папке на `feature/interior-portal` и пишет только новые файлы. Прогон: нет. Модель — Opus 5.5, усилие — high; массовое чтение — агенты `re-reader` (Sonnet, medium) и `re-reader-fast` (Haiku, low). База — MCP `ghidra_*` или `tools/ghidra/gq.py` (навык `ghidra`, `docs/GHIDRA.md`).
+Stage 2, research, foundation for stage 3. No code: the chat works in the main folder on `feature/interior-portal` and writes only new files. Test run: none. Model — Opus 5.5, effort — high; mass reading — `re-reader` agents (Sonnet, medium) and `re-reader-fast` (Haiku, low). Database — MCP `ghidra_*` or `tools/ghidra/gq.py` (`ghidra` skill, `docs/GHIDRA.md`).
 
-## Зачем
+## Why
 
-5.14, п. 4: отрисовка ячеек работает для любой камеры — для других модов, катсцен и рекурсивных порталов. Проход портала должен принимать камеру и цель как параметры и не читать глобальную камеру игрока. Нужны своя текстура на пару «портал + вид» и предел глубины рекурсии.
+5.14, item 4: cell rendering works for any camera — for other mods, cutscenes, and recursive portals. The portal pass must take the camera and target as parameters and not read the global player camera. A separate texture per "portal + view" pair and a recursion depth limit are needed.
 
-5.14, п. 5: совместимость с Realistic Reflections - Mirrors. Портал в зеркале показывает правильную картинку, зеркало за порталом — отражение.
+5.14, item 5: compatibility with Realistic Reflections - Mirrors. A portal in a mirror shows the correct picture, a mirror beyond a portal shows the reflection.
 
-Сейчас `Portal::Render` подменяет камеру, слоты целей и свет вокруг одного прохода (`docs/ARCHITECTURE.md`, 3.2–3.3). Какое ещё глобальное состояние кадра проход неявно берёт у вида игрока, не известно. Отсюда T17: картинка вдали светлее и в серой пелене, дым пропадает, когда очаг не виден.
+Currently `Portal::Render` substitutes the camera, target slots, and lights around a single pass (`docs/ARCHITECTURE.md`, 3.2–3.3). What other frame-global state the pass implicitly takes from the player view is unknown. Hence T17: the distant picture is brighter and has a gray haze, smoke disappears when the hearth is out of view.
 
-## Что известно
+## What is known
 
-- **Кадр.** `AE#36558+0x11D` → `RenderPlayerView` (`AE#36559`; в базе он назван `Main::Draw`, имя проверить). Задания списков сцены завершаются на `+0x17E` (`write_call` на `JobList::Finish` `AE#69353`), там стоит наш проход. Затем идёт `Main::RenderWorld` (`AE#107142`). Источники: `docs/ARCHITECTURE.md`, 3.2; `docs/FINDINGS.md`, Grep `AE#36559`.
-- **`AE#36661` — не `RenderPlayerView`.** Это сбор ссылок в радиусе от игрока (`results/T38-T39-batches.md`, «T38, пачка 10»). В `results/T32.md` он назван неверно.
-- Камера мира — `Main::WorldRootCamera` (`AE#36609`). Цели рендера — правила `CLAUDE.md`, раздел 7 (`RenderTargetManager`, `renderTargets` 114/116).
-- Проходы `BSRenderPass` берутся из общего пула, накопитель после прохода должен быть пуст. Объект, который рисует и игра, нельзя регистрировать, пока работают её задания (`CLAUDE.md`, раздел 7; T14).
-- Состояние рендера в одном экземпляре — список в T42 (`portalGraph`, слоты 8/9 `SSN`, флаг интерьера, небо, LOD). T44 разбирает, как его читает проход.
-- Realistic Reflections — `docs/FEATURES.md`, 5.15: что мод делает и где ставит перехват (граница списков сцены, цепочка `write_call`). **Код мода не копировать** — только идеи и факты о бинарнике игры.
+- **Frame.** `AE#36558+0x11D` → `RenderPlayerView` (`AE#36559`; in the database it is named `Main::Draw`, verify the name). Scene-list jobs are finished at `+0x17E` (`write_call` on `JobList::Finish` `AE#69353`), which is where our pass runs. Then `Main::RenderWorld` (`AE#107142`) runs. Sources: `docs/ARCHITECTURE.md`, 3.2; `docs/FINDINGS.md`, Grep `AE#36559`.
+- **`AE#36661` is not `RenderPlayerView`.** It collects references within a radius of the player (`results/T38-T39-batches.md`, "T38, batch 10"). It is named incorrectly in `results/T32.md`.
+- The world camera is `Main::WorldRootCamera` (`AE#36609`). Render targets — rules of `CLAUDE.md`, section 7 (`RenderTargetManager`, `renderTargets` 114/116).
+- `BSRenderPass` passes come from a shared pool; the accumulator must be empty after a pass. An object also rendered by the game must not be registered while its jobs are running (`CLAUDE.md`, section 7; T14).
+- Renderer state held in a single instance — the list in T42 (`portalGraph`, slots 8/9 `SSN`, the interior flag, sky, LOD). T44 breaks down how the pass reads it.
+- Realistic Reflections — `docs/FEATURES.md`, 5.15: what the mod does and where it hooks (scene-list boundary, `write_call` chain). **Do not copy the mod's code** — only ideas and facts about the game binary.
 
-## Сделать
+## To do
 
-1. **Цепочка кадра.** От `Main::Update` до показа: отсечение, задания списков сцены, накопители, тени, `RenderWorld`, вода, частицы, ImageSpace и TAA, интерфейс. Для каждого этапа — функция, поток, что он берёт как «текущий вид».
-2. **Глобальные состояния вида.** Всё, что проход читает как один вид:
-   - камера и усечённая пирамида, вьюпорт;
-   - процесс отсечения;
-   - накопитель;
-   - карты теней солнца (каскады для камеры игрока);
-   - списки света фигур, лимит `AE#107784`;
-   - история TAA и ImageSpace;
-   - туман;
-   - ориентация частиц и билбордов;
+1. **Frame chain.** From `Main::Update` to presentation: culling, scene-list jobs, accumulators, shadows, `RenderWorld`, water, particles, ImageSpace and TAA, UI. For each stage — function, thread, what it takes as the "current view".
+2. **View-global states.** Everything the pass reads as one view:
+   - camera and frustum, viewport;
+   - culling process;
+   - accumulator;
+   - sun shadow maps (cascades for the player camera);
+   - figure light lists, limit `AE#107784`;
+   - TAA history and ImageSpace;
+   - fog;
+   - particle and billboard orientation;
    - LOD.
 
-   Для каждого: где пишется, где читается и класс — «на вид», «на кадр», «на мир».
-3. **Собственные вторые виды игры** — главный образец того, как движок сам разводит состояние: отражение воды, локальная карта (вид сверху), 3D в меню инвентаря, кубические карты. Что каждый сохраняет и подменяет, какую камеру и накопитель берёт, что делает с тенями и TAA.
-4. **Требования к проходу «камера как параметр»:**
-   - что подменять на время прохода;
-   - что держать на пару «портал + вид»;
-   - что общее на кадр.
+   For each: where written, where read, and the class — "per view", "per frame", "per world".
+3. **The game's own second views** — the main model of how the engine itself separates state: water reflection, the local map (top-down view), 3D in the inventory menu, cubemaps. What each saves and substitutes, which camera and accumulator it takes, what it does with shadows and TAA.
+4. **Requirements for a "camera as a parameter" pass:**
+   - what to substitute for the duration of the pass;
+   - what to keep per "portal + view" pair;
+   - what is shared per frame.
 
-   Отдельно — повторный вход (проход внутри прохода): накопитель, пул проходов, сохранение и возврат состояния. Что можно сделать, когда предел глубины исчерпан.
-5. **Зеркала.** Где граница списков сцены и цепочки чужих `write_call`. В каком порядке идут наш проход и проход зеркала. Что нужно, чтобы зеркало, рисуя квад портала, получило текстуру своего вида, и наоборот.
-6. **T17 по коду.** Кандидаты на пелену и светлоту вдали (туман, LOD, ImageSpace от вида игрока) и на пропадание дыма (отсечение частиц по камере игрока).
-7. **Кандидаты имён** куратору — только для функций из выводов.
+   Separately — re-entrancy (a pass inside a pass): accumulator, pass pool, saving and restoring state. What can be done when the depth limit is exhausted.
+5. **Mirrors.** Where the scene-list boundary and the chain of foreign `write_call`s are. In what order our pass and the mirror's pass run. What is needed for a mirror, drawing the portal quad, to get its own view's texture, and vice versa.
+6. **T17 from code.** Candidates for the haze and distant brightness (fog, LOD, ImageSpace from the player view) and for the disappearing smoke (particle culling by the player camera).
+7. **Name candidates** to the curator — only for functions from the findings.
 
-## Правила
+## Rules
 
-- Псевдокод Bethesda в файлы и ответы не класть: только выводы, `AE#id`, смещения. База — только чтение.
-- Синглтоны NG сверять с тем, как адрес передаёт игра (`lea` — объект, `mov` — указатель; `CLAUDE.md`, раздел 7).
-- Утверждения «вызова нет» и «читает только здесь» проверять по `xrefs`/`asm`, смещения брать из `asm`.
-- Community Shaders и ENB перехватывают те же места (`docs/ARCHITECTURE.md`, недостатки): отмечать места возможного конфликта.
+- Do not put Bethesda pseudocode into files or answers: only findings, `AE#id`, offsets. The database is read-only.
+- Verify NG singletons against how the game passes the address (`lea` — object, `mov` — pointer; `CLAUDE.md`, section 7).
+- Verify "there is no call" and "reads only here" claims with `xrefs`/`asm`; take offsets from `asm`.
+- Community Shaders and ENB hook the same places (`docs/ARCHITECTURE.md`, shortcomings): mark potential conflict locations.
 
-## Результат
+## Result
 
-- `docs/RENDER_VIEW_MAP.md` (≤ 250 строк): цепочка кадра, таблица состояний вида, вторые виды игры, требования к проходу, зеркала, выводы для T17.
-- `docs/tasks/results/T44.md` по шаблону README:
-  - главное для T17, T29 (пул текстур на «портал + вид») и 5.14, пп. 4–5;
-  - список ID для T40, если нужен прогон;
-  - раздел «Для куратора».
+- `docs/RENDER_VIEW_MAP.md` (≤ 250 lines): frame chain, view-state table, the game's second views, pass requirements, mirrors, findings for T17.
+- `docs/tasks/results/T44.md` per the README template:
+  - the main points for T17, T29 (texture pool per "portal + view") and 5.14, items 4–5;
+  - list of IDs for T40, if a run is needed;
+  - a "For the curator" section.
 
-## Конфликты
+## Conflicts
 
-Нет: новые файлы. По смыслу — T17 и T29; с T42 граница по рендеру: T42 даёт список глобальных состояний, T44 — как их читает проход.
+None: new files. Related in scope — T17 and T29; boundary with T42 on rendering: T42 provides the list of global states, T44 — how the pass reads them.

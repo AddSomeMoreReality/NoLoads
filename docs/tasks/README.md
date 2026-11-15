@@ -1,152 +1,152 @@
-# Задачи для отдельных чатов
+# Tasks for separate chats
 
-Работа с 03.11.2026 делится на задачи: **один чат — одна задача**, со своим брифом, веткой и PR. Причина — расход контекста:
-- каждый чат получает `CLAUDE.md` целиком (около 110 строк);
-- координатор первым читает `docs/HANDOFF.md` (около 90 строк);
-- `src/Hooks.cpp` — 1 200 строк, `src/InteriorSim.cpp` — 1 000, `docs/FINDINGS.md` — 1 300. Портал после T02 — `src/Portal*.cpp` по 30–560 строк, общее состояние в `src/PortalState.h`.
+Work since 03.11.2026 is divided into tasks: **one chat — one task**, with its own brief, branch, and PR. The reason is context consumption:
+- each chat receives all of `CLAUDE.md` (about 110 lines);
+- the coordinator reads `docs/HANDOFF.md` first (about 90 lines);
+- `src/Hooks.cpp` is 1,200 lines, `src/InteriorSim.cpp` is 1,000, and `docs/FINDINGS.md` is 1,300. After T02, the portal consists of `src/Portal*.cpp` files of 30–560 lines each, with shared state in `src/PortalState.h`.
 
-Долгий чат быстро доходит до сжатия контекста, и детали теряются. Чат-исполнитель знает только `CLAUDE.md`, этот файл и свой бриф. Общую картину держит координатор.
+A long chat quickly reaches context compaction, and details are lost. An executor chat knows only `CLAUDE.md`, this file, and its brief. The coordinator maintains the overall picture.
 
-## Роли
+## Roles
 
-- **Координатор** — отдельный чат. Новый координатор начинает с `docs/HANDOFF.md`, этого файла и `results/`. Он:
-  - пишет брифы;
-  - читает результаты и PR;
-  - решает порядок слияния;
-  - переносит выводы в `docs/FINDINGS.md`, `CLAUDE.md` и `docs/HANDOFF.md`;
-  - собирает общую тестовую сборку.
-- **Исполнитель** — новый чат на одну задачу. Первое сообщение:
-  `Выполни задачу docs/tasks/T10-bard-song.md. Правила — docs/tasks/README.md. Результат — docs/tasks/results/T10.md.`
+- **Coordinator** — a separate chat. A new coordinator starts with `docs/HANDOFF.md`, this file, and `results/`. It:
+  - writes briefs;
+  - reads results and PRs;
+  - decides the merge order;
+  - transfers conclusions to `docs/FINDINGS.md`, `CLAUDE.md`, and `docs/HANDOFF.md`;
+  - builds the combined test build.
+- **Executor** — a new chat for one task. First message:
+  `Complete task docs/tasks/T10-bard-song.md. Rules are in docs/tasks/README.md. Write the result to docs/tasks/results/T10.md.`
 
-## Правила для исполнителя
+## Rules for the executor
 
-1. **Большие документы целиком не читай:** `docs/ARCHITECTURE.md`, `docs/FEATURES.md`, `docs/FINDINGS.md`, `docs/INTERIOR_SIM_STAGES.md`, `docs/DISTANCE_CHECKS_APPENDIX.md`. Ищи Grep по ID (`AE#37618`) или заголовку и читай найденный кусок.
-2. **Большие исходники читай кусками:** сначала Grep по имени функции, потом Read с `offset`/`limit`. Код портала ищи Grep по `src/Portal*`: какой файл за что отвечает — `docs/ARCHITECTURE.md`, 3.3.
-   - **Машинный код игры** — через `tools/ghidra/gq.py` (`docs/GHIDRA.md`), `--out` в свой scratchpad. Нужен разбор, имя или тип в базе — запрос куратору базы через пользователя. Псевдокод в git и docs не класть.
-3. **Трассу построчно не выводи.** Пиши короткий скрипт Python со сводкой (≤ 100 строк вывода). После T01 есть `tools/run_digest.py`.
-   - Кириллица в консоли Bash ломается: пиши вывод в файл в scratchpad и читай его через Read.
-   - Скрипты держи в scratchpad, а не в репозитории, если бриф не просит иного.
-4. **Логи не в git.** В worktree папки `logs/` нет. Пути `logs/run-…` в брифах отсчитываются от основной папки: `E:\Games\Skyrim\ModCreation\My attempts\NoLoads\CellLoadResearch\logs\`. Сборка пишет логи в `logs/` того дерева, из которого её собрали.
-5. **Ветки и worktree создаёт пользователь** (правило git в `CLAUDE.md`). Команды — в разделе «Подготовка веток» ниже. Если ветки нет, приведи команду и подожди.
-6. **Версия.** Если отдаёшь сборку в игру, повысь последнюю цифру в `xmake.lua` и укажи версию в результате. При слиянии координатор перенумерует.
-7. **Код и безопасность** — `CLAUDE.md`, раздел 7. **Данные игры не меняются** — `CLAUDE.md`, 5.14, п. 7: никаких правок квестов, скриптов, форм и `.esp`, только перехват обработчиков движка.
-8. **Результат** — `docs/tasks/results/T<nn>.md` по шаблону ниже, ≤ 80 строк.
-   - `FINDINGS.md`, `HANDOFF.md`, `CLAUDE.md` не правь, если бриф не просит. Это делает координатор.
-   - Новые адреса, которые жёстко привязаны к версии, всё же записывай в `docs/PORTABILITY.md`.
-9. **В конце** дай пользователю команды на английском: commit, push, создание PR в `feature/interior-portal`. В коммите — строка `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
-   - `gh` у пользователя не установлен: PR создаётся на GitHub по ссылке, которую печатает `git push`.
-10. **Если нужен прогон**, опиши шаги проверки в результате (≤ 6 пунктов) и остановись. Прогон разбирай в том же чате, если контекста хватает, иначе в новом: бриф + результат.
-11. **Задача оказалась больше брифа** — сделай первую законченную часть, остальное опиши в «Открытых вопросах».
+1. **Do not read large documents in full:** `docs/ARCHITECTURE.md`, `docs/FEATURES.md`, `docs/FINDINGS.md`, `docs/INTERIOR_SIM_STAGES.md`, `docs/DISTANCE_CHECKS_APPENDIX.md`. Use Grep to search by ID (`AE#37618`) or heading and read the matching section.
+2. **Read large source files in sections:** first Grep for the function name, then Read with `offset`/`limit`. Use Grep on `src/Portal*` to find portal code; see `docs/ARCHITECTURE.md`, 3.3, for which file handles what.
+   - **Game machine code** — through `tools/ghidra/gq.py` (`docs/GHIDRA.md`), with `--out` directed to your scratchpad. If you need analysis, a name, or a type in the database, send a request to the database curator through the user. Do not put pseudocode in git or docs.
+3. **Do not print traces line by line.** Write a short Python script that produces a summary (≤ 100 lines of output). After T01, `tools/run_digest.py` is available.
+   - Cyrillic breaks in the Bash console: write output to a file in the scratchpad and read it with Read.
+   - Keep scripts in the scratchpad, not in the repository, unless the brief says otherwise.
+4. **Logs do not go in git.** A worktree has no `logs/` folder. `logs/run-…` paths in briefs are relative to the main folder: `E:\Games\Skyrim\ModCreation\My attempts\NoLoads\CellLoadResearch\logs\`. A build writes logs to the `logs/` folder of the tree from which it was built.
+5. **The user creates branches and worktrees** (the git rule in `CLAUDE.md`). Commands are in “Branch preparation” below. If a branch does not exist, provide the command and wait.
+6. **Version.** If you provide a build for the game, increment the last digit in `xmake.lua` and state the version in the result. The coordinator will renumber versions when merging.
+7. **Code and safety** — `CLAUDE.md`, section 7. **Game data must not be changed** — `CLAUDE.md`, 5.14, item 7: no edits to quests, scripts, forms, or `.esp`; only interception of engine handlers.
+8. **Result** — `docs/tasks/results/T<nn>.md` following the template below, ≤ 80 lines.
+   - Do not edit `FINDINGS.md`, `HANDOFF.md`, or `CLAUDE.md` unless the brief asks. The coordinator does that.
+   - Still record new addresses that are hard-bound to a version in `docs/PORTABILITY.md`.
+9. **At the end**, give the user commands in English: commit, push, and PR creation into `feature/interior-portal`. Include the line `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>` in the commit.
+   - The user does not have `gh` installed: the PR is created on GitHub using the link printed by `git push`.
+10. **If a run is needed**, describe the verification steps in the result (≤ 6 items) and stop. Analyze the run in the same chat if enough context remains; otherwise use a new chat: brief + result.
+11. **The task turned out larger than the brief** — complete the first finished part and describe the rest under “Open questions.”
 
-## Шаблон результата
+## Result template
 
 ```markdown
-# T<nn>. <название> — результат
+# T<nn>. <title> — result
 
-Ветка: … · Версия сборки: … · Статус: исследование / готово к слиянию / ждёт прогона / отказ
+Branch: … · Build version: … · Status: research / ready to merge / awaiting run / rejected
 
-## Что выяснено
-- факт — доказательство (строка трассы, адрес, дизассемблер)
+## Findings
+- fact — evidence (trace line, address, disassembler)
 
-## Что изменено
-- файл — что и зачем
+## Changes
+- file — what and why
 
-## Как проверить в игре
+## How to verify in the game
 1. …
 
-## Открытые вопросы
+## Open questions
 
-## Для координатора
-- что внести в FINDINGS, CLAUDE.md, PORTABILITY
-- с чем конфликтует при слиянии
+## For the coordinator
+- what to add to FINDINGS, CLAUDE.md, PORTABILITY
+- merge conflicts
 ```
 
-## Ветки и слияние
+## Branches and merging
 
-- **`feature/interior-portal`** — общая ветка, в неё сливаются PR задач. `main` координатор обновляет по вехам.
-- **`task/T<nn>-<слово>`** — код, который должен войти.
-- **`exp/T<nn>-<слово>`** — эксперимент. Он может не войти или быть несовместим с другими. Файл результата вливается всегда, код — по решению координатора.
-- **В игре за раз стоит одна сборка.** Совместимые ветки координатор сливает в `test/<дата>` и отдаёт одной сборкой: один прогон проверяет несколько задач. Несовместимые проверяются по очереди.
-- **Порядок.** Этап 0 идёт по очереди. Ветки этапа 1 с кодом создаются после слияния T02, иначе всё будет конфликтовать с разрезанием `Portal.cpp`. Исследование без кода (логи, дизассемблер) можно начинать сразу.
+- **`feature/interior-portal`** — the shared branch into which task PRs are merged. The coordinator updates `main` at milestones.
+- **`task/T<nn>-<word>`** — code that should be included.
+- **`exp/T<nn>-<word>`** — an experiment. It may not be included or may be incompatible with others. The result file is always merged; code is merged at the coordinator's discretion.
+- **Only one build is installed in the game at a time.** The coordinator merges compatible branches into `test/<date>` and provides them as one build: one run verifies several tasks. Incompatible branches are tested one at a time.
+- **Order.** Stage 0 proceeds sequentially. Stage 1 code branches are created after T02 is merged; otherwise everything will conflict with the splitting of `Portal.cpp`. Research without code (logs, disassembler) can start immediately.
 
-## Подготовка веток
+## Branch preparation
 
-Чат без кода работает в основной папке. Чат с кодом — в своём worktree, чтобы параллельные сборки не мешали друг другу. Первая сборка в новом worktree компилирует CommonLib заново, это долго. Если при ней компилятору не хватает кучи (T28: `Detectors.cpp`), собери один раз `xmake build -j 4 -y CellLoadResearch`, затем снова `scripts/build.ps1`.
+A chat without code works in the main folder. A chat with code works in its own worktree so that parallel builds do not interfere with each other. The first build in a new worktree recompiles CommonLib, which takes a long time. If the compiler runs out of heap during that build (T28: `Detectors.cpp`), run `xmake build -j 4 -y CellLoadResearch` once, then run `scripts/build.ps1` again.
 
 ```powershell
-# этап 0, по очереди, в основной папке
+# stage 0, sequentially, in the main folder
 git switch -c task/T00-slim-docs feature/interior-portal
-# после слияния T00:
+# after merging T00:
 git switch -c task/T01-run-digest feature/interior-portal
-# после слияния T01:
+# after merging T01:
 git switch -c task/T02-split feature/interior-portal
 
-# этап 1, после слияния T02: каждая задача в своём worktree
+# stage 1, after merging T02: each task in its own worktree
 git worktree add ..\CLR-T10 -b exp/T10-bard-song feature/interior-portal
 git -C ..\CLR-T10 submodule update --init --recursive
 ```
 
-Для T11, T12 и T13 — то же самое с их именами веток. Удалить worktree после слияния: `git worktree remove ..\CLR-T10`.
+Do the same for T11, T12, and T13 with their branch names. Remove the worktree after merging: `git worktree remove ..\CLR-T10`.
 
-## Этапы
+## Stages
 
-| ID | Задача | Код | Прогон | Зависит от | Конфликтует с |
+| ID | Task | Code | Run | Depends on | Conflicts with |
 |---|---|---|---|---|---|
-| **Этап 0, по очереди** |
-| [T00](T00-slim-docs.md) | Сократить `CLAUDE.md` и `HANDOFF.md` | нет | нет | — | любые правки документов |
-| [T01](T01-run-digest.md) | Сводка прогона, ветка в имени архива и в логе | `tools/`, `build.ps1`, чуть `src/` | нет | — | — |
-| [T02](T02-split.md) | Разрезать `Portal.cpp`, удалить мёртвый код | весь `src/` | контрольный | T00 | всё с кодом |
-| **Этап 1, параллельно — закрыт (0.8.31)** |
-| [T10](T10-bard-song.md) | Песня барда обрывается на переходе | перехваты | да | T02 (для кода) | мало |
-| [T11](T11-npc-continuity.md) | NPC перескакивают на переходе | `InteriorSim` | да | T02 (для кода) | T20 |
-| [T12](T12-portal-color.md) | Своя цветокоррекция картинки портала | рендер портала | да | T02 (для кода) | T13 |
-| [T13](T13-fire-smoke.md) | Огонь меньше и нет дыма | частицы портала | да | T02 (для кода) | T12 |
-| [T14](T14-helper-mods.md) | Технические моды как зависимость или опора | нет | по итогам, моды ставит пользователь | — | — (`RELATED_MODS.md`) |
-| [T15](T15-location-triggers.md) | Реакции игры и скриптов на смену локации игрока (песня барда на входе) | нет | нет | — | — |
-| **Этап 2, основа мода: переходы без загрузок** |
-| [T28](T28-split-hooks.md) | Разрезать `Hooks.cpp` по плану `results/T02.md` | весь `Hooks.cpp` | контрольный | — | всё с перехватами: **первой и одна** |
-| [T20](T20-attached-entry.md) | Вход без отключения интерьера, запись смены пакетов NPC | `InteriorSim`, перехваты | да | T28 | T16 (`SetParentCell`) |
-| [T16](T16-story-filter.md) | Фильтр Story Manager на входе через портал: теги и политика T30, R8 для сравнения | `StoryFilter`, перехваты | да | T28, T30 | T20 |
-| [T30](T30-location-tags.md) | Теги реакций на смену локации и политика «гасить или нет» | нет | нет | — | — (`LOCATION_TRIGGERS.md`) |
-| [T31](T31-virtual-player.md) | Виртуальный игрок за порталом вместо виртуальной камеры (исследование) | нет | нет | прогон 0.8.32 | — (готово: полного виртуального игрока не будет, `VIRTUAL_PLAYER.md`) |
-| [T33](T33-ghidra-base.md) | База Ghidra для `SkyrimSE.exe`: проект, имена из NG и документов, инструменты псевдокода для исполнителей | `tools/ghidra/` | нет | — | готово; чат — куратор базы (`..\CLR-GHIDRA`) |
-| [T32](T32-player-reads.md) | Перепись чтений игрока (2 843 места) и место игрока в рамке дальней стороны | `PlayerReads`, `ActorScope` | да, по шагам | T31; T20 слить раньше | T29 (`ActorScope`), T20 (`InteriorSim`) |
-| [T22](T22-distance-rest.md) | Оставшиеся проверки расстояния (`docs/DISTANCE_CHECKS.md`, раздел 9), уровень NPC по расстоянию через дверь | перехваты, `PortalActors` | да | T28 | T20 (`InteriorSim`, `ActorHold`), T29 |
-| [T29](T29-portal-registry.md) | Реестр порталов: состояние портала — класс, порталов много (5.14, п. 1; `docs/ARCHITECTURE.md`, 8.3) | `Portal*`, `InteriorSim` | контрольный | T20, T16, T22 слиты | всё в `Portal*`: **одна, как T28** |
-| T21 | Живая улица, пока игрок внутри, и второй портал на внутренней двери (`docs/FEATURES.md`, 5.13, шаг 4) | `InteriorSim`, `Portal*` | да | T20, T29 | T29 |
-| **Этап 2, вспомогательные: база Ghidra и карты движка** (план — `PLAN-T34-T41.md`, координатор исследований — `PROMPT-research-coordinator.md`) |
-| [T35](T35-ghidra-interface.md) | Интерфейс к базе: MCP-сервер, навык `ghidra`, агенты `re-reader`, `re-reader-fast` | `tools/ghidra/`, `.mcp.json`, `.claude/` | нет | T33 | готово (куратор) |
-| [T36](T36-ghidra-types.md) | Типы NG в базе: структуры, vtable, `this`, синглтоны | `tools/ghidra/` | нет | T35 | готово (куратор) |
-| [T34](T34-ghidra-check-names.md) | Проверка расхождений, имена: NG, сторонние таблицы, RTTI, Papyrus, команды, `reviewed` | `tools/ghidra/` | нет | T35, T36 | готово (куратор); новые кандидаты — от T37–T41 |
-| [T37](T37-creation-kit.md) | Creation Kit: окупается ли ради имён | нет | нет | T35 | **отложена** (пользователь, 08.11.2026): ради имён не окупается, привязку «функция → `.cpp`» делать, только если неясные кучки ID станут мешать задаче |
-| [T41](T41-multiplayer-mods.md) | Моды мультиплеера: несколько игроков в одном мире | нет | нет | — | — (`MULTIPLAYER_MODS.md`) |
-| [T38](T38-player-map.md) | Карта игрока: `PlayerCharacter`, поля, глобалы, подсистемы | нет | по желанию, T40 | T35, T36 | T32 по смыслу (`PLAYER_MAP.md`) |
-| [T39](T39-cell-loading-map.md) | Карта загрузки ячеек: от двери до `kAttached`, потоки, экран загрузки | нет | старые трассы; по желанию T40 | T35, T36 | T20 по смыслу (`CELL_LOADING_MAP.md`) |
-| [T40](T40-call-probe.md) | Сборка-зонд: счётчики вызовов, сэмплы всех потоков; вопросы В1–В3 от T38/T39 | `src/CallProbe.*`, `src/CodePatch.*`, `Profiler` | да, один на T38+T39 | списки ID готовы (151); ветка от T32, если та не слита | T32 (заглушки), по строке — T16, T20 |
-| [T42](T42-single-instance.md) | Перепись состояния движка «в одном экземпляре»: кто пишет, кто читает, чем заменить (5.14, пп. 1–2) | нет | по желанию, T40 | T38, T39 | готово 09.11.2026 (`SINGLE_INSTANCE.md`); по смыслу T29, T21 |
-| [T43](T43-npc-doors.md) | Как NPC проходят через двери с загрузкой; состав бесшовного прохода NPC | нет | по желанию, T40 | T38, T39 | готово 09.11.2026 (`NPC_DOORS.md`); по смыслу T20, T21, T11 |
-| [T44](T44-render-view.md) | Карта отрисовки кадра: состояние вида, вторые виды игры, проход с камерой-параметром, зеркала (5.14, пп. 4–5) | нет | нет | — | готово 09.11.2026 (`RENDER_VIEW_MAP.md`); по смыслу T17, T29 |
-| **Этап 3, улучшения и дополнения** |
-| [T17](T17-portal-picture.md) | Картинка портала: пелена вдали, дым без очага в кадре, опора адаптации (остатки T12, T13) | рендер портала | да | — | T27 |
-| T23 | Звук через проём, а не сквозь стены (Audio Occlusion в `docs/RELATED_MODS.md`) | звук | да | T29 | — |
-| T24 | Свет в обе стороны (`docs/FEATURES.md`, 5.13, шаг 2) | `PortalLights` | да | T21 | T27 |
-| T25 | Снаряды через дверь (5.13, шаг 5; STB Projectile Control в `docs/RELATED_MODS.md`) | перехваты | да | T29 | — |
-| T26 | SE 1.5.97 (`docs/PORTABILITY.md`) | нет, исследование | нет | — | — |
-| T27 | Любая камера: камера и цель прохода — параметры, пул текстур, рекурсия, зеркала (5.14, пп. 4–5) | рендер портала | да | T29 | T17, T24 |
+| **Stage 0, sequential** |
+| [T00](T00-slim-docs.md) | Shorten `CLAUDE.md` and `HANDOFF.md` | none | none | — | any documentation edits |
+| [T01](T01-run-digest.md) | Run summary, branch in archive name and log | `tools/`, `build.ps1`, a little `src/` | none | — | — |
+| [T02](T02-split.md) | Split `Portal.cpp`, remove dead code | all of `src/` | control run | T00 | everything with code |
+| **Stage 1, parallel — closed (0.8.31)** |
+| [T10](T10-bard-song.md) | Bard song cuts off during transition | hooks | yes | T02 (for code) | few |
+| [T11](T11-npc-continuity.md) | NPCs jump during transition | `InteriorSim` | yes | T02 (for code) | T20 |
+| [T12](T12-portal-color.md) | Separate color correction for the portal image | portal rendering | yes | T02 (for code) | T13 |
+| [T13](T13-fire-smoke.md) | Fire is smaller and there is no smoke | portal particles | yes | T02 (for code) | T12 |
+| [T14](T14-helper-mods.md) | Technical mods as a dependency or reference | none | based on results; user installs mods | — | — (`RELATED_MODS.md`) |
+| [T15](T15-location-triggers.md) | Game and script reactions to player location changes (bard song on entry) | none | none | — | — |
+| **Stage 2, mod foundation: transitions without loading** |
+| [T28](T28-split-hooks.md) | Split `Hooks.cpp` according to the plan in `results/T02.md` | all of `Hooks.cpp` | control run | — | everything with hooks: **first and alone** |
+| [T20](T20-attached-entry.md) | Entry without detaching the interior, recording NPC package changes | `InteriorSim`, hooks | yes | T28 | T16 (`SetParentCell`) |
+| [T16](T16-story-filter.md) | Story Manager filter on portal entry: T30 tags and policy, R8 for comparison | `StoryFilter`, hooks | yes | T28, T30 | T20 |
+| [T30](T30-location-tags.md) | Tags for location-change reactions and the “suppress or not” policy | none | none | — | — (`LOCATION_TRIGGERS.md`) |
+| [T31](T31-virtual-player.md) | Virtual player beyond the portal instead of a virtual camera (research) | none | none | 0.8.32 run | — (complete: there will be no full virtual player, `VIRTUAL_PLAYER.md`) |
+| [T33](T33-ghidra-base.md) | Ghidra database for `SkyrimSE.exe`: project, names from NG and documents, pseudocode tools for executors | `tools/ghidra/` | none | — | complete; chat is the database curator (`..\CLR-GHIDRA`) |
+| [T32](T32-player-reads.md) | Inventory of player reads (2,843 locations) and the player's place in the far-side frame | `PlayerReads`, `ActorScope` | yes, in steps | T31; merge T20 earlier | T29 (`ActorScope`), T20 (`InteriorSim`) |
+| [T22](T22-distance-rest.md) | Remaining distance checks (`docs/DISTANCE_CHECKS.md`, section 9), NPC level by distance through the door | hooks, `PortalActors` | yes | T28 | T20 (`InteriorSim`, `ActorHold`), T29 |
+| [T29](T29-portal-registry.md) | Portal registry: portal state as a class, many portals (5.14, item 1; `docs/ARCHITECTURE.md`, 8.3) | `Portal*`, `InteriorSim` | control run | T20, T16, T22 merged | everything in `Portal*`: **alone, like T28** |
+| T21 | Living street while the player is inside, and a second portal on the interior door (`docs/FEATURES.md`, 5.13, step 4) | `InteriorSim`, `Portal*` | yes | T20, T29 | T29 |
+| **Stage 2, supporting: Ghidra database and engine maps** (plan — `PLAN-T34-T41.md`, research coordinator — `PROMPT-research-coordinator.md`) |
+| [T35](T35-ghidra-interface.md) | Database interface: MCP server, `ghidra` skill, `re-reader`, `re-reader-fast` agents | `tools/ghidra/`, `.mcp.json`, `.claude/` | none | T33 | complete (curator) |
+| [T36](T36-ghidra-types.md) | NG types in the database: structures, vtables, `this`, singletons | `tools/ghidra/` | none | T35 | complete (curator) |
+| [T34](T34-ghidra-check-names.md) | Check discrepancies, names: NG, third-party tables, RTTI, Papyrus, commands, `reviewed` | `tools/ghidra/` | none | T35, T36 | complete (curator); new candidates from T37–T41 |
+| [T37](T37-creation-kit.md) | Creation Kit: whether it is worthwhile for names | none | none | T35 | **postponed** (user, 08.11.2026): not worthwhile for names; create the “function → `.cpp`” mapping only if unclear clusters of IDs begin to hinder a task |
+| [T41](T41-multiplayer-mods.md) | Multiplayer mods: multiple players in one world | none | none | — | — (`MULTIPLAYER_MODS.md`) |
+| [T38](T38-player-map.md) | Player map: `PlayerCharacter`, fields, globals, subsystems | none | optional, T40 | T35, T36 | overlaps T32 in scope (`PLAYER_MAP.md`) |
+| [T39](T39-cell-loading-map.md) | Cell loading map: from door to `kAttached`, threads, loading screen | none | old traces; optional T40 | T35, T36 | overlaps T20 in scope (`CELL_LOADING_MAP.md`) |
+| [T40](T40-call-probe.md) | Probe build: call counters, samples of all threads; questions Q1–Q3 from T38/T39 | `src/CallProbe.*`, `src/CodePatch.*`, `Profiler` | yes, one for T38+T39 | ID lists ready (151); branch from T32 if not merged | T32 (stubs), per line — T16, T20 |
+| [T42](T42-single-instance.md) | Inventory of “single-instance” engine state: who writes, who reads, what to replace it with (5.14, items 1–2) | none | optional, T40 | T38, T39 | complete 09.11.2026 (`SINGLE_INSTANCE.md`); overlaps T29, T21 in scope |
+| [T43](T43-npc-doors.md) | How NPCs pass through doors with loading; components of seamless NPC passage | none | optional, T40 | T38, T39 | complete 09.11.2026 (`NPC_DOORS.md`); overlaps T20, T21, T11 in scope |
+| [T44](T44-render-view.md) | Frame rendering map: view state, the game's secondary views, pass with camera parameter, mirrors (5.14, items 4–5) | none | none | — | complete 09.11.2026 (`RENDER_VIEW_MAP.md`); overlaps T17, T29 in scope |
+| **Stage 3, improvements and additions** |
+| [T17](T17-portal-picture.md) | Portal image: haze at a distance, smoke without a hearth in frame, adaptation support (remaining T12, T13) | portal rendering | yes | — | T27 |
+| T23 | Sound through the opening, not through walls (Audio Occlusion in `docs/RELATED_MODS.md`) | sound | yes | T29 | — |
+| T24 | Light in both directions (`docs/FEATURES.md`, 5.13, step 2) | `PortalLights` | yes | T21 | T27 |
+| T25 | Projectiles through the door (5.13, step 5; STB Projectile Control in `docs/RELATED_MODS.md`) | hooks | yes | T29 | — |
+| T26 | SE 1.5.97 (`docs/PORTABILITY.md`) | none, research | none | — | — |
+| T27 | Any camera: camera and pass target as parameters, texture pool, recursion, mirrors (5.14, items 4–5) | portal rendering | yes | T29 | T17, T24 |
 
-**Этап 2** — то, без чего нет мира без загрузок: вход и выход без отключения интерьера, верные реакции игры на вход, расстояния через дверь, несколько порталов, живая улица с видом изнутри. **Этап 3** — качество и полнота: картинка, звук, свет, снаряды, другие версии игры, любая камера.
+**Stage 2** is what a world without loading cannot exist without: entry and exit without detaching the interior, correct game reactions on entry, distances through the door, multiple portals, and a living street visible from inside. **Stage 3** is quality and completeness: image, sound, light, projectiles, other game versions, and any camera.
 
-- **T28 первой и одна.** Все задачи этапа 2 добавляют перехваты в `Hooks.cpp` (1 200 строк). Разрезанный файл снимает конфликты при параллельной работе. Контрольный прогон должен совпасть с 0.8.31.
-- **T29 до T21:** второй портал на внутренней двери требует нескольких порталов сразу. В T27 остаётся камера, рекурсия и зеркала.
-- **T29 идёт одна**, после слияния T20, T16 и T22: это перенос состояния по всему `Portal*` и `InteriorSim`, как T28 для перехватов.
-- **T31 готова** (предложение пользователя от 05.11.2026): полного виртуального игрока не будет, спасается подмена места игрока в рамке дальней стороны. **T32 — сейчас, T22 — после неё** (решение пользователя от 05.11.2026).
-- **T20 и T16 вместе:** бесшовный вход должен вызывать `PlayerCharacter::SetParentCell` ровно один раз за переход (T15), а T16 перехватывает именно его.
-- **T30 — исследование без кода** (готово). Политику T30 пользователь принял 05.11.2026: T16 делает её сразу, R8 — для сравнения строкой INI.
-- **Прогоны этапа 2 — без Engine Fixes**, с ним — общая сборка в конце этапа (решение пользователя от 04.11.2026).
-- Бриф T21 координатор пишет по итогам T20, T29 и T31. T16, T17, T20, T22, T28, T29, T30, T31 готовы. Номера задач не меняются при переносе между этапами.
+- **T28 first and alone.** All Stage 2 tasks add hooks to `Hooks.cpp` (1,200 lines). Splitting the file removes conflicts during parallel work. The control run must match 0.8.31.
+- **T29 before T21:** a second portal on the interior door requires multiple simultaneous portals. T27 retains camera, recursion, and mirrors.
+- **T29 runs alone**, after T20, T16, and T22 are merged: it moves state throughout `Portal*` and `InteriorSim`, just as T28 does for hooks.
+- **T31 is complete** (user proposal dated 05.11.2026): there will be no full virtual player; substituting the player's location in the far-side frame is preserved. **T32 now, T22 after it** (user decision dated 05.11.2026).
+- **T20 and T16 together:** seamless entry must call `PlayerCharacter::SetParentCell` exactly once per transition (T15), and T16 hooks that exact function.
+- **T30 is research without code** (complete). The user accepted the T30 policy on 05.11.2026: T16 implements it immediately, with R8 available for comparison via an INI line.
+- **Stage 2 runs are without Engine Fixes**; a combined build with it comes at the end of the stage (user decision dated 04.11.2026).
+- The coordinator writes the T21 brief based on the results of T20, T29, and T31. T16, T17, T20, T22, T28, T29, T30, T31 are ready. Task numbers do not change when moving between stages.
 
 ```powershell
-# этап 2: T28 и T30 сразу, остальные с кодом — после слияния T28
+# stage 2: T28 and T30 immediately, other code tasks after T28 is merged
 git worktree add ..\CLR-T28 -b task/T28-split-hooks feature/interior-portal
 git -C ..\CLR-T28 submodule update --init --recursive
 git worktree add ..\CLR-T30 -b exp/T30-location-tags feature/interior-portal

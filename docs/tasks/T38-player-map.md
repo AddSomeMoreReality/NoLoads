@@ -1,40 +1,40 @@
-# T38. Карта игрока в коде: класс `PlayerCharacter` и всё, что относится именно к игроку
+# T38. Player map in code: the `PlayerCharacter` class and everything specific to the player
 
-Этап 2, исследование. Ветка `exp/T38-player-map`, worktree `..\CLR-T38` (без сабмодуля). Код: нет, скрипты в scratchpad. Прогон: по желанию, сборкой T40. Читает базу через T35 (MCP или `gq.py`), лучше после T36 (типы). Основание — `docs/VIRTUAL_PLAYER.md`, `results/T31.md`.
+Stage 2, research. Branch `exp/T38-player-map`, worktree `..\CLR-T38` (without the submodule). Code: none, scripts in the scratchpad. Run: optional, with the T40 build. Reads the base via T35 (MCP or `gq.py`), better after T36 (types). Based on `docs/VIRTUAL_PLAYER.md`, `results/T31.md`.
 
-## Зачем
+## Why
 
-5.14, п. 1–2 и T32: дальней стороне портала нужен «игрок» на её стороне, а движок знает одного. Нужна полная карта того, что в коде завязано именно на игрока.
-- Какие функции — только для игрока (переопределения `PlayerCharacter`, проверки `== player`).
-- Какие поля и глобалы — его.
-- Какие подсистемы спрашивают игрока, и как: указатель, хэндл, FormID `0x14`.
+5.14, items 1–2 and T32: the far side of the portal needs a "player" on its side, but the engine knows only one. A complete map of what in the code is tied specifically to the player is needed.
+- Which functions are player-only (`PlayerCharacter` overrides, `== player` checks).
+- Which fields and globals are his.
+- Which subsystems ask for the player, and how: pointer, handle, FormID `0x14`.
 
-## Разделение с T32
+## Separation from T32
 
-T32 (идёт) считает чтения указателя в игре и разбирает конструктор `AE#40411`. **T38 — статическая карта**, T32 получает её как опору. Не дублировать перепись 2 843 мест: брать её из T31/T32 и группировать по функциям и подсистемам.
+T32 (in progress) counts reads of the pointer in the game and disassembles the constructor `AE#40411`. **T38 is a static map**, T32 gets it as support. Do not duplicate the census of 2 843 places: take it from T31/T32 and group by functions and subsystems.
 
-## Сделать
+## To do
 
-1. **Класс:**
-   - все 14 vtable `PlayerCharacter` (основная `AE#208040` и вторичные), слот → функция;
-   - своя функция или унаследованная от `Character`/`Actor`/`TESObjectREFR` (сравнить слоты);
-   - переопределения игрока — главный список: что каждое делает иначе, 1–2 строки.
-2. **Методы не из vtable:** функции, у которых `this` — игрок. Источники: NG; функции, которые зовут с `PlayerCharacter::singleton` первым аргументом; функции, читающие поля `≥ 0x2B8` (`fieldrefs` по полям `PlayerCharacter`).
-3. **Поля:**
-   - раскладка `PlayerCharacter` для AE (NG + T36);
-   - для важных полей (ячейка, позиция, `currentLocation`, `PlayerSkills`, телеметрия, флаги) — кто читает и пишет.
-4. **Глобалы и синглтоны игрока:** `AE#403521`, хэндл `AE#403520`, `PlayerCamera`, `PlayerControls`, `MenuControls`, источники событий игрока (`BGSActorCellEvent`, `PositionPlayerEvent`, …), «игрок по FormID 0x14».
-5. **Подсистемы:**
-   - сгруппировать места обращения к игроку: бой, ИИ и пакеты, диалог, квесты и Story Manager, преступления, карта, интерфейс, камера, ввод, сохранение, звук, загрузка ячеек;
-   - для каждой — как узнаёт игрока и что с ним делает.
-6. **Кандидаты имён** для куратора (адрес, имя, доказательство).
-7. **По желанию — прогон сборки T40:** какие переопределения и функции игрока работают за кадр на улице, в интерьере и с порталом.
+1. **Class:**
+   - all 14 `PlayerCharacter` vtables (the main `AE#208040` and the secondary ones), slot → function;
+   - own function or inherited from `Character`/`Actor`/`TESObjectREFR` (compare slots);
+   - player overrides — the main list: what each does differently, 1–2 lines.
+2. **Methods not from vtable:** functions whose `this` is the player. Sources: NG; functions called with `PlayerCharacter::singleton` as the first argument; functions reading fields `≥ 0x2B8` (`fieldrefs` on `PlayerCharacter` fields).
+3. **Fields:**
+   - `PlayerCharacter` layout for AE (NG + T36);
+   - for important fields (cell, position, `currentLocation`, `PlayerSkills`, telemetry, flags) — who reads and writes.
+4. **Player globals and singletons:** `AE#403521`, handle `AE#403520`, `PlayerCamera`, `PlayerControls`, `MenuControls`, player event sources (`BGSActorCellEvent`, `PositionPlayerEvent`, …), "player by FormID 0x14".
+5. **Subsystems:**
+   - group the places that access the player: combat, AI and packages, dialogue, quests and Story Manager, crimes, map, interface, camera, input, saving, sound, cell loading;
+   - for each — how it finds the player and what it does with him.
+6. **Name candidates** for the curator (address, name, evidence).
+7. **Optionally — T40 build run:** which overrides and player functions run per frame on the street, in the interior, and with the portal.
 
-## Результат
+## Result
 
-- `docs/PLAYER_MAP.md` (≤ 250 строк, таблицы с `AE#`, без псевдокода).
-- `docs/tasks/results/T38.md`: главное для T32 и 5.14, кандидаты имён куратору.
+- `docs/PLAYER_MAP.md` (≤ 250 lines, tables with `AE#`, no pseudocode).
+- `docs/tasks/results/T38.md`: the main things for T32 and 5.14, name candidates for the curator.
 
-## Конфликты
+## Conflicts
 
-T32 — по смыслу (договориться через координатора). Файлы — новые.
+T32 — by meaning (arrange through the coordinator). Files — new.

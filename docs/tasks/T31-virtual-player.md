@@ -1,59 +1,59 @@
-# T31. Виртуальный игрок за порталом (исследование)
+# T31. Virtual player beyond the portal (research)
 
-Этап 2. Ветка `exp/T31-virtual-player`, worktree `..\CLR-T31`. Сначала исследование без кода, прототип — по его итогам. Начинать **сразу после контрольного прогона 0.8.32 (T28)**. Предложение пользователя от 05.11.2026. Если подход окажется рабочим, он заменит часть задач этапов 2 и 3 (список ниже). Поэтому T22 ждёт вердикта T31.
+Stage 2. Branch `exp/T31-virtual-player`, worktree `..\CLR-T31`. First research without code, then a prototype based on its results. Start **immediately after the 0.8.32 control run (T28)**. User proposal dated 05.11.2026. If the approach proves viable, it will replace some Stage 2 and 3 tasks (list below). Therefore, T22 awaits the T31 verdict.
 
-## Идея (пользователь)
+## Idea (user)
 
-За порталом ставится не виртуальная камера, а **полноценный виртуальный игрок**. Скрипты и функции движка считают, что игрок действительно стоит там, без патчей совместимости по местам: перехватываются `GetPlayer` и родственные функции.
-- Реальный игрок видит на портале картинку с камеры виртуального игрока.
-- Звуки, субтитры и всё прочее, что «чувствует» виртуальный игрок, сводятся к реальному игроку.
-- Характеристики, навыки, перки, снаряжение, фракции и прочее у виртуального игрока те же, что у реального.
+Place not a virtual camera beyond the portal, but a **full virtual player**. Scripts and engine functions believe the player is actually standing there, without site-specific compatibility patches: `GetPlayer` and related functions are hooked.
+- The real player sees the image from the virtual player's camera on the portal.
+- Sounds, subtitles, and everything else the virtual player “perceives” are routed to the real player.
+- The virtual player has the same attributes, skills, perks, equipment, factions, and so on as the real player.
 
-## Что известно
+## What is known
 
-- **Игрок в движке — глобальная переменная, а не функция.** `PlayerCharacter::GetSingleton()` читает `NiPointer<PlayerCharacter>` по `RELOCATION_ID(517014, 403521)`. На этот указатель 2 843 ссылки, позицию (`+0x54`) напрямую читают 149 мест (`docs/DISTANCE_CHECKS.md`, разделы 3, 6). Функция есть только у Papyrus: `Game.GetPlayer` — native, и скрипт дальше зовёт движок на том же объекте.
-- **Сейчас перенос идёт по местам** (`DISTANCE_CHECKS.md`; `docs/FEATURES.md`, 5.13): камера мира `AE#36609` в рамке `Portal::ActorScope` (`thread_local`, пока поток обновляет актёра интерьера); `GetDistance`/квадрат; место звука `AE#68007`; субтитры `AE#52638+0x122`; снятие `kNotVisible`; LOD контроллера `AE#78274`; затухание `AE#105486`; обход `AE#37277`; `PromoteActors`; удержание `ActorHold`.
-- **Улица и интерьер обновляются одновременно**: задания `ProcessLists` и обходы ячеек идут параллельно на нескольких потоках. Указатель на игрока один на всех: подменить его глобально для «своих» NPC нельзя (`DISTANCE_CHECKS.md`, раздел 6).
-- **Смена локации игрока — ровно один `SetParentCell` за переход** (`CLAUDE.md`, раздел 7; T15). Присутствие виртуального игрока не должно рождать `CLOC`, `OnLocationChange` и другие события Story Manager. Иначе 148 сюжетных реакций сработают раньше времени или дважды.
-- Инструменты: `tools/re/scan_player_access.py` (кто читает игрока и его позицию), `tools/re/vcalls.py`, `vtab.py`, `riprefs.py`, `tools/name_functions.py --xref`; захваты F3 (`AccessWatch`) 0.8.24 — `logs/run-0.8.24/CellLoadResearch.access-*.txt`.
+- **The player in the engine is a global variable, not a function.** `PlayerCharacter::GetSingleton()` reads `NiPointer<PlayerCharacter>` at `RELOCATION_ID(517014, 403521)`. This pointer has 2,843 references, and 149 locations read the position (`+0x54`) directly (`docs/DISTANCE_CHECKS.md`, sections 3, 6). Only Papyrus has a function: `Game.GetPlayer` is native, and the script then calls the engine on the same object.
+- **Transfer is currently site-specific** (`DISTANCE_CHECKS.md`; `docs/FEATURES.md`, 5.13): world camera `AE#36609` within `Portal::ActorScope` (`thread_local`, while the thread updates an interior actor); `GetDistance`/squared distance; sound location `AE#68007`; subtitles `AE#52638+0x122`; removal of `kNotVisible`; controller LOD `AE#78274`; fading `AE#105486`; traversal `AE#37277`; `PromoteActors`; `ActorHold` holding.
+- **Street and interior update simultaneously**: `ProcessLists` jobs and cell traversals run in parallel on several threads. There is one player pointer for everyone: it cannot be replaced globally for “our” NPCs (`DISTANCE_CHECKS.md`, section 6).
+- **A player location change means exactly one `SetParentCell` per transition** (`CLAUDE.md`, section 7; T15). The virtual player's presence must not generate `CLOC`, `OnLocationChange`, or other Story Manager events. Otherwise, 148 story reactions will fire prematurely or twice.
+- Tools: `tools/re/scan_player_access.py` (who reads the player and position), `tools/re/vcalls.py`, `vtab.py`, `riprefs.py`, `tools/name_functions.py --xref`; F3 captures (`AccessWatch`) from 0.8.24 — `logs/run-0.8.24/CellLoadResearch.access-*.txt`.
 
-## Исследовать
+## Research
 
-1. **Опись «личности игрока».** Через что движок и скрипты узнают игрока:
-   - чтения `AE#403521`;
-   - сравнения с игроком: указатель, `formID == 0x14`, хэндл игрока, `IsPlayerRef`;
-   - vfunc `PlayerCharacter`;
-   - Papyrus `Game.GetPlayer` и условия `RunOn Player` / `GetIsReference Player`;
-   - обнаружение, диалог (`Hello`, приветствия T30), слушатель звука `AE#67710`, `PlayerCamera` (`AE#50785`);
-   - сетка ячеек вокруг игрока, активная область Havok, уровни обработки `ProcessLists`, выбор `high`.
-   Сгруппируй по подсистемам, укажи частоту из F3. Отдельно отметь, что из этого должно видеть реального игрока, что — виртуального, а что — обоих.
-2. **Варианты.** По каждому: осуществимость, цена за кадр, потоки, риски, какие патчи по местам он убирает, переносимость на другие версии (5.14, п. 6).
-   - **А. Второй объект `PlayerCharacter`.** Что регистрирует конструктор игрока (синглтоны, источники событий, камера, UI, `ProcessLists`). Ожидание — неосуществимо; проверить и записать почему.
-   - **Б. Двойник-актёр.** Обычный `Actor` с данными игрока (раса, уровень, значения, навыки, перки, снаряжение, фракции, преступления), без коллизии и невидимый. Ставится в глаз игрока, перенесённый через дверь. Подсистемы дальней стороны спрашивают «игрока» и получают его. Как синхронизировать данные. Где игра проверяет именно `PlayerCharacter`.
-   - **В. Подмена по времени.** Обновление дальней стороны выделяется в свою фазу главного потока, когда задания игры стоят (как проход портала на границе списков сцены). На время фазы позиция, ячейка и мир реального игрока подменяются, затем возвращаются. Данные игрока при этом те же, без синхронизации. Можно ли выделить обновление актёров и ячеек одной стороны в отдельную фазу (`ProcessLists`, `AE#13291`, `AE#13325`). Какие потоки читают игрока в это время: звук, физика, VM Papyrus, загрузка.
-   - **Г. Перенос по местам** (как сейчас) — база для сравнения: что ещё осталось (T22).
-   - **Д. Подмена указателя только для потока дальней стороны** (гипотеза пользователя от 05.11.2026: «обработка клеток, связанных через портал, идёт в отдельном потоке — подменить глобальную переменную только для него»). В отчёте ответить прямо: верна ли гипотеза, и если нет — в чём именно.
-     - **Есть ли такой поток.** По `docs/ARCHITECTURE.md`, 3.5 (проверить трассой с id потоков): шаг мира Havok интерьера идёт в потоке физики сразу после мира игрока; обходы ячеек (`AE#13291`, `AE#13325`) и обновление актёров (`ProcessLists`) — в заданиях игры на общих потоках, вперемешку с улицей. Отдельного потока у дальней стороны сейчас нет, но его можно выделить вариантом В.
-     - **Можно ли сделать глобальную переменную своей для потока.** Код игры читает `AE#403521` напрямую, без функции. Варианты: переписать при запуске все чтения с RIP-адресацией на этот адрес (их находит сканирование `.text`, без привязки к версии) на заглушки, которые смотрят `thread_local`-подмену; аппаратная точка останова на чтение только в нужных потоках (регистры DR0–DR3 у каждого потока свои, `AccessWatch` уже это делает) — оценить цену исключения на каждое чтение при тысячах чтений за кадр.
-     - **На что указывает подмена.** Нужен объект, который код игры примет за `PlayerCharacter`: второй объект (А) или его теневая копия. Это главный вопрос варианта.
-3. **Сведение к реальному игроку.** Картинка — проход портала с камерой виртуального игрока (это «вид» T27). Звук: один слушатель XAudio2 и перенос мест (как сейчас) против второго слушателя и сведения. Субтитры, диалог, обращения NPC через дверь, обнаружение и бой через проём. Чего виртуальный игрок «чувствовать» не должен: коллизия, вход в локацию, награды, преступления?
-4. **Конфликты с правилами проекта.** Ровно один `SetParentCell` (T15/T16); много порталов — много виртуальных игроков (5.14, п. 1); любые пары ячеек (п. 2); любая камера (п. 4); зеркала (п. 5); данные игры не меняются (п. 7); Engine Fixes (п. 8).
-5. **Вердикт и план.** Рекомендация: какой вариант (или сочетание) брать, что он закрывает, критерий успеха прототипа. Если рекомендован прототип — бриф следующей задачи с первым шагом, который можно проверить в игре: например, NPC интерьера обнаруживают и приветствуют игрока через дверь и упрощаются по расстоянию, а перехваты расстояния и камеры для них выключены.
+1. **Inventory of “player identity.”** How the engine and scripts recognize the player:
+   - reads of `AE#403521`;
+   - comparisons with the player: pointer, `formID == 0x14`, player handle, `IsPlayerRef`;
+   - `PlayerCharacter` vfuncs;
+   - Papyrus `Game.GetPlayer` and conditions `RunOn Player` / `GetIsReference Player`;
+   - detection, dialogue (`Hello`, T30 greetings), sound listener `AE#67710`, `PlayerCamera` (`AE#50785`);
+   - cell grid around the player, active Havok area, `ProcessLists` processing levels, `high` selection.
+   Group by subsystem and state frequency from F3. Separately mark which of these must see the real player, which the virtual player, and which both.
+2. **Options.** For each: feasibility, per-frame cost, threads, risks, which site-specific patches it removes, portability to other versions (5.14, item 6).
+   - **A. Second `PlayerCharacter` object.** What the player constructor registers (singletons, event sources, camera, UI, `ProcessLists`). The expectation is infeasibility; verify and record why.
+   - **B. Actor double.** An ordinary `Actor` with player data (race, level, values, skills, perks, equipment, factions, crimes), collision-free and invisible. Placed at the player's eye position transferred through the door. Far-side subsystems ask for the “player” and receive it. How to synchronize data. Where the game checks specifically for `PlayerCharacter`.
+   - **C. Temporal substitution.** Far-side updating is allocated its own main-thread phase while game jobs are stopped (like the portal pass at the scene list boundary). During that phase, the real player's position, cell, and world are substituted, then restored. Player data remains the same, with no synchronization. Can actor and cell updates for one side be isolated into a separate phase (`ProcessLists`, `AE#13291`, `AE#13325`)? Which threads read the player during that time: sound, physics, Papyrus VM, loading.
+   - **D. Site-specific transfer** (as now) — the comparison baseline: what remains (T22).
+   - **E. Pointer substitution only for the far-side thread** (user hypothesis dated 05.11.2026: “cells connected through the portal are processed in a separate thread — replace the global variable only for that thread”). The report must answer directly: is the hypothesis correct, and if not, exactly why.
+     - **Does such a thread exist?** According to `docs/ARCHITECTURE.md`, 3.5 (verify with a thread-ID trace): the interior Havok world step runs on the physics thread immediately after the player's world; cell traversals (`AE#13291`, `AE#13325`) and actor updates (`ProcessLists`) run in game jobs on shared threads, intermixed with the street. The far side currently has no separate thread, but option C could allocate one.
+     - **Can the global variable be made thread-specific?** Game code reads `AE#403521` directly, without a function. Options: rewrite all RIP-relative reads of this address at startup (found by scanning `.text`, without version binding) to stubs that check a `thread_local` substitution; hardware read breakpoint only in the required threads (each thread has its own DR0–DR3 registers, and `AccessWatch` already does this) — estimate the cost of an exception per read with thousands of reads per frame.
+     - **What the substitution points to.** An object that game code accepts as `PlayerCharacter` is needed: a second object (A) or its shadow copy. This is the option's main question.
+3. **Routing to the real player.** Image — portal pass with the virtual player's camera (this is T27's “view”). Sound: one XAudio2 listener with location transfer (as now) versus a second listener and mixing. Subtitles, dialogue, NPC address through the door, detection and combat through the opening. What the virtual player should not “perceive”: collision, location entry, rewards, crimes?
+4. **Conflicts with project rules.** Exactly one `SetParentCell` (T15/T16); many portals means many virtual players (5.14, item 1); any cell pairs (item 2); any camera (item 4); mirrors (item 5); game data unchanged (item 7); Engine Fixes (item 8).
+5. **Verdict and plan.** Recommendation: which option (or combination) to adopt, what it covers, prototype success criterion. If a prototype is recommended — a brief for the next task with a first step verifiable in the game: for example, interior NPCs detect and greet the player through the door and simplify with distance, while their distance and camera hooks are disabled.
 
-## Что закроется при успехе (оценка координатора, проверить)
+## What success would cover (coordinator's estimate, verify)
 
-- **T22** (оставшиеся проверки расстояния) — целиком или почти.
-- **T21** (живая улица, пока игрок внутри) — улица видит виртуального игрока снаружи.
-- **T23** (звук через проём) — частично: слушатель на месте.
-- **T27** (любая камера) — камера прохода = камера виртуального игрока.
-- Части `PortalActors` и перехватов портала (камера мира, `GetDistance`, `kNotVisible`, LOD, затухание, `PromoteActors`) станут не нужны.
+- **T22** (remaining distance checks) — entirely or almost entirely.
+- **T21** (living street while the player is inside) — the street sees the virtual player outside.
+- **T23** (sound through the opening) — partially: listener in place.
+- **T27** (any camera) — pass camera = virtual player's camera.
+- Parts of `PortalActors` and portal hooks (world camera, `GetDistance`, `kNotVisible`, LOD, fading, `PromoteActors`) would become unnecessary.
 
-## Результат
+## Result
 
-- `docs/tasks/results/T31.md` (≤ 80 строк): опись, таблица вариантов, вердикт, бриф прототипа.
-- Длинные таблицы описи — новый файл `docs/VIRTUAL_PLAYER.md`.
-- Скрипты разбора — в scratchpad. Данные игры только читаются.
+- `docs/tasks/results/T31.md` (≤ 80 lines): inventory, options table, verdict, prototype brief.
+- Long inventory tables — new file `docs/VIRTUAL_PLAYER.md`.
+- Analysis scripts — in the scratchpad. Game data is read-only.
 
-## Конфликты
+## Conflicts
 
-Нет: только документы. По содержанию — с T22 (ждёт вердикта), T21, T23, T27.
+None: documents only. In content — T22 (awaiting verdict), T21, T23, T27.

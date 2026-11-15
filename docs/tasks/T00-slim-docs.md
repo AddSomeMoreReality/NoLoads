@@ -1,40 +1,40 @@
-# T00. Сократить `CLAUDE.md` и `HANDOFF.md`
+# T00. Shorten `CLAUDE.md` and `HANDOFF.md`
 
-Ветка `task/T00-slim-docs`. Кода нет, прогона нет. Задача механическая, подойдёт и более простая модель.
+Branch `task/T00-slim-docs`. No code, no game run. This is a mechanical task suitable for a simpler model.
 
-## Зачем
+## Why
 
-- `CLAUDE.md` (895 строк, 123 КБ) загружается в каждый чат целиком.
-- `docs/HANDOFF.md` (52 КБ) каждый чат читал первым.
+- `CLAUDE.md` (895 lines, 123 KB) is loaded in full into every chat.
+- `docs/HANDOFF.md` (52 KB) was the first file every chat read.
 
-Это десятки тысяч токенов ещё до первого шага, а чатов теперь много (`docs/tasks/README.md`).
+This consumes tens of thousands of tokens before the first step, and there are now many chats (`docs/tasks/README.md`).
 
-## Сделать
+## Tasks
 
-1. **`CLAUDE.md` ≤ 250 строк.** В нём остаётся:
-   - язык общения;
-   - правило git;
-   - роли «координатор / исполнитель» и ссылка на `docs/tasks/README.md`;
-   - окружение (раздел 1, сжато);
-   - сборка и упаковка (раздел 2, сжато);
-   - правила безопасности (раздел 7): все пункты, но коротко;
-   - требования 5.14 целиком, вместе с п. 7;
-   - карта документов: какой файл за что отвечает.
-2. **Остальное перенести без потерь, текст как есть:**
-   - раздел 3 (карта движка) → `docs/ENGINE_MAP.md`;
-   - разделы 0, 4, 5.1–5.3 и 6 (исходное задание, гипотезы, трасса, автотест, анализ) → `docs/ORIGINAL_TASK.md`;
-   - 5.4–5.13 и 5.15 (INI, модули, портал) → `docs/FEATURES.md`, с оглавлением по модулям;
-   - раздел 9 (история версий) → `docs/HISTORY.md`.
-3. **`docs/HANDOFF.md` ≤ 120 строк:**
-   - состояние: что работает и что нет;
-   - ближайший план — ссылка на `docs/tasks/README.md`;
-   - ссылки на документы.
+1. **`CLAUDE.md` ≤ 250 lines.** It retains:
+   - communication language;
+   - git rule;
+   - the “coordinator / executor” roles and a link to `docs/tasks/README.md`;
+   - environment (section 1, condensed);
+   - build and packaging (section 2, condensed);
+   - safety rules (section 7): all items, but briefly;
+   - requirements 5.14 in full, including item 7;
+   - document map: which file covers what.
+2. **Move everything else without loss, keeping the text unchanged:**
+   - section 3 (engine map) → `docs/ENGINE_MAP.md`;
+   - sections 0, 4, 5.1–5.3 and 6 (original task, hypotheses, trace, automated test, analysis) → `docs/ORIGINAL_TASK.md`;
+   - 5.4–5.13 and 5.15 (INI, modules, portal) → `docs/FEATURES.md`, with a module table of contents;
+   - section 9 (version history) → `docs/HISTORY.md`.
+3. **`docs/HANDOFF.md` ≤ 120 lines:**
+   - status: what works and what does not;
+   - immediate plan — a link to `docs/tasks/README.md`;
+   - links to documents.
 
-   Его раздел 3 (архитектура) и разделы 4 и 8 (ложные пути, недостатки) → `docs/ARCHITECTURE.md`. Устаревшее (6.1 «разбор 0.8.21», 6.3) удалить и перечислить в результате.
-4. **Ссылки.** Обновить ссылки вида «`CLAUDE.md`, 5.12» в `docs/` и в комментариях `src/` на новые файлы. Найти их: Grep `CLAUDE.md, [0-9]` и `раздел 5\.`.
-5. **Проверка без потерь.** Скрипт в scratchpad: каждая непустая строка старых `CLAUDE.md` и `HANDOFF.md` должна найтись в одном из новых файлов. Исключения — строки, сокращённые намеренно; их список в результате.
+   Its section 3 (architecture) and sections 4 and 8 (dead ends, shortcomings) → `docs/ARCHITECTURE.md`. Delete obsolete material (6.1 “analysis of 0.8.21”, 6.3) and list it in the result.
+4. **References.** Update references of the form “`CLAUDE.md`, 5.12” in `docs/` and in `src/` comments to point to the new files. Find them with Grep `CLAUDE.md, [0-9]` and `раздел 5\.`.
+5. **Losslessness check.** Script in the scratchpad: every nonempty line from the old `CLAUDE.md` and `HANDOFF.md` must be found in one of the new files. Exceptions are intentionally condensed lines; list them in the result.
 
-## Нельзя
+## Not allowed
 
-- Менять смысл правил. В сомнении — оставить в `CLAUDE.md`.
-- Трогать код.
+- Changing the meaning of the rules. When in doubt, leave the text in `CLAUDE.md`.
+- Touching code.
