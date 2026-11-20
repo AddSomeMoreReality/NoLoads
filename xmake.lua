@@ -2,23 +2,29 @@
 includes("lib/commonlibsse-ng")
 
 -- set project constants
-set_project("commonlibsse-ng-template")
-set_version("0.0.0")
+set_project("CellLoadResearch")
+set_version("0.8.32")
 set_license("GPL-3.0")
 set_languages("c++23")
 set_warnings("allextra")
+set_encodings("utf-8")
 
 -- add common rules
 add_rules("mode.debug", "mode.releasedbg")
 add_rules("plugin.vsxmake.autoupdate")
 
+-- add packages
+add_requires("microsoft-detours")
+
 -- define targets
-target("commonlibsse-ng-template")
+target("CellLoadResearch")
     add_rules("commonlibsse-ng.plugin", {
-        name = "commonlibsse-ng-template",
-        author = "libxse",
-        description = "SKSE64 plugin template using CommonLibSSE-NG"
+        name = "CellLoadResearch",
+        author = "Yurii",
+        description = "Traces how Skyrim AE loads cells and locations during transitions"
     })
+
+    add_packages("microsoft-detours")
 
     -- add src files
     add_files("src/**.cpp")

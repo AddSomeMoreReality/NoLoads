@@ -7,8 +7,24 @@
 
 # folders
 build/
+dist/
+logs/
 vs*/
+*__pycache__/
 
 # files
 *.zip
 compile_commands.json
+
+# generated
+src/BuildInfo.h
+
+# Ghidra projects and exports are Bethesda code: never commit (docs/GHIDRA.md)
+*.gpr
+*.rep/
+*.gbf
+*.gzf
+ghidra_out/
+
+# personal Claude Code settings (the rest of .claude/ is shared)
+.claude/settings.local.json
